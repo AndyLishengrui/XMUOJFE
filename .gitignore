@@ -1,0 +1,26 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Runtime data and archives
+*.sql
+*.tar.gz
+*.zip
+*.log
+
+# Judge and deployment data
+OnlineJudge/data/
+OnlineJudge/dist/
+OnlineJudge/judge/image/
+OnlineJudgeDeploy/data/
+frontend-compare/cloud-canary/dist/
