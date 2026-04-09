@@ -44,6 +44,26 @@ function breakLongWords (value, length = 16) {
   return value.replace(re, '$1\n')
 }
 
+function compareDisplayId (left, right) {
+  let a = String(left || '')
+  let b = String(right || '')
+  let numericPattern = /^\d+$/
+  let aIsNumeric = numericPattern.test(a)
+  let bIsNumeric = numericPattern.test(b)
+
+  if (aIsNumeric && bIsNumeric) {
+    let diff = parseInt(a, 10) - parseInt(b, 10)
+    if (diff !== 0) {
+      return diff
+    }
+    if (a.length !== b.length) {
+      return a.length - b.length
+    }
+  }
+
+  return a.localeCompare(b)
+}
+
 function downloadFile (url) {
   return new Promise((resolve, reject) => {
     Vue.prototype.$http.get(url, {responseType: 'blob'}).then(resp => {
@@ -100,6 +120,7 @@ export default {
   getACRate: getACRate,
   filterEmptyValue: filterEmptyValue,
   breakLongWords: breakLongWords,
+  compareDisplayId: compareDisplayId,
   downloadFile: downloadFile,
   getLanguages: getLanguages
 }

@@ -3,6 +3,7 @@
 // see http://vuejs-templates.github.io/webpack for documentation.
 
 const path = require('path')
+const staticCdnHost = (process.env.STATIC_CDN_HOST || '').replace(/\/$/, '')
 const commonProxy = {
   onProxyReq: (proxyReq, req, res) => {
     proxyReq.setHeader('Referer', process.env.TARGET)
@@ -20,7 +21,7 @@ module.exports = {
     adminTemplate: path.resolve(__dirname, '../src/pages/admin/index.html'),
     assetsRoot: path.resolve(__dirname, '../dist'),
     assetsSubDirectory: 'static',
-    assetsPublicPath: '/__STATIC_CDN_HOST__/',
+    assetsPublicPath: staticCdnHost ? `${staticCdnHost}/` : '/',
     productionSourceMap: process.env.USE_SENTRY === '1',
     // Gzip off by default as many popular static hosts such as
     // Surge or Netlify already gzip all static assets for you.

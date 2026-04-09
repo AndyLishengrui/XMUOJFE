@@ -43,7 +43,7 @@
 </template>
 
 <script>
-  import { mapGetters } from 'vuex'
+  import { mapActions, mapGetters } from 'vuex'
   import api from '@oj/api'
   import { JUDGE_STATUS, USER_TYPE } from '@/utils/constants'
   import utils from '@/utils/utils'
@@ -190,6 +190,7 @@
       delete this.JUDGE_STATUS['2']
     },
     methods: {
+      ...mapActions(['getContest']),
       init () {
         this.contestID = this.$route.params.contestID
         let query = this.$route.query
@@ -202,6 +203,11 @@
           this.page = 1
         }
         this.routeName = this.$route.name
+        if (this.contestID) {
+          this.getContest().then(() => {
+            this.adjustRejudgeColumn()
+          }).catch(() => {})
+        }
         this.getSubmissions()
       },
       buildQuery () {
@@ -294,7 +300,7 @@
       }
     },
     computed: {
-      ...mapGetters(['isAuthenticated', 'user']),
+      ...mapGetters(['isAuthenticated', 'user', 'isContestAdmin']),
       title () {
         if (!this.contestID) {
           return this.$i18n.t('m.Status')
@@ -308,7 +314,7 @@
         return this.formFilter.result === '' ? this.$i18n.t('m.Status') : this.$i18n.t('m.' + JUDGE_STATUS[this.formFilter.result].name.replace(/ /g, '_'))
       },
       rejudgeColumnVisible () {
-        return !this.contestID && this.user.admin_type === USER_TYPE.SUPER_ADMIN
+        return this.user.admin_type === USER_TYPE.SUPER_ADMIN || (this.contestID && this.isContestAdmin)
       }
     },
     watch: {
