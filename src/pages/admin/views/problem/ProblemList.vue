@@ -90,9 +90,12 @@
         </el-button>
         <el-pagination
           class="page"
-          layout="prev, pager, next"
+          layout="prev, pager, next, sizes"
           @current-change="currentChange"
+          @size-change="handlePageSizeChange"
+          :current-page="currentPage"
           :page-size="pageSize"
+          :page-sizes="pageSizes"
           :total="total">
         </el-pagination>
       </div>
@@ -133,6 +136,7 @@
     data () {
       return {
         pageSize: 10,
+        pageSizes: [10, 30, 50, 100, 200],
         total: 0,
         problemList: [],
         keyword: '',
@@ -145,15 +149,56 @@
         currentRow: {},
         InlineEditDialogVisible: false,
         makePublicDialogVisible: false,
-        addProblemDialogVisible: false
+        addProblemDialogVisible: false,
+        syncingRouteState: false
       }
     },
     mounted () {
       this.routeName = this.$route.name
       this.contestId = this.$route.params.contestId
-      this.getProblemList(this.currentPage)
+      this.applyRouteState(this.$route)
+      this.getProblemList(this.currentPage, false)
     },
     methods: {
+      applyRouteState (route) {
+        const query = route.query || {}
+        const parsedPage = parseInt(query.page)
+        const parsedPageSize = parseInt(query.page_size)
+
+        this.syncingRouteState = true
+        this.keyword = query.keyword || ''
+        this.currentPage = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1
+        this.pageSize = this.pageSizes.includes(parsedPageSize) ? parsedPageSize : 10
+        this.syncingRouteState = false
+      },
+      syncRouteQuery () {
+        const query = {}
+        if (this.keyword) {
+          query.keyword = this.keyword
+        }
+        if (this.currentPage > 1) {
+          query.page = String(this.currentPage)
+        }
+        if (this.pageSize !== 10) {
+          query.page_size = String(this.pageSize)
+        }
+
+        const currentQuery = this.$route.query || {}
+        const queryUnchanged = currentQuery.keyword === query.keyword &&
+          currentQuery.page === query.page &&
+          currentQuery.page_size === query.page_size &&
+          Object.keys(currentQuery).length === Object.keys(query).length
+
+        if (queryUnchanged) {
+          return
+        }
+
+        this.$router.replace({
+          name: this.$route.name,
+          params: this.$route.params,
+          query: query
+        }).catch(() => {})
+      },
       handleDblclick (row) {
         row.isEditing = true
       },
@@ -176,7 +221,16 @@
         this.currentPage = page
         this.getProblemList(page)
       },
-      getProblemList (page = 1) {
+      handlePageSizeChange (pageSize) {
+        this.pageSize = pageSize
+        this.currentPage = 1
+        this.getProblemList(1)
+      },
+      getProblemList (page = 1, syncRoute = true) {
+        this.currentPage = page
+        if (syncRoute) {
+          this.syncRouteQuery()
+        }
         this.loading = true
         let funcName = this.routeName === 'problem-list' ? 'getProblemList' : 'getContestProblemList'
         let params = {
@@ -202,7 +256,7 @@
         }).then(() => {
           let funcName = this.routeName === 'problem-list' ? 'deleteProblem' : 'deleteContestProblem'
           api[funcName](id).then(() => [
-            this.getProblemList(this.currentPage - 1)
+            this.getProblemList(Math.max(this.currentPage - 1, 1))
           ]).catch(() => {
           })
         }, () => {
@@ -246,10 +300,15 @@
       '$route' (newVal, oldVal) {
         this.contestId = newVal.params.contestId
         this.routeName = newVal.name
-        this.getProblemList(this.currentPage)
+        this.applyRouteState(newVal)
+        this.getProblemList(this.currentPage, false)
       },
       'keyword' () {
-        this.currentChange()
+        if (this.syncingRouteState) {
+          return
+        }
+        this.currentPage = 1
+        this.getProblemList(1)
       }
     }
   }

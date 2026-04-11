@@ -87,9 +87,12 @@
       <div class="panel-options">
         <el-pagination
           class="page"
-          layout="prev, pager, next"
+          layout="prev, pager, next, sizes"
           @current-change="currentChange"
+          @size-change="handlePageSizeChange"
+          :current-page="currentPage"
           :page-size="pageSize"
+          :page-sizes="pageSizes"
           :total="total">
         </el-pagination>
       </div>
@@ -115,6 +118,7 @@
     data () {
       return {
         pageSize: 15,
+        pageSizes: [10, 15, 30, 50, 100, 200],
         total: 0,
         contestList: [],
         keyword: '',
@@ -123,11 +127,13 @@
         currentPage: 1,
         currentId: 1,
         dlType: 0,
-        downloadDialogVisible: false
+        downloadDialogVisible: false,
+        syncingRouteState: false
       }
     },
     mounted () {
-      this.getContestList(this.currentPage)
+      this.applyRouteState(this.$route)
+      this.getContestList(this.currentPage, false)
     },
     filters: {
       contestStatus (value) {
@@ -135,12 +141,60 @@
       }
     },
     methods: {
+      applyRouteState (route) {
+        const query = route.query || {}
+        const parsedPage = parseInt(query.page)
+        const parsedPageSize = parseInt(query.page_size)
+
+        this.syncingRouteState = true
+        this.keyword = query.keyword || ''
+        this.currentPage = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1
+        this.pageSize = this.pageSizes.includes(parsedPageSize) ? parsedPageSize : 15
+        this.syncingRouteState = false
+      },
+      syncRouteQuery () {
+        const query = {}
+        if (this.keyword) {
+          query.keyword = this.keyword
+        }
+        if (this.currentPage > 1) {
+          query.page = String(this.currentPage)
+        }
+        if (this.pageSize !== 15) {
+          query.page_size = String(this.pageSize)
+        }
+
+        const currentQuery = this.$route.query || {}
+        const queryUnchanged = currentQuery.keyword === query.keyword &&
+          currentQuery.page === query.page &&
+          currentQuery.page_size === query.page_size &&
+          Object.keys(currentQuery).length === Object.keys(query).length
+
+        if (queryUnchanged) {
+          return
+        }
+
+        this.$router.replace({
+          name: this.$route.name,
+          params: this.$route.params,
+          query
+        }).catch(() => {})
+      },
       // 切换页码回调
       currentChange (page) {
         this.currentPage = page
         this.getContestList(page)
       },
-      getContestList (page) {
+      handlePageSizeChange (pageSize) {
+        this.pageSize = pageSize
+        this.currentPage = 1
+        this.getContestList(1)
+      },
+      getContestList (page, syncRoute = true) {
+        this.currentPage = page
+        if (syncRoute) {
+          this.syncRouteQuery()
+        }
         this.loading = true
         api.getContestList((page - 1) * this.pageSize, this.pageSize, this.keyword).then(res => {
           this.loading = false
@@ -174,7 +228,14 @@
       }
     },
     watch: {
+      '$route' (newVal) {
+        this.applyRouteState(newVal)
+        this.getContestList(this.currentPage, false)
+      },
       'keyword' () {
+        if (this.syncingRouteState) {
+          return
+        }
         this.currentChange(1)
       }
     }

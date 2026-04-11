@@ -59,9 +59,12 @@
       <div class="panel-options">
         <el-pagination
           class="page"
-          layout="prev, pager, next"
+          layout="prev, pager, next, sizes"
           @current-change="currentChange"
+          @size-change="handlePageSizeChange"
+          :current-page="currentPage"
           :page-size="pageSize"
+          :page-sizes="pageSizes"
           :total="total">
         </el-pagination>
       </div>
@@ -291,6 +294,7 @@
       return {
         // 一页显示的用户数
         pageSize: 10,
+        pageSizes: [10, 30, 50, 100, 200],
         // 用户总数
         total: 0,
         // 用户列表
@@ -309,8 +313,9 @@
         loadingGenerate: false,
         loadingChangeUserpassword: false,
         // 当前页码
-        currentPage: 0,
+        currentPage: 1,
         selectedUsers: [],
+        syncingRouteState: false,
         formGenerateUser: {
           prefix: '',
           suffix: '',
@@ -326,13 +331,58 @@
       }
     },
     mounted () {
-      this.getUserList(1)
+      this.applyRouteState(this.$route)
+      this.getUserList(this.currentPage, false)
     },
     methods: {
+      applyRouteState (route) {
+        const query = route.query || {}
+        const parsedPage = parseInt(query.page)
+        const parsedPageSize = parseInt(query.page_size)
+
+        this.syncingRouteState = true
+        this.keyword = query.keyword || ''
+        this.currentPage = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1
+        this.pageSize = this.pageSizes.includes(parsedPageSize) ? parsedPageSize : 10
+        this.syncingRouteState = false
+      },
+      syncRouteQuery () {
+        const query = {}
+        if (this.keyword) {
+          query.keyword = this.keyword
+        }
+        if (this.currentPage > 1) {
+          query.page = String(this.currentPage)
+        }
+        if (this.pageSize !== 10) {
+          query.page_size = String(this.pageSize)
+        }
+
+        const currentQuery = this.$route.query || {}
+        const queryUnchanged = currentQuery.keyword === query.keyword &&
+          currentQuery.page === query.page &&
+          currentQuery.page_size === query.page_size &&
+          Object.keys(currentQuery).length === Object.keys(query).length
+
+        if (queryUnchanged) {
+          return
+        }
+
+        this.$router.replace({
+          name: this.$route.name,
+          params: this.$route.params,
+          query
+        }).catch(() => {})
+      },
       // 切换页码回调
       currentChange (page) {
         this.currentPage = page
         this.getUserList(page)
+      },
+      handlePageSizeChange (pageSize) {
+        this.pageSize = pageSize
+        this.currentPage = 1
+        this.getUserList(1)
       },
       // 提交修改用户的信息
       saveUser () {
@@ -354,7 +404,11 @@
         })
       },
       // 获取用户列表
-      getUserList (page) {
+      getUserList (page, syncRoute = true) {
+        this.currentPage = page
+        if (syncRoute) {
+          this.syncRouteQuery()
+        }
         this.loadingTable = true
         api.getUserList((page - 1) * this.pageSize, this.pageSize, this.keyword).then(res => {
           this.loadingTable = false
@@ -456,7 +510,14 @@
       }
     },
     watch: {
+      '$route' (newVal) {
+        this.applyRouteState(newVal)
+        this.getUserList(this.currentPage, false)
+      },
       'keyword' () {
+        if (this.syncingRouteState) {
+          return
+        }
         this.currentChange(1)
       },
       'user.admin_type' () {

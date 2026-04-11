@@ -62,9 +62,12 @@
           <el-pagination
             v-if="!contestID"
             class="page"
-            layout="prev, pager, next"
+            layout="prev, pager, next, sizes"
             @current-change="currentChange"
+            @size-change="handlePageSizeChange"
+            :current-page="currentPage"
             :page-size="pageSize"
+            :page-sizes="pageSizes"
             :total="total">
           </el-pagination>
         </div>
@@ -118,6 +121,7 @@
         announcementList: [],
         // 一页显示的公告数
         pageSize: 15,
+        pageSizes: [10, 15, 30, 50, 100, 200],
         // 总公告数
         total: 0,
         // 当前公告id
@@ -134,19 +138,59 @@
         // 是否显示loading
         loading: true,
         // 当前页码
-        currentPage: 0
+        currentPage: 1,
+        syncingRouteState: false
       }
     },
     mounted () {
       this.init()
     },
     methods: {
+      applyRouteState (route) {
+        const query = route.query || {}
+        const parsedPage = parseInt(query.page)
+        const parsedPageSize = parseInt(query.page_size)
+
+        this.syncingRouteState = true
+        this.currentPage = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1
+        this.pageSize = this.pageSizes.includes(parsedPageSize) ? parsedPageSize : 15
+        this.syncingRouteState = false
+      },
+      syncRouteQuery () {
+        if (this.contestID) {
+          return
+        }
+
+        const query = {}
+        if (this.currentPage > 1) {
+          query.page = String(this.currentPage)
+        }
+        if (this.pageSize !== 15) {
+          query.page_size = String(this.pageSize)
+        }
+
+        const currentQuery = this.$route.query || {}
+        const queryUnchanged = currentQuery.page === query.page &&
+          currentQuery.page_size === query.page_size &&
+          Object.keys(currentQuery).length === Object.keys(query).length
+
+        if (queryUnchanged) {
+          return
+        }
+
+        this.$router.replace({
+          name: this.$route.name,
+          params: this.$route.params,
+          query
+        }).catch(() => {})
+      },
       init () {
         this.contestID = this.$route.params.contestId
         if (this.contestID) {
           this.getContestAnnouncementList()
         } else {
-          this.getAnnouncementList(1)
+          this.applyRouteState(this.$route)
+          this.getAnnouncementList(this.currentPage, false)
         }
       },
       // 切换页码回调
@@ -154,7 +198,16 @@
         this.currentPage = page
         this.getAnnouncementList(page)
       },
-      getAnnouncementList (page) {
+      handlePageSizeChange (pageSize) {
+        this.pageSize = pageSize
+        this.currentPage = 1
+        this.getAnnouncementList(1)
+      },
+      getAnnouncementList (page, syncRoute = true) {
+        this.currentPage = page
+        if (syncRoute) {
+          this.syncRouteQuery()
+        }
         this.loading = true
         api.getAnnouncementList((page - 1) * this.pageSize, this.pageSize).then(res => {
           this.loading = false

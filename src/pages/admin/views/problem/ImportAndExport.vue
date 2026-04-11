@@ -49,9 +49,12 @@
         </el-button>
         <el-pagination
           class="page"
-          layout="prev, pager, next"
+          layout="prev, pager, next, sizes"
           @current-change="getProblems"
+          @size-change="handlePageSizeChange"
+          :current-page="page"
           :page-size="limit"
+          :page-sizes="pageSizes"
           :total="total">
         </el-pagination>
       </div>
@@ -105,22 +108,68 @@
         fileList2: [],
         page: 1,
         limit: 10,
+        pageSizes: [10, 30, 50, 100, 200],
         total: 0,
         loadingProblems: false,
         loadingImporting: false,
         keyword: '',
         problems: [],
-        selected_problems: []
+        selected_problems: [],
+        syncingRouteState: false
       }
     },
     mounted () {
-      this.getProblems()
+      this.applyRouteState(this.$route)
+      this.getProblems(this.page, false)
     },
     methods: {
+      applyRouteState (route) {
+        const query = route.query || {}
+        const parsedPage = parseInt(query.page)
+        const parsedLimit = parseInt(query.page_size)
+
+        this.syncingRouteState = true
+        this.keyword = query.keyword || ''
+        this.page = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1
+        this.limit = this.pageSizes.includes(parsedLimit) ? parsedLimit : 10
+        this.syncingRouteState = false
+      },
+      syncRouteQuery () {
+        const query = {}
+        if (this.keyword) {
+          query.keyword = this.keyword
+        }
+        if (this.page > 1) {
+          query.page = String(this.page)
+        }
+        if (this.limit !== 10) {
+          query.page_size = String(this.limit)
+        }
+
+        const currentQuery = this.$route.query || {}
+        const queryUnchanged = currentQuery.keyword === query.keyword &&
+          currentQuery.page === query.page &&
+          currentQuery.page_size === query.page_size &&
+          Object.keys(currentQuery).length === Object.keys(query).length
+
+        if (queryUnchanged) {
+          return
+        }
+
+        this.$router.replace({
+          name: this.$route.name,
+          params: this.$route.params,
+          query: query
+        }).catch(() => {})
+      },
       handleSelectionChange (val) {
         this.selected_problems = val
       },
-      getProblems (page = 1) {
+      getProblems (page = 1, syncRoute = true) {
+        this.page = page
+        if (syncRoute) {
+          this.syncRouteQuery()
+        }
         let params = {
           keyword: this.keyword,
           offset: (page - 1) * this.limit,
@@ -132,6 +181,11 @@
           this.total = res.data.data.total
           this.loadingProblems = false
         })
+      },
+      handlePageSizeChange (pageSize) {
+        this.limit = pageSize
+        this.page = 1
+        this.getProblems(1)
       },
       exportProblems () {
         let params = []
@@ -163,8 +217,16 @@
       }
     },
     watch: {
+      '$route' (newVal) {
+        this.applyRouteState(newVal)
+        this.getProblems(this.page, false)
+      },
       'keyword' () {
-        this.getProblems()
+        if (this.syncingRouteState) {
+          return
+        }
+        this.page = 1
+        this.getProblems(1)
       }
     }
   }
