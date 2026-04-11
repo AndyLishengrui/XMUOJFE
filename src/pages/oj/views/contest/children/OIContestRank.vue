@@ -29,7 +29,12 @@
     <div v-show="showChart" class="echarts">
       <ECharts :options="options" ref="chart" auto-resize></ECharts>
     </div>
-    <Table ref="tableRank" class="auto-resize" :columns="columns" :data="dataRank" disabled-hover></Table>
+        <Table ref="tableRank"
+          class="contest-rank-table auto-resize"
+          :columns="columns"
+          :data="dataRank"
+          disabled-hover
+          height="600"></Table>
     <Pagination :total="total"
                 :page-size.sync="limit"
                 :current.sync="page"
@@ -60,6 +65,7 @@
           {
             align: 'center',
             width: 60,
+            className: 'rank-col-compact',
             render: (h, params) => {
               return h('span', {}, params.index + (this.page - 1) * this.limit + 1)
             }
@@ -67,11 +73,13 @@
           {
             title: this.$i18n.t('m.User_User'),
             align: 'center',
+            width: 220,
+            className: 'rank-col-user',
             render: (h, params) => {
               return h('a', {
+                class: 'rank-user-link',
                 style: {
-                  display: 'inline-block',
-                  'max-width': '150px'
+                  display: 'inline-block'
                 },
                 on: {
                   click: () => {
@@ -88,8 +96,11 @@
           {
             title: this.$i18n.t('m.Total_Score'),
             align: 'center',
+            width: 90,
+            className: 'rank-col-compact',
             render: (h, params) => {
               return h('a', {
+                class: 'rank-score-link',
                 on: {
                   click: () => {
                     this.$router.push({
@@ -179,6 +190,9 @@
     },
     methods: {
       ...mapActions(['getContestProblems']),
+      getProblemColumnWidth (problemCount) {
+        return problemCount > 15 ? 72 : 90
+      },
       applyToChart (rankData) {
         let [usernames, scores] = [[], []]
         rankData.forEach(ele => {
@@ -202,10 +216,13 @@
         this.dataRank = dataRank
       },
       addTableColumns (problems) {
+        let problemColumnWidth = this.getProblemColumnWidth(problems.length)
         problems.forEach(problem => {
           this.columns.push({
             align: 'center',
             key: problem.id,
+            width: problemColumnWidth,
+            className: 'rank-problem-col',
             renderHeader: (h, params) => {
               return h('a', {
                 'class': {
@@ -257,5 +274,32 @@
         margin-left: 8px;
       }
     }
+  }
+
+  .contest-rank-table /deep/ .ivu-table-cell {
+    white-space: nowrap;
+    word-break: normal;
+    overflow: visible;
+    line-height: 1.2;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .contest-rank-table /deep/ th,
+  .contest-rank-table /deep/ td {
+    height: 36px;
+  }
+
+  .contest-rank-table /deep/ th > .ivu-table-cell,
+  .contest-rank-table /deep/ td > .ivu-table-cell {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .contest-rank-table /deep/ .rank-user-link,
+  .contest-rank-table /deep/ .rank-score-link {
+    display: inline-block;
+    white-space: nowrap;
+    word-break: normal;
   }
 </style>

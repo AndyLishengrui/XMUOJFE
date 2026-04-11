@@ -19,6 +19,7 @@
 <script>
   import {mapState, mapGetters} from 'vuex'
   import {ProblemMixin} from '@oj/components/mixins'
+  import utils from '@/utils/utils'
 
   export default {
     name: 'ContestProblemList',
@@ -30,6 +31,8 @@
             title: '#',
             key: '_id',
             sortType: 'asc',
+            sortable: true,
+            sortMethod: (a, b) => utils.compareDisplayId(a._id, b._id),
             width: 150
           },
           {
@@ -51,6 +54,8 @@
           {
             title: '#',
             key: '_id',
+            sortable: true,
+            sortMethod: (a, b) => utils.compareDisplayId(a._id, b._id),
             width: 150
           },
           {

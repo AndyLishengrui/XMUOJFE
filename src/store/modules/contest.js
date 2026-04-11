@@ -3,6 +3,7 @@ import types from '../types'
 import api from '@oj/api'
 import { CONTEST_STATUS, USER_TYPE, CONTEST_TYPE } from '@/utils/constants'
 import { m } from '../../i18n/oj/zh-CN'
+import utils from '@/utils/utils'
 
 const state = {
   now: moment(),
@@ -158,12 +159,7 @@ const actions = {
     return new Promise((resolve, reject) => {
       api.getContestProblemList(rootState.route.params.contestID).then(res => {
         res.data.data.sort((a, b) => {
-          if (a._id === b._id) {
-            return 0
-          } else if (a._id > b._id) {
-            return 1
-          }
-          return -1
+          return utils.compareDisplayId(a._id, b._id)
         })
         commit(types.CHANGE_CONTEST_PROBLEMS, {contestProblems: res.data.data})
         resolve(res)

@@ -444,6 +444,8 @@
             this.getCaptchaSrc()
             if (res.data.data.startsWith('Captcha is required')) {
               this.captchaRequired = true
+            } else if (res.data.data.includes('Test case not found')) {
+              this.$error('测试用例不存在，请联系管理员')
             }
             this.submitting = false
             this.statusVisible = false

@@ -35,7 +35,12 @@
     <div v-show="showChart" class="echarts">
       <ECharts :options="options" ref="chart" auto-resize></ECharts>
     </div>
-    <Table ref="tableRank" :columns="columns" :data="dataRank" disabled-hover height="600"></Table>
+        <Table ref="tableRank"
+          class="contest-rank-table"
+          :columns="columns"
+          :data="dataRank"
+          disabled-hover
+          height="600"></Table>
     <Pagination :total="total"
                 :page-size.sync="limit"
                 :current.sync="page"
@@ -68,7 +73,7 @@
           {
             align: 'center',
             width: 50,
-            fixed: 'left',
+            className: 'rank-col-compact',
             render: (h, params) => {
               return h('span', {}, params.index + (this.page - 1) * this.limit + 1)
             }
@@ -76,13 +81,13 @@
           {
             title: this.$i18n.t('m.User_User'),
             align: 'center',
-            fixed: 'left',
-            width: 150,
+            width: 220,
+            className: 'rank-col-user',
             render: (h, params) => {
               return h('a', {
+                class: 'rank-user-link',
                 style: {
-                  display: 'inline-block',
-                  'max-width': '150px'
+                  display: 'inline-block'
                 },
                 on: {
                   click: () => {
@@ -100,10 +105,12 @@
             title: 'AC / ' + this.$i18n.t('m.Total'),
             align: 'center',
             width: 100,
+            className: 'rank-col-compact',
             render: (h, params) => {
               return h('span', {}, [
                 h('span', {}, params.row.accepted_number + ' / '),
                 h('a', {
+                  class: 'rank-score-link',
                   on: {
                     click: () => {
                       this.$router.push({
@@ -120,6 +127,7 @@
             title: this.$i18n.t('m.TotalTime'),
             align: 'center',
             width: 100,
+            className: 'rank-col-compact',
             render: (h, params) => {
               return h('span', this.parseTotalTime(params.row.total_time))
             }
@@ -203,6 +211,9 @@
     },
     methods: {
       ...mapActions(['getContestProblems']),
+      getProblemColumnWidth (problemCount) {
+        return problemCount > 15 ? 80 : 100
+      },
       addChartCategory (contestProblems) {
         let category = []
         for (let i = 0; i <= contestProblems.length; ++i) {
@@ -268,11 +279,13 @@
       },
       addTableColumns (problems) {
         // 根据题目添加table column
+        let problemColumnWidth = this.getProblemColumnWidth(problems.length)
         problems.forEach(problem => {
           this.columns.push({
             align: 'center',
             key: problem.id,
-            width: problems.length > 15 ? 80 : null,
+            width: problemColumnWidth,
+            className: 'rank-problem-col',
             renderHeader: (h, params) => {
               return h('a', {
                 'class': {
@@ -294,14 +307,14 @@
             render: (h, params) => {
               if (params.row[problem.id]) {
                 let status = params.row[problem.id]
-                let acTime, errorNumber
+                let cellText = []
                 if (status.is_ac) {
-                  acTime = h('span', status.ac_time)
+                  cellText.push(status.ac_time)
                 }
                 if (status.error_number !== 0) {
-                  errorNumber = h('p', '(-' + status.error_number + ')')
+                  cellText.push('(-' + status.error_number + ')')
                 }
-                return h('div', [acTime, errorNumber])
+                return h('span', cellText.join(' '))
               }
             }
           })
@@ -338,5 +351,32 @@
         margin-left: 8px;
       }
     }
+  }
+
+  .contest-rank-table /deep/ .ivu-table-cell {
+    white-space: nowrap;
+    word-break: normal;
+    overflow: visible;
+    line-height: 1.2;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .contest-rank-table /deep/ th,
+  .contest-rank-table /deep/ td {
+    height: 36px;
+  }
+
+  .contest-rank-table /deep/ th > .ivu-table-cell,
+  .contest-rank-table /deep/ td > .ivu-table-cell {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .contest-rank-table /deep/ .rank-user-link,
+  .contest-rank-table /deep/ .rank-score-link {
+    display: inline-block;
+    white-space: nowrap;
+    word-break: normal;
   }
 </style>

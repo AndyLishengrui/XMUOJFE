@@ -31,39 +31,15 @@
       </div>
       </Col>
     </Row>
-    <codemirror :value="value" :options="options" @change="onEditorCodeChange" ref="myEditor">
-    </codemirror>
+    <div ref="editorContainer" style="width: 100%; min-height: 300px; max-height: 1000px; border: 1px solid #e8e8e8; border-radius: 4px;"></div>
   </div>
 </template>
 <script>
   import utils from '@/utils/utils'
-  import { codemirror } from 'vue-codemirror-lite'
-
-  // theme
-  import 'codemirror/theme/monokai.css'
-  import 'codemirror/theme/solarized.css'
-  import 'codemirror/theme/material.css'
-
-  // mode
-  import 'codemirror/mode/clike/clike.js'
-  import 'codemirror/mode/python/python.js'
-  import 'codemirror/mode/go/go.js'
-  import 'codemirror/mode/javascript/javascript.js'
-
-  // active-line.js
-  import 'codemirror/addon/selection/active-line.js'
-
-  // foldGutter
-  import 'codemirror/addon/fold/foldgutter.css'
-  import 'codemirror/addon/fold/foldgutter.js'
-  import 'codemirror/addon/fold/brace-fold.js'
-  import 'codemirror/addon/fold/indent-fold.js'
+  import * as monaco from 'monaco-editor'
 
   export default {
-    name: 'CodeMirror',
-    components: {
-      codemirror
-    },
+    name: 'MonacoEditor',
     props: {
       value: {
         type: String,
@@ -81,57 +57,94 @@
       },
       theme: {
         type: String,
-        default: 'solarized'
+        default: 'vs'
       }
     },
     data () {
       return {
-        options: {
-          // codemirror options
-          tabSize: 4,
-          mode: 'text/x-csrc',
-          theme: 'solarized',
-          lineNumbers: true,
-          line: true,
-          // 代码折叠
-          foldGutter: true,
-          gutters: ['CodeMirror-linenumbers', 'CodeMirror-foldgutter'],
-          // 选中文本自动高亮，及高亮方式
-          styleSelectedText: true,
-          lineWrapping: true,
-          highlightSelectionMatches: {showToken: /\w/, annotateScrollbar: true}
-        },
+        editor: null,
         mode: {
-          'C++': 'text/x-csrc'
+          'C': 'c',
+          'C++': 'cpp',
+          'Java': 'java',
+          'Python3': 'python',
+          'Golang': 'go',
+          'JavaScript': 'javascript'
         },
         themes: [
-          {label: this.$i18n.t('m.Monokai'), value: 'monokai'},
-          {label: this.$i18n.t('m.Solarized_Light'), value: 'solarized'},
-          {label: this.$i18n.t('m.Material'), value: 'material'}
+          {label: this.$i18n.t('m.Light'), value: 'vs'},
+          {label: this.$i18n.t('m.Dark'), value: 'vs-dark'},
+          {label: this.$i18n.t('m.High_Contrast'), value: 'hc-black'}
         ]
       }
     },
     mounted () {
+      this.initEditor()
       utils.getLanguages().then(languages => {
         let mode = {}
         languages.forEach(lang => {
-          mode[lang.name] = lang.content_type
+          switch (lang.name) {
+            case 'C':
+              mode[lang.name] = 'c'
+              break
+            case 'C++':
+              mode[lang.name] = 'cpp'
+              break
+            case 'Java':
+              mode[lang.name] = 'java'
+              break
+            case 'Python3':
+              mode[lang.name] = 'python'
+              break
+            case 'Golang':
+              mode[lang.name] = 'go'
+              break
+            case 'JavaScript':
+              mode[lang.name] = 'javascript'
+              break
+            default:
+              mode[lang.name] = 'plaintext'
+          }
         })
         this.mode = mode
-        this.editor.setOption('mode', this.mode[this.language])
+        this.editor.setModelLanguage(this.editor.getModel(), this.mode[this.language] || 'plaintext')
       })
-      this.editor.focus()
+    },
+    beforeDestroy () {
+      if (this.editor) {
+        this.editor.dispose()
+      }
     },
     methods: {
-      onEditorCodeChange (newCode) {
-        this.$emit('update:value', newCode)
+      initEditor () {
+        this.editor = monaco.editor.create(this.$refs.editorContainer, {
+          value: this.value,
+          language: this.mode[this.language] || 'plaintext',
+          theme: this.theme,
+          minimap: {
+            enabled: true
+          },
+          scrollBeyondLastLine: false,
+          automaticLayout: true,
+          fontSize: 14,
+          lineNumbers: 'on',
+          wordWrap: 'on',
+          scrollbar: {
+            vertical: 'auto',
+            horizontal: 'auto'
+          }
+        })
+
+        this.editor.onDidChangeModelContent(() => {
+          this.$emit('update:value', this.editor.getValue())
+        })
       },
       onLangChange (newVal) {
-        this.editor.setOption('mode', this.mode[newVal])
+        this.editor.setModelLanguage(this.editor.getModel(), this.mode[newVal] || 'plaintext')
         this.$emit('changeLang', newVal)
       },
       onThemeChange (newTheme) {
-        this.editor.setOption('theme', newTheme)
+        monaco.editor.setTheme(newTheme)
         this.$emit('changeTheme', newTheme)
       },
       onResetClick () {
@@ -152,15 +165,14 @@
         fileReader.readAsText(f, 'UTF-8')
       }
     },
-    computed: {
-      editor () {
-        // get current editor object
-        return this.$refs.myEditor.editor
-      }
-    },
     watch: {
-      'theme' (newVal, oldVal) {
-        this.editor.setOption('theme', newVal)
+      'value' (newVal) {
+        if (this.editor && newVal !== this.editor.getValue()) {
+          this.editor.setValue(newVal)
+        }
+      },
+      'theme' (newVal) {
+        monaco.editor.setTheme(newVal)
       }
     }
   }
@@ -176,15 +188,5 @@
     .fl-right {
       float: right;
     }
-  }
-</style>
-
-<style>
-  .CodeMirror {
-    height: auto !important;
-  }
-  .CodeMirror-scroll {
-    min-height: 300px;
-    max-height: 1000px;
   }
 </style>
