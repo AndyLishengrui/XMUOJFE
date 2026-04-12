@@ -301,6 +301,7 @@
         allLanguage: {},
         inputVisible: false,
         tagInput: '',
+        tagCreating: false,
         template: {},
         title: '',
         spjMode: '',
@@ -435,24 +436,47 @@
         api.getProblemTagList({ keyword: queryString }).then(res => {
           let tagList = []
           for (let tag of res.data.data) {
-            tagList.push({value: tag.name})
+            tagList.push({value: tag.name, problemCount: tag.problem_count})
           }
           cb(tagList)
         }).catch(() => {
         })
+      },
+      appendTag (tagName) {
+        if (!tagName) {
+          return
+        }
+        let cleanedTagName = tagName.trim()
+        if (!cleanedTagName) {
+          return
+        }
+        if (this.problem.tags.indexOf(cleanedTagName) === -1) {
+          this.problem.tags.push(cleanedTagName)
+        }
       },
       resetTestCase () {
         this.testCaseUploaded = false
         this.problem.test_case_score = []
         this.problem.test_case_id = ''
       },
-      addTag () {
-        let inputValue = this.tagInput
-        if (inputValue) {
-          this.problem.tags.push(inputValue)
+      addTag (item) {
+        let inputValue = item && item.value ? item.value : this.tagInput
+        if (!inputValue) {
+          this.inputVisible = false
+          this.tagInput = ''
+          return
         }
-        this.inputVisible = false
-        this.tagInput = ''
+        this.tagCreating = true
+        api.createProblemTag({name: inputValue}).then(res => {
+          this.appendTag(res.data.data.name)
+          this.inputVisible = false
+          this.tagInput = ''
+          this.tagCreating = false
+        }).catch(err => {
+          this.tagCreating = false
+          let message = (err.data && err.data.data) || 'Create tag failed'
+          this.$error(message)
+        })
       },
       closeTag (tag) {
         this.problem.tags.splice(this.problem.tags.indexOf(tag), 1)
@@ -559,6 +583,7 @@
           }
         }
         this.problem.languages = this.problem.languages.sort()
+        this.problem.tags = Array.from(new Set(this.problem.tags.map(tag => tag.trim()).filter(tag => tag)))
         this.problem.template = {}
         for (let k in this.template) {
           if (this.template[k].checked) {

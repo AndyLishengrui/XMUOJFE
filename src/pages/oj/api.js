@@ -111,8 +111,10 @@ export default {
   getLanguages () {
     return ajax('languages', 'get')
   },
-  getProblemTagList () {
-    return ajax('problem/tags', 'get')
+  getProblemTagList (params) {
+    return ajax('problem/tags', 'get', {
+      params
+    })
   },
   getProblemList (offset, limit, searchParams) {
     let params = {

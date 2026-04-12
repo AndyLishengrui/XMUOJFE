@@ -32,6 +32,11 @@
                    icon="ios-search-strong"/>
           </li>
           <li>
+            <Input v-model="tagKeyword"
+                   :placeholder="$t('m.Tags')"
+                   icon="ios-pricetags"/>
+          </li>
+          <li>
             <Button type="info" @click="onReset">
               <Icon type="refresh"></Icon>
               {{$t('m.Reset')}}
@@ -53,13 +58,21 @@
     <Col :span="5">
     <Panel :padding="10">
       <div slot="title" class="taglist-title">{{$t('m.Tags')}}</div>
-      <Button v-for="tag in tagList"
+      <div v-if="query.tag" class="active-tag-row">
+        <Tag color="blue">{{query.tag}}</Tag>
+        <Button type="text" @click="clearTagFilter">{{$t('m.Reset')}}</Button>
+      </div>
+      <Button v-for="tag in filteredTagList"
               :key="tag.name"
               @click="filterByTag(tag.name)"
               type="ghost"
               :disabled="query.tag === tag.name"
               shape="circle"
-              class="tag-btn">{{tag.name}}
+              class="tag-btn">{{tag.name}} ({{tag.problem_count}})
+      </Button>
+
+      <Button v-if="canToggleMoreTags" type="text" long @click="tagsExpanded = !tagsExpanded">
+        {{tagsExpanded ? '收起标签' : '展开更多标签'}}
       </Button>
 
       <Button long id="pick-one" @click="pickone">
@@ -161,6 +174,8 @@
         problemList: [],
         limit: 20,
         total: 0,
+        tagKeyword: '',
+        tagsExpanded: false,
         loadings: {
           table: true,
           tag: true
@@ -204,7 +219,7 @@
       getProblemList () {
         let offset = (this.query.page - 1) * this.query.limit
         this.loadings.table = true
-        api.getProblemList(offset, this.limit, this.query).then(res => {
+        api.getProblemList(offset, this.query.limit, this.query).then(res => {
           this.loadings.table = false
           this.total = res.data.data.total
           this.problemList = res.data.data.results
@@ -216,7 +231,8 @@
         })
       },
       getTagList () {
-        api.getProblemTagList().then(res => {
+        this.loadings.tag = true
+        api.getProblemTagList({ keyword: this.tagKeyword }).then(res => {
           this.tagList = res.data.data
           this.loadings.tag = false
         }, res => {
@@ -225,6 +241,11 @@
       },
       filterByTag (tagName) {
         this.query.tag = tagName
+        this.query.page = 1
+        this.pushRouter()
+      },
+      clearTagFilter () {
+        this.query.tag = ''
         this.query.page = 1
         this.pushRouter()
       },
@@ -270,13 +291,33 @@
       }
     },
     computed: {
-      ...mapGetters(['isAuthenticated'])
+      ...mapGetters(['isAuthenticated']),
+      filteredTagList () {
+        let keyword = this.tagKeyword.trim().toLowerCase()
+        let tags = this.tagList.filter(tag => {
+          if (!keyword) {
+            return true
+          }
+          return tag.name.toLowerCase().indexOf(keyword) !== -1
+        })
+        if (this.tagsExpanded) {
+          return tags
+        }
+        return tags.slice(0, 24)
+      },
+      canToggleMoreTags () {
+        return this.tagList.length > 24
+      }
     },
     watch: {
       '$route' (newVal, oldVal) {
         if (newVal !== oldVal) {
           this.init(true)
         }
+      },
+      'tagKeyword' () {
+        this.tagsExpanded = false
+        this.getTagList()
       },
       'isAuthenticated' (newVal) {
         if (newVal === true) {
@@ -295,6 +336,10 @@
 
   .tag-btn {
     margin-right: 5px;
+    margin-bottom: 10px;
+  }
+
+  .active-tag-row {
     margin-bottom: 10px;
   }
 

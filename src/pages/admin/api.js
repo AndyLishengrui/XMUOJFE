@@ -209,8 +209,28 @@ export default {
     })
   },
   getProblemTagList (params) {
-    return ajax('problem/tags', 'get', {
+    return ajax('admin/problem/tags', 'get', {
       params
+    })
+  },
+  createProblemTag (data) {
+    return ajax('admin/problem/tags', 'post', {
+      data
+    })
+  },
+  updateProblemTag (data) {
+    return ajax('admin/problem/tags', 'put', {
+      data
+    })
+  },
+  getProblemTagAudit (params) {
+    return ajax('admin/problem/tag_audit', 'get', {
+      params
+    })
+  },
+  mergeProblemTag (data) {
+    return ajax('admin/problem/tag_merge', 'post', {
+      data
     })
   },
   compileSPJ (data) {
