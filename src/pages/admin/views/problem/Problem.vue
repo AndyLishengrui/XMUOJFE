@@ -259,6 +259,14 @@
         <el-form-item :label="$t('m.Source')">
           <el-input :placeholder="$t('m.Source')" v-model="problem.source"></el-input>
         </el-form-item>
+        <el-form-item :label="$t('m.Allow_Public_TestCase_Download')">
+          <el-switch
+            v-model="problem.allow_public_test_case_download"
+            active-text=""
+            inactive-text="">
+          </el-switch>
+          <p class="form-help">{{$t('m.Allow_Public_TestCase_Download_Help')}}</p>
+        </el-form-item>
         <save @click.native="submit()">Save</save>
       </el-form>
     </Panel>
@@ -291,10 +299,12 @@
         contest: {},
         problem: {
           languages: [],
+          allow_public_test_case_download: false,
           io_mode: {'io_mode': 'Standard IO', 'input': 'input.txt', 'output': 'output.txt'}
         },
         reProblem: {
           languages: [],
+          allow_public_test_case_download: false,
           io_mode: {'io_mode': 'Standard IO', 'input': 'input.txt', 'output': 'output.txt'}
         },
         testCaseUploaded: false,
@@ -347,6 +357,7 @@
           rule_type: 'ACM',
           hint: '',
           source: '',
+          allow_public_test_case_download: false,
           io_mode: {'io_mode': 'Standard IO', 'input': 'input.txt', 'output': 'output.txt'}
         }
         let contestID = this.$route.params.contestId
@@ -659,6 +670,12 @@
     }
     .add-sample-btn {
       margin-bottom: 10px;
+    }
+    .form-help {
+      margin: 8px 0 0;
+      color: #909399;
+      font-size: 12px;
+      line-height: 1.6;
     }
 
   }

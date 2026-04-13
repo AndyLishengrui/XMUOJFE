@@ -56,6 +56,7 @@
         <el-table-column width="120" :label="$t('m.Problem_Tag_Action')" fixed="right">
           <template slot-scope="{row}">
             <el-button type="text" @click="openEditDialog(row)">{{$t('m.Problem_Tag_Edit')}}</el-button>
+            <el-button type="text" class="danger-text" @click="confirmDelete(row)">{{$t('m.Problem_Tag_Delete')}}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -88,6 +89,7 @@
                     <el-tag :type="tag.is_active ? 'success' : 'info'" size="mini">{{ tag.name }}</el-tag>
                     <span class="audit-meta">#{{ tag.id }} / {{ tag.problem_count }}</span>
                     <el-button type="text" @click="openEditById(tag.id)">{{$t('m.Problem_Tag_Edit')}}</el-button>
+                    <el-button type="text" class="danger-text" @click="confirmDeleteById(tag.id)">{{$t('m.Problem_Tag_Delete')}}</el-button>
                   </div>
                 </div>
               </template>
@@ -107,6 +109,7 @@
             <el-table-column width="120" :label="$t('m.Problem_Tag_Action')">
               <template slot-scope="{row}">
                 <el-button type="text" @click="openEditById(row.id)">{{$t('m.Problem_Tag_Edit')}}</el-button>
+                <el-button type="text" class="danger-text" @click="confirmDeleteById(row.id)">{{$t('m.Problem_Tag_Delete')}}</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -120,6 +123,7 @@
             <el-table-column width="120" :label="$t('m.Problem_Tag_Action')">
               <template slot-scope="{row}">
                 <el-button type="text" @click="openEditById(row.id)">{{$t('m.Problem_Tag_Edit')}}</el-button>
+                <el-button type="text" class="danger-text" @click="confirmDeleteById(row.id)">{{$t('m.Problem_Tag_Delete')}}</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -168,6 +172,12 @@
         </el-form-item>
       </el-form>
       <span slot="footer">
+        <el-button
+          v-if="editingTag.id"
+          type="danger"
+          plain
+          :loading="loading.save"
+          @click="confirmDelete(editingTag)">{{$t('m.Problem_Tag_Delete')}}</el-button>
         <cancel @click.native="dialogVisible = false"></cancel>
         <save @click.native="saveTag"></save>
       </span>
@@ -335,17 +345,12 @@
         this.dialogVisible = true
       },
       openEditById (tagId) {
-        const tag = this.tagLookup[tagId]
-        if (tag) {
-          this.openEditDialog(tag)
-          return
-        }
-        this.filters.includeInactive = true
-        this.fetchTags().then(() => {
-          const refreshedTag = this.tagLookup[tagId]
-          if (refreshedTag) {
-            this.openEditDialog(refreshedTag)
-          }
+        this.loading.save = true
+        api.getProblemTag(tagId).then(res => {
+          this.loading.save = false
+          this.openEditDialog(res.data.data)
+        }).catch(() => {
+          this.loading.save = false
         })
       },
       resetEditingTag () {
@@ -395,6 +400,34 @@
         }).catch(() => {
           this.loading.save = false
         })
+      },
+      confirmDeleteById (tagId) {
+        this.loading.save = true
+        api.getProblemTag(tagId).then(res => {
+          this.loading.save = false
+          this.confirmDelete(res.data.data)
+        }).catch(() => {
+          this.loading.save = false
+        })
+      },
+      confirmDelete (tag) {
+        const problemCount = tag.problem_count || 0
+        const tagLabel = `${tag.name || ('#' + tag.id)} (#${tag.id})`
+        this.$confirm(
+          `${this.$t('m.Problem_Tag_Delete_Confirm')}\n${tagLabel}\n${this.$t('m.Problem_Tag_Delete_Impact')} ${problemCount}`,
+          this.$t('m.Problem_Tag_Delete_Title'),
+          {type: 'warning'}
+        ).then(() => {
+          this.loading.save = true
+          api.deleteProblemTag(tag.id).then(() => {
+            this.loading.save = false
+            this.dialogVisible = false
+            this.fetchAll()
+            this.$success(this.$t('m.Problem_Tag_Delete_Success'))
+          }).catch(() => {
+            this.loading.save = false
+          })
+        }).catch(() => {})
       },
       submitMerge () {
         if (!this.mergeTargetId || this.mergeSourceIds.length === 0) {
@@ -508,5 +541,9 @@
 
   .merge-form {
     margin-top: 16px;
+  }
+
+  .danger-text {
+    color: #f56c6c;
   }
 </style>

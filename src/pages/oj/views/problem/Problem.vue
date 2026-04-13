@@ -46,10 +46,10 @@
             <p class="content">{{problem.source}}</p>
           </div>
 
-          <div v-if="problem.source === 'xmu'">
-            <p class="title" key="info1">温馨提示</p>
-            <p class="content" key="info2">实在搞不定的话，你可以
-              <Button type="ghost" @click="downloadTestCase(problem.id)">点此下载测试数据</Button>
+          <div v-if="problem.can_download_test_case">
+            <p class="title" key="info1">{{$t('m.TestCase_Download_Title')}}</p>
+            <p class="content" key="info2">{{$t('m.TestCase_Download_Description')}}
+              <Button type="ghost" @click="downloadTestCase(problem.id)">{{$t('m.TestCase_Download_Button')}}</Button>
             </p>
           </div>
 

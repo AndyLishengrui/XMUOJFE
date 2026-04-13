@@ -213,6 +213,13 @@ export default {
       params
     })
   },
+  getProblemTag (id) {
+    return ajax('admin/problem/tags', 'get', {
+      params: {
+        id
+      }
+    })
+  },
   createProblemTag (data) {
     return ajax('admin/problem/tags', 'post', {
       data
@@ -221,6 +228,13 @@ export default {
   updateProblemTag (data) {
     return ajax('admin/problem/tags', 'put', {
       data
+    })
+  },
+  deleteProblemTag (id) {
+    return ajax('admin/problem/tags', 'delete', {
+      params: {
+        id
+      }
     })
   },
   getProblemTagAudit (params) {
