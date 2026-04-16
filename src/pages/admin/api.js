@@ -237,6 +237,16 @@ export default {
       }
     })
   },
+  batchDeleteProblemTag (data) {
+    return ajax('admin/problem/tags/batch_delete', 'post', {
+      data
+    })
+  },
+  batchUpdateProblemTag (data) {
+    return ajax('admin/problem/tags/batch_update', 'put', {
+      data
+    })
+  },
   getProblemTagAudit (params) {
     return ajax('admin/problem/tag_audit', 'get', {
       params
@@ -280,6 +290,16 @@ export default {
     params = utils.filterEmptyValue(params)
     return ajax('admin/problem', 'get', {
       params
+    })
+  },
+  batchUpdateProblemTags (data) {
+    return ajax('admin/problem/batch_update', 'put', {
+      data
+    })
+  },
+  batchUpdateProblemSource (data) {
+    return ajax('admin/problem/batch_update', 'post', {
+      data
     })
   },
   getContestProblemList (params) {

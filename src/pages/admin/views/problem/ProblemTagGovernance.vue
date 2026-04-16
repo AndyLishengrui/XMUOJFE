@@ -24,12 +24,16 @@
         </el-switch>
         <el-button type="primary" icon="el-icon-search" @click="fetchTags">{{$t('m.Problem_Tag_Refresh')}}</el-button>
         <el-button type="success" icon="el-icon-plus" @click="openCreateDialog">{{$t('m.Problem_Tag_Create')}}</el-button>
+        <el-button v-if="isSuperAdmin" type="danger" plain :disabled="selectedTags.length === 0" @click="confirmBatchDelete">Batch Delete</el-button>
+        <el-button v-if="isSuperAdmin" type="warning" plain :disabled="selectedTags.length === 0" @click="batchDialogVisible = true">Batch Update</el-button>
       </div>
 
       <el-table
         v-loading="loading.tags"
         :data="tagList"
+        @selection-change="handleSelectionChange"
         style="width: 100%">
+        <el-table-column v-if="isSuperAdmin" type="selection" width="55"></el-table-column>
         <el-table-column width="80" prop="id" label="ID"></el-table-column>
         <el-table-column min-width="160" :label="$t('m.Name')" prop="name"></el-table-column>
         <el-table-column min-width="160" :label="$t('m.Problem_Tag_Normalized_Name')" prop="normalized_name"></el-table-column>
@@ -212,6 +216,39 @@
         <save @click.native="submitMerge"></save>
       </span>
     </el-dialog>
+
+    <el-dialog
+      title="Batch Update Tags"
+      width="520px"
+      :visible.sync="batchDialogVisible"
+      @close="resetBatchState">
+      <el-form label-position="top">
+        <el-form-item label="Selected Tags">
+          <div class="tag-chip-list">
+            <el-tag v-for="tag in selectedTags" :key="'selected-tag-' + tag.id" size="mini">{{ tag.name }} (#{{ tag.id }})</el-tag>
+          </div>
+        </el-form-item>
+        <el-form-item label="Rank">
+          <el-switch v-model="batchUpdate.includeRank"></el-switch>
+          <el-input-number v-if="batchUpdate.includeRank" v-model="batchUpdate.rank" :min="0" :max="9999" style="margin-left: 12px;"></el-input-number>
+        </el-form-item>
+        <el-form-item label="Visible">
+          <el-switch v-model="batchUpdate.includeIsActive"></el-switch>
+          <el-radio-group v-if="batchUpdate.includeIsActive" v-model="batchUpdate.is_active" style="margin-left: 12px;">
+            <el-radio :label="true">Active</el-radio>
+            <el-radio :label="false">Inactive</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="Description">
+          <el-switch v-model="batchUpdate.includeDescription"></el-switch>
+          <el-input v-if="batchUpdate.includeDescription" type="textarea" :rows="3" v-model="batchUpdate.description" placeholder="Leave empty to clear description" style="margin-top: 12px;"></el-input>
+        </el-form-item>
+      </el-form>
+      <span slot="footer">
+        <cancel @click.native="batchDialogVisible = false"></cancel>
+        <save @click.native="submitBatchUpdate"></save>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
@@ -245,6 +282,7 @@
         },
         tagList: [],
         tagLookup: {},
+        selectedTags: [],
         auditThreshold: 2,
         audit: {
           summary: {
@@ -263,6 +301,15 @@
         dialogVisible: false,
         editingTag: createEmptyTag(),
         mergeDialogVisible: false,
+        batchDialogVisible: false,
+        batchUpdate: {
+          includeRank: false,
+          rank: 0,
+          includeIsActive: false,
+          is_active: true,
+          includeDescription: false,
+          description: ''
+        },
         mergeGroup: {
           normalized_name: '',
           tags: []
@@ -272,6 +319,9 @@
       }
     },
     computed: {
+      isSuperAdmin () {
+        return this.$store.getters.isSuperAdmin
+      },
       summaryCards () {
         return [
           {key: 'total', label: this.$t('m.Problem_Tag_Total'), value: this.audit.summary.total_tags},
@@ -300,6 +350,8 @@
           only_used: this.filters.onlyUsed
         }).then(res => {
           this.tagList = res.data.data
+          const selectedIdSet = new Set(this.selectedTags.map(item => item.id))
+          this.selectedTags = this.tagList.filter(item => selectedIdSet.has(item.id))
           this.tagLookup = this.tagList.reduce((lookup, item) => {
             lookup[item.id] = item
             return lookup
@@ -308,6 +360,9 @@
         }).catch(() => {
           this.loading.tags = false
         })
+      },
+      handleSelectionChange (rows) {
+        this.selectedTags = rows
       },
       fetchAudit () {
         this.loading.audit = true
@@ -376,6 +431,16 @@
         this.mergeTargetId = null
         this.mergeSourceIds = []
       },
+      resetBatchState () {
+        this.batchUpdate = {
+          includeRank: false,
+          rank: 0,
+          includeIsActive: false,
+          is_active: true,
+          includeDescription: false,
+          description: ''
+        }
+      },
       saveTag () {
         const payload = {
           name: (this.editingTag.name || '').trim(),
@@ -427,6 +492,42 @@
           }).catch(() => {
             this.loading.save = false
           })
+        }).catch(() => {})
+      },
+      confirmBatchDelete () {
+        const count = this.selectedTags.length
+        this.$confirm(`Delete ${count} selected tags? Problems left without tags will automatically get toTag.`, 'Batch Delete Tags', {
+          type: 'warning'
+        }).then(() => {
+          api.batchDeleteProblemTag({
+            tag_ids: this.selectedTags.map(item => item.id)
+          }).then(() => {
+            this.selectedTags = []
+            this.fetchAll()
+          }).catch(() => {})
+        }).catch(() => {})
+      },
+      submitBatchUpdate () {
+        const payload = {
+          tag_ids: this.selectedTags.map(item => item.id)
+        }
+        if (this.batchUpdate.includeRank) {
+          payload.rank = this.batchUpdate.rank
+        }
+        if (this.batchUpdate.includeIsActive) {
+          payload.is_active = this.batchUpdate.is_active
+        }
+        if (this.batchUpdate.includeDescription) {
+          payload.description = this.batchUpdate.description
+        }
+        if (Object.keys(payload).length === 1) {
+          this.$error('Please choose at least one field to update')
+          return
+        }
+        api.batchUpdateProblemTag(payload).then(() => {
+          this.batchDialogVisible = false
+          this.selectedTags = []
+          this.fetchAll()
         }).catch(() => {})
       },
       submitMerge () {

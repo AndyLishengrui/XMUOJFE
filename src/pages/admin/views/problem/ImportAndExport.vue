@@ -60,10 +60,17 @@
       </div>
     </panel>
     <panel title="Import QDUOJ Problems (beta)">
+      <div class="import-tag-row">
+        <span class="import-tag-label">Import Tags</span>
+        <el-select v-model="importTagsQDU" multiple filterable allow-create default-first-option style="width: 100%" placeholder="Optional tags for imported problems">
+          <el-option v-for="tag in availableTags" :key="'qdu-tag-' + tag" :label="tag" :value="tag"></el-option>
+        </el-select>
+      </div>
       <el-upload
         ref="QDU"
         action="/api/admin/import_problem"
         name="file"
+        :data="buildImportPayload(importTagsQDU)"
         :file-list="fileList1"
         :show-file-list="true"
         :with-credentials="true"
@@ -78,10 +85,17 @@
     </panel>
 
     <panel title="Import FPS Problems (beta)">
+      <div class="import-tag-row">
+        <span class="import-tag-label">Import Tags</span>
+        <el-select v-model="importTagsFPS" multiple filterable allow-create default-first-option style="width: 100%" placeholder="Optional tags for imported problems">
+          <el-option v-for="tag in availableTags" :key="'fps-tag-' + tag" :label="tag" :value="tag"></el-option>
+        </el-select>
+      </div>
       <el-upload
         ref="FPS"
         action="/api/admin/import_fps"
         name="file"
+        :data="buildImportPayload(importTagsFPS)"
         :file-list="fileList2"
         :show-file-list="true"
         :with-credentials="true"
@@ -115,14 +129,28 @@
         keyword: '',
         problems: [],
         selected_problems: [],
-        syncingRouteState: false
+        syncingRouteState: false,
+        availableTags: [],
+        importTagsQDU: [],
+        importTagsFPS: []
       }
     },
     mounted () {
       this.applyRouteState(this.$route)
+      this.fetchAvailableTags()
       this.getProblems(this.page, false)
     },
     methods: {
+      fetchAvailableTags () {
+        api.getProblemTagList({include_inactive: true}).then(res => {
+          this.availableTags = res.data.data.map(item => item.name)
+        }).catch(() => {})
+      },
+      buildImportPayload (tags) {
+        return {
+          default_tags: JSON.stringify(Array.from(new Set((tags || []).map(tag => String(tag).trim()).filter(tag => tag))))
+        }
+      },
       applyRouteState (route) {
         const query = route.query || {}
         const parsedPage = parseInt(query.page)
@@ -209,6 +237,8 @@
           this.$error(response.data)
         } else {
           this.$success('Successfully imported ' + response.data.import_count + ' problems')
+          this.importTagsQDU = []
+          this.importTagsFPS = []
           this.getProblems()
         }
       },
@@ -233,5 +263,17 @@
 </script>
 
 <style scoped lang="less">
+  .import-tag-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .import-tag-label {
+    min-width: 90px;
+    color: #606266;
+    font-size: 13px;
+  }
 
 </style>

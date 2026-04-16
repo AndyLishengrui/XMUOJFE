@@ -116,7 +116,7 @@ export const PROBLEM_PERMISSION = {
 export const STORAGE_KEY = {
   AUTHED: 'authed',
   PROBLEM_CODE: 'problemCode',
-  languages: 'languages'
+  languages: 'languages_v2'
 }
 
 export function buildProblemCodeKey (problemID, contestID = null) {

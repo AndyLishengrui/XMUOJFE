@@ -1,0 +1,235 @@
+{
+  "name": "xmuoj-vscode",
+  "displayName": "XMUOJ",
+  "description": "在 VS Code 中浏览 XMUOJ 比赛与题目，保留刷题工作台状态，并直接提交代码。",
+  "version": "0.0.13",
+  "publisher": "xmuoj",
+  "scripts": {
+    "package": "vsce package --allow-missing-repository --skip-license",
+    "lint": "echo 'Lint rules are not configured yet'"
+  },
+  "engines": {
+    "vscode": "^1.88.0"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.6.2"
+  },
+  "categories": [
+    "Education",
+    "Programming Languages"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "XMUOJ",
+      "properties": {
+        "xmuoj.baseUrl": {
+          "type": "string",
+          "default": "http://www.xmuoj.com",
+          "description": "XMUOJ 服务地址，例如 http://www.xmuoj.com"
+        },
+        "xmuoj.allowInsecureTls": {
+          "type": "boolean",
+          "default": false,
+          "description": "允许连接使用自签名 HTTPS 证书的 XMUOJ 站点。仅在校内测试环境使用。"
+        },
+        "xmuoj.editor.shortcuts": {
+          "type": "array",
+          "default": [
+            "start",
+            "test",
+            "submit",
+            "description",
+            "results",
+            "aiSolution",
+            "aiCode"
+          ],
+          "items": {
+            "type": "string",
+            "enum": [
+              "start",
+              "test",
+              "submit",
+              "description",
+              "results",
+              "language",
+              "aiSolution",
+              "aiCode"
+            ]
+          },
+          "description": "编辑器内显示哪些 XMUOJ 快捷操作，风格参考 LeetCode 的 CodeLens 入口；AI 相关入口只会对管理员显示。"
+        },
+        "xmuoj.enableSideMode": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用刷题 side mode 布局：题面固定在主列，代码与结果尽量在旁边列打开。"
+        },
+        "xmuoj.colorizeProblems": {
+          "type": "boolean",
+          "default": true,
+          "description": "在题目树中使用图标和颜色强化状态显示，例如 AC、本地通过、已提交。"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "xmuoj.quickStart",
+        "title": "XMUOJ：快速开始"
+      },
+      {
+        "command": "xmuoj.configureBaseUrl",
+        "title": "XMUOJ：设置站点地址"
+      },
+      {
+        "command": "xmuoj.login",
+        "title": "XMUOJ：登录"
+      },
+      {
+        "command": "xmuoj.logout",
+        "title": "XMUOJ：退出登录"
+      },
+      {
+        "command": "xmuoj.openContest",
+        "title": "XMUOJ：打开比赛"
+      },
+      {
+        "command": "xmuoj.browseContests",
+        "title": "XMUOJ：浏览比赛"
+      },
+      {
+        "command": "xmuoj.browseProblemset",
+        "title": "XMUOJ：浏览题库"
+      },
+      {
+        "command": "xmuoj.refreshContest",
+        "title": "XMUOJ：刷新比赛"
+      },
+      {
+        "command": "xmuoj.openProblem",
+        "title": "XMUOJ：打开题目"
+      },
+      {
+        "command": "xmuoj.startWorkingOnProblem",
+        "title": "XMUOJ：开始作答"
+      },
+      {
+        "command": "xmuoj.createProblemWorkspace",
+        "title": "XMUOJ：创建本地题目工作区"
+      },
+      {
+        "command": "xmuoj.downloadTestCases",
+        "title": "XMUOJ：下载测试数据"
+      },
+      {
+        "command": "xmuoj.generateLocalTasks",
+        "title": "XMUOJ：生成本地任务"
+      },
+      {
+        "command": "xmuoj.switchProblemLanguage",
+        "title": "XMUOJ：切换题目语言"
+      },
+      {
+        "command": "xmuoj.generateAiSolution",
+        "title": "XMUOJ：AI解题"
+      },
+      {
+        "command": "xmuoj.generateAiCode",
+        "title": "XMUOJ：AI代码"
+      },
+      {
+        "command": "xmuoj.runLocalTests",
+        "title": "XMUOJ：运行本地测试"
+      },
+      {
+        "command": "xmuoj.submitCurrentFile",
+        "title": "XMUOJ：提交当前文件"
+      },
+      {
+        "command": "xmuoj.reopenRecentContest",
+        "title": "XMUOJ：重新打开最近比赛"
+      },
+      {
+        "command": "xmuoj.reopenRecentProblem",
+        "title": "XMUOJ：重新打开最近题目"
+      },
+      {
+        "command": "xmuoj.materializeContestWorkspace",
+        "title": "XMUOJ：批量生成比赛工作区"
+      },
+      {
+        "command": "xmuoj.showLastLocalReport",
+        "title": "XMUOJ：查看最近本地报告"
+      },
+      {
+        "command": "xmuoj.showLastSubmissionResult",
+        "title": "XMUOJ：查看最近提交结果"
+      },
+      {
+        "command": "xmuoj.showResultPanel",
+        "title": "XMUOJ：打开结果面板"
+      },
+      {
+        "command": "xmuoj.openSubmissionHistoryEntry",
+        "title": "XMUOJ：打开历史提交结果"
+      },
+      {
+        "command": "xmuoj.showCurrentProblemDescription",
+        "title": "XMUOJ：查看当前题面"
+      },
+      {
+        "command": "xmuoj.reopenRecentProblemByItem",
+        "title": "XMUOJ：从最近记录打开题目"
+      },
+      {
+        "command": "xmuoj.reopenRecentContestByItem",
+        "title": "XMUOJ：从最近记录打开比赛"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "xmuoj",
+          "title": "XMUOJ",
+          "icon": "media/xmuoj.svg"
+        }
+      ]
+    },
+    "views": {
+      "xmuoj": [
+        {
+          "id": "xmuojExplorer",
+          "name": "刷题工作台",
+          "icon": "media/xmuoj.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "xmuojExplorer",
+        "contents": "# XMUOJ\n还没有打开题目工作台。\n\n[快速开始](command:xmuoj.quickStart)\n[浏览比赛](command:xmuoj.browseContests)\n[打开比赛](command:xmuoj.openContest)\n[浏览题库](command:xmuoj.browseProblemset)\n[设置站点地址](command:xmuoj.configureBaseUrl)\n[登录](command:xmuoj.login)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "xmuoj.browseContests",
+          "when": "view == xmuojExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "xmuoj.openContest",
+          "when": "view == xmuojExplorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "xmuoj.refreshContest",
+          "when": "view == xmuojExplorer",
+          "group": "navigation@2"
+        }
+      ]
+    }
+  }
+}

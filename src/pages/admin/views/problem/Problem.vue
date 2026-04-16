@@ -76,7 +76,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item :label="$t('m.Tag')" :error="error.tags" required>
+            <el-form-item :label="$t('m.Tag')" :error="error.tags">
               <span class="tags">
                 <el-tag
                   v-for="tag in problem.tags"
@@ -99,6 +99,7 @@
                 :fetch-suggestions="querySearch">
               </el-autocomplete>
               <el-button class="button-new-tag" v-else size="small" @click="inputVisible = true">+ {{$t('m.New_Tag')}}</el-button>
+              <p class="form-help">No tag selected will fall back to toTag automatically.</p>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -553,11 +554,7 @@
             return
           }
         }
-        if (!this.problem.tags.length) {
-          this.error.tags = 'Please add at least one tag'
-          this.$error(this.error.tags)
-          return
-        }
+        this.error.tags = ''
         if (this.problem.spj) {
           if (!this.problem.spj_code) {
             this.error.spj = 'Spj code is required'
