@@ -1,0 +1,21 @@
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Top left folder -->
+  <path d="M0.5 2C0.5 1.4 0.9 1 1.5 1h1l0.6 0.7H4.5C5.1 1.7 5.5 2.1 5.5 2.7v2.6C5.5 6 5.1 6.4 4.5 6.4H1.5C0.9 6.4 0.5 6 0.5 5.4V2Z" fill="#4A5568" opacity="0.7"/>
+
+  <!-- Bottom right folder -->
+  <path d="M7 5.2C7 4.6 7.4 4.2 8 4.2h1l0.6 0.7H11C11.6 4.9 12 5.3 12 5.9v2.6C12 9.2 11.6 9.6 11 9.6H8C7.4 9.6 7 9.2 7 8.6V5.2Z" fill="#4A5568" opacity="0.9"/>
+
+  <!-- Connector line -->
+  <line x1="5.5" y1="6.4" x2="7" y2="5.2" stroke="#4A5568" stroke-width="0.5" opacity="0.3" stroke-linecap="round"/>
+
+  <!-- Plus icon centered -->
+  <g transform="translate(7.5, 7)">
+    <circle cx="0" cy="0" r="1.8" fill="white" opacity="0.08"/>
+    <rect x="-2" y="-0.35" width="4" height="0.7" fill="white" opacity="0.8" rx="0.35"/>
+    <rect x="-0.35" y="-2" width="0.7" height="4" fill="white" opacity="0.8" rx="0.35"/>
+  </g>
+
+  <!-- Decorative dots -->
+  <circle cx="3" cy="4" r="0.3" fill="#4A5568" opacity="0.3"/>
+  <circle cx="10" cy="8" r="0.3" fill="#4A5568" opacity="0.3"/>
+</svg>

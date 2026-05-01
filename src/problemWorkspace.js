@@ -444,6 +444,7 @@ module.exports = {
   METADATA_FILE_NAME,
   PROBLEMSET_DIR_NAME,
   buildProblemDirectory,
+  buildProblemMarkdown,
   createWorkspaceTasks,
   chooseWorkspaceRoot,
   ensureProblemWorkspace,

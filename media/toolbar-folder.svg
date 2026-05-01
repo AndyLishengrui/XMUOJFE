@@ -1,0 +1,14 @@
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Main folder -->
+  <path d="M1.5 4A1 1 0 0 1 2.5 3h1.5l0.75 1H12a1 1 0 0 1 1 1v5.5a1 1 0 0 1-1 1H2.5a1 1 0 0 1-1-1V4Z" fill="#4A5568" opacity="0.8"/>
+
+  <!-- Folder shine -->
+  <path d="M1.5 4A1 1 0 0 1 2.5 3h1.5l0.75 1H5" stroke="white" stroke-width="0.6" opacity="0.25" stroke-linecap="round"/>
+
+  <!-- Plus icon -->
+  <g transform="translate(10, 9)">
+    <circle cx="0" cy="0" r="2.2" fill="white" opacity="0.1"/>
+    <rect x="-2.5" y="-0.4" width="5" height="0.8" fill="#4A5568" rx="0.4"/>
+    <rect x="-0.4" y="-2.5" width="0.8" height="5" fill="#4A5568" rx="0.4"/>
+  </g>
+</svg>

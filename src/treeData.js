@@ -4,6 +4,7 @@ const vscode = require("vscode");
 
 const { findExistingProblemWorkspace } = require("./problemWorkspace");
 
+
 function isProblemColorizationEnabled() {
   return Boolean(vscode.workspace.getConfiguration("xmuoj").get("colorizeProblems", true));
 }
@@ -34,7 +35,11 @@ function getActionIcon(command) {
     "xmuoj.submitCurrentFile": "cloud-upload",
     "xmuoj.refreshContest": "refresh",
     "xmuoj.materializeContestWorkspace": "files",
-    "xmuoj.openSubmissionHistoryEntry": "graph"
+    "xmuoj.openSubmissionHistoryEntry": "graph",
+    "xmuoj.revealContestWorkspace": "link-external",
+    "xmuoj.revealProblemsetWorkspace": "link-external",
+    "xmuoj.removeContestWorkspaceSelection": "close",
+    "xmuoj.initContestWorkspace": "new-folder"
   };
   return makeThemeIcon(mapping[command] || "chevron-right");
 }
@@ -138,6 +143,7 @@ class WorkspaceEntryTreeItem extends vscode.TreeItem {
       ? makeThemeIcon("edit", "charts.green")
       : makeThemeIcon(entry.isDirectory ? "folder" : "file");
     if (!entry.isDirectory) {
+      this.resourceUri = vscode.Uri.file(entry.fullPath);
       this.command = {
         command: "vscode.open",
         title: "打开文件",
@@ -212,34 +218,31 @@ class ProblemTreeDataProvider {
     } else {
       items.push(new ActionTreeItem("登入账号", "登录后再开始刷题", "xmuoj.login"));
     }
-    const root = String(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "").trim();
-    items.push(new InfoTreeItem("本地工作目录", root || "未设置", "folder-opened"));
-    items.push(new ActionTreeItem("选择本地工作目录…", "题目将保存在该目录下的 contest-* 与 problemsets 子目录（结构固定）", "xmuoj.createProblemWorkspace"));
     return items;
   }
 
   getProblemsetSectionChildren() {
     const items = [
-      new ActionTreeItem("添加题目", "搜索公开题目并加入下面的题目列表", "xmuoj.browseProblemset"),
-      new ActionTreeItem("打开题库目录", "在本地工作区根目录下打开 problemsets 文件夹", "xmuoj.revealProblemsetWorkspace")
+      new ActionTreeItem("加载题目", "搜索公开题目并加入下面的题目列表", "xmuoj.browseProblemset"),
+      new ActionTreeItem("打开题目目录", "在本地工作区根目录下打开 problemsets 文件夹", "xmuoj.revealProblemsetWorkspace")
     ];
     if (this.state.problemsetSelections && this.state.problemsetSelections.length) {
       items.push(new ActionTreeItem("删除题目", "从已添加题目中移除一题，或直接清空", "xmuoj.manageProblemsetSelections"));
       items.push(new GroupTreeItem("problemset-selected", "题目列表", `${this.state.problemsetSelections.length} 道`, "list-unordered", false));
       return items;
     }
-    items.push(new InfoTreeItem("暂无题目", "先点“添加题目”把公开题目加入这里，之后就能刷公共题库", "list-unordered"));
+    items.push(new InfoTreeItem("暂无题目", "先点「加载题目」把公开题目加入这里，之后就能刷公共题库", "list-unordered"));
     return items;
   }
 
   getContestsSectionChildren() {
     const items = [
-      new ActionTreeItem("添加实验", "搜索实验并把实验加入下面的实验列表", "xmuoj.browseContests")
+      new ActionTreeItem("加载实验", "搜索实验并把实验加入下面的实验列表", "xmuoj.browseContests")
     ];
     if (this.state.openContestWorkspaces && this.state.openContestWorkspaces.length) {
       return items.concat(this.state.openContestWorkspaces.map((item) => new GroupTreeItem(`contest-workspace::${item.key}`, item.contest.title, `${(item.problems || []).length} 题`, "repo", true, "contestWorkspace")));
     }
-    items.push(new InfoTreeItem("暂无实验", "先点「添加实验」加载一场实验，下面才会出现实验列表", "repo"));
+    items.push(new InfoTreeItem("暂无实验", "先点「加载实验」加载一场实验，下面才会出现实验列表", "repo"));
     return items;
   }
 
@@ -247,13 +250,11 @@ class ProblemTreeDataProvider {
     const items = [];
     if (this.state.activeProblem) {
       items.push(new InfoTreeItem("当前题", `${this.state.activeProblem.display_id} ${this.state.activeProblem.title}`, "note"));
-      const progress = this.getProblemProgress(this.state.activeProblem, this.state.activeContest);
-      const actionLabel = progress && progress.workspaceCreated ? "打开代码" : "创建代码";
-      items.push(new ActionTreeItem(actionLabel, "打开或创建当前题目的本地代码文件", "xmuoj.startWorkingOnProblem"));
-      items.push(new ActionTreeItem("提交评测", "直接提交当前题目代码", "xmuoj.submitCurrentFile"));
+      items.push(new ActionTreeItem("编写代码", "创建并打开代码文件", "xmuoj.startWorkingOnProblem"));
+      items.push(new ActionTreeItem("提交评测", "提交当前题目代码", "xmuoj.submitCurrentFile"));
     }
     if (!this.state.activeProblem) {
-      items.push(new InfoTreeItem("提示", "先从公共题库或实验题库打开一道题，再开始作答", "lightbulb"));
+      items.push(new InfoTreeItem("提示", "先从「公共题库」或「实验题库」打开一道题，再开始作答", "lightbulb"));
     }
     return items;
   }
@@ -331,8 +332,9 @@ class ProblemTreeDataProvider {
       }
       return [
         new ActionTreeItem("打开实验目录", "在本地工作区根目录下打开 contest-<实验编号> 文件夹", "xmuoj.revealContestWorkspace", [entry]),
-        new ActionTreeItem("删除实验", "把这场实验从实验列表中移除", "xmuoj.removeContestWorkspaceSelection", [entry]),
-        new ActionTreeItem("刷新实验", "根据实验目录里面的代码状态更新题目列表", "xmuoj.refreshContest", [entry]),
+        new ActionTreeItem("批量创建题目目录", "为实验下所有题目创建 problem.md、.xmuoj.json 和样例文件（不含代码）", "xmuoj.initContestWorkspace"),
+        new ActionTreeItem("刷新实验", "根据实验目录里面的代码状态更新题目列表", "xmuoj.refreshContest"),
+        new ActionTreeItem("删除实验", "把这场实验从实验列表中移除", "xmuoj.removeContestWorkspaceSelection", [entry]),  
         new GroupTreeItem(`contest-workspace-problems::${entry.key}`, "题目列表", `${(entry.problems || []).length} 道`, "list-unordered", false)
       ];
     }
@@ -367,7 +369,7 @@ class ProblemTreeDataProvider {
     try {
       const workspace = await findExistingProblemWorkspace(item.problem, item.contest);
       if (!workspace) {
-        return [new InfoTreeItem("暂无本地目录", "先点题目打开，再执行“打开代码”生成本地题目目录", "folder")];
+        return [new InfoTreeItem("暂无本地目录", "先点「题目」打开，再执行「打开代码」生成本地题目目录", "folder")];
       }
       return this.readWorkspaceEntries(workspace.problemDir, workspace.problemDir);
     } catch (error) {

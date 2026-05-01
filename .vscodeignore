@@ -3,3 +3,12 @@
 xmuoj-vscode-*.vsix
 xmuoj/**
 .trae/**
+.node-version
+.git/**
+test/**
+**/*.test.js
+**/*.spec.js
+**/*.map
+.claude/**
+main
+temp-old-vsix/**
