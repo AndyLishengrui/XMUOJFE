@@ -8,7 +8,6 @@ const { ProblemTreeDataProvider } = require("./treeData");
 const {
   METADATA_FILE_NAME,
   buildProblemDirectory,
-  buildProblemMarkdown,
   chooseWorkspaceRoot,
   createWorkspaceTasks,
   ensureProblemWorkspace,
@@ -34,7 +33,6 @@ const RECENT_SUBMISSION_SCOPE_KEY = "xmuoj.recentSubmissionScope";
 const RECENT_SUBMISSION_DENSITY_KEY = "xmuoj.recentSubmissionDensity";
 const RECENT_SUBMISSION_RESULT_FILTER_KEY = "xmuoj.recentSubmissionResultFilter";
 const RECENT_SUBMISSION_LANGUAGE_FILTER_KEY = "xmuoj.recentSubmissionLanguageFilter";
-const PROBLEMSET_SELECTIONS_KEY = "xmuoj.problemsetSelections";
 const WORKBENCH_LAYOUT_KEY = "xmuoj.workbenchLayout";
 const LANGUAGE_PRIORITY = ["C++", "Python3", "Java", "C"];
 const ACCEPTED_RESULTS = new Set(["Accepted", "AC"]);
@@ -96,40 +94,8 @@ const ACTION_ICONS = {
   language: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10.01 10.01 0 0 0 12 2Zm6.93 9h-3.09a15.65 15.65 0 0 0-1.38-5.03A8.03 8.03 0 0 1 18.93 11ZM12 4.07A13.74 13.74 0 0 1 13.82 11h-3.64A13.74 13.74 0 0 1 12 4.07ZM4.06 13h3.09a15.65 15.65 0 0 0 1.38 5.03A8.03 8.03 0 0 1 4.06 13Zm3.09-2H4.06a8.03 8.03 0 0 1 4.47-5.03A15.65 15.65 0 0 0 7.15 11ZM12 19.93A13.74 13.74 0 0 1 10.18 13h3.64A13.74 13.74 0 0 1 12 19.93ZM10.18 11a13.74 13.74 0 0 1 1.82-6.93A13.74 13.74 0 0 1 13.82 11Zm4.64 2a15.65 15.65 0 0 1-1.38 5.03A15.65 15.65 0 0 1 12.06 13h2.76Zm-.88 5.03A8.03 8.03 0 0 0 18.93 13h-3.09a15.65 15.65 0 0 1-1.38 5.03Z" fill="currentColor"/></svg>'
 };
 
-function normalizeProgressScope(scope) {
-  if (!scope) {
-    return "global";
-  }
-  const value = String(scope).trim();
-  if (!value) {
-    return "global";
-  }
-  try {
-    return path.resolve(value);
-  } catch (_error) {
-    return value;
-  }
-}
-
-function resolveProblemProgressScope() {
-  const configuredRoot = String(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "").trim();
-  if (configuredRoot) {
-    return normalizeProgressScope(configuredRoot);
-  }
-  const folders = vscode.workspace.workspaceFolders || [];
-  if (folders.length && folders[0] && folders[0].uri && folders[0].uri.fsPath) {
-    return normalizeProgressScope(folders[0].uri.fsPath);
-  }
-  return "global";
-}
-
-function buildProblemProgressKey(baseUrl, contestId, problemId, progressScope) {
-  return [
-    normalizeBaseUrlForKey(baseUrl),
-    contestId || "problemset",
-    problemId || "unknown",
-    normalizeProgressScope(progressScope || resolveProblemProgressScope())
-  ].join("::");
+function buildProblemProgressKey(baseUrl, contestId, problemId) {
+  return [baseUrl || "", contestId || "problemset", problemId || "unknown"].join("::");
 }
 
 function normalizeBaseUrlForKey(baseUrl) {
@@ -149,16 +115,12 @@ function upsertProblemsetSelection(state, problem, baseUrl) {
     languages: problem.languages || [],
     baseUrl
   };
-  const next = (state.problemsetSelections || [])
-    .filter((item) => !(String(item.id) === String(nextItem.id) && normalizeBaseUrlForKey(item.baseUrl) === normalizeBaseUrlForKey(baseUrl)))
-    .concat(nextItem)
-    .slice(-100);
+  const next = [
+    nextItem,
+    ...(state.problemsetSelections || []).filter((item) => !(String(item.id) === String(nextItem.id) && normalizeBaseUrlForKey(item.baseUrl) === normalizeBaseUrlForKey(baseUrl)))
+  ].slice(0, 30);
   state.problemsetSelections = next;
   return next;
-}
-
-async function persistProblemsetSelections(context, state) {
-  await context.globalState.update(PROBLEMSET_SELECTIONS_KEY, state.problemsetSelections || []);
 }
 
 function upsertContestWorkspaceSelection(state, workspace, baseUrl) {
@@ -183,43 +145,6 @@ function removeProblemsetSelection(state, item) {
   return state.problemsetSelections;
 }
 
-function clearProblemsetSelections(state) {
-  state.problemsetSelections = [];
-  return state.problemsetSelections;
-}
-
-function buildProblemsetSelectionKey(problem, baseUrl) {
-  return [normalizeBaseUrlForKey(baseUrl), String(problem && problem.id ? problem.id : "")].join("::");
-}
-
-function getProblemsetSelectionIndex(state, problem, baseUrl) {
-  const key = buildProblemsetSelectionKey(problem, baseUrl);
-  return (state.problemsetSelections || []).findIndex((item) => buildProblemsetSelectionKey(item, item.baseUrl) === key);
-}
-
-function getNextProblemsetSelection(state, baseUrl) {
-  const selections = (state.problemsetSelections || []).filter((item) => normalizeBaseUrlForKey(item.baseUrl) === normalizeBaseUrlForKey(baseUrl));
-  if (!selections.length) {
-    return null;
-  }
-  if (!state.activeProblem) {
-    return selections[0];
-  }
-  const currentIndex = getProblemsetSelectionIndex(state, state.activeProblem, baseUrl);
-  if (currentIndex < 0) {
-    return selections[0];
-  }
-  return selections[currentIndex + 1] || null;
-}
-
-function getRandomProblemsetSelection(state, baseUrl) {
-  const selections = (state.problemsetSelections || []).filter((item) => normalizeBaseUrlForKey(item.baseUrl) === normalizeBaseUrlForKey(baseUrl));
-  if (!selections.length) {
-    return null;
-  }
-  return selections[Math.floor(Math.random() * selections.length)] || null;
-}
-
 function removeContestWorkspaceSelection(state, item) {
   state.openContestWorkspaces = (state.openContestWorkspaces || []).filter((entry) => entry.key !== item.key);
   if (state.contestWorkspace && item.contest && state.contestWorkspace.contest && String(state.contestWorkspace.contest.id) === String(item.contest.id)) {
@@ -230,47 +155,26 @@ function removeContestWorkspaceSelection(state, item) {
   return state.openContestWorkspaces;
 }
 
-function clearContestContext(state) {
-  state.contestWorkspace = null;
-  state.activeContest = null;
-  state.contestPassword = "";
-}
-
-function syncActiveContestByEntry(state, workspaceEntry) {
-  if (!workspaceEntry || !workspaceEntry.contest) {
-    return;
-  }
-  state.contestWorkspace = {
-    contest: workspaceEntry.contest,
-    problems: workspaceEntry.problems || []
-  };
-  state.contestPassword = workspaceEntry.contestPassword || "";
-  state.activeContest = workspaceEntry.contest;
-}
-
-function buildProblemProgressRef(baseUrl, problem, contest, options = {}) {
+function buildProblemProgressRef(baseUrl, problem, contest) {
   if (!problem || !problem.id) {
     return null;
   }
-  const progressScope = normalizeProgressScope(options.progressScope || resolveProblemProgressScope());
   return {
-    key: buildProblemProgressKey(baseUrl, contest ? contest.id : null, problem.id, progressScope),
+    key: buildProblemProgressKey(baseUrl, contest ? contest.id : null, problem.id),
     baseUrl,
     problemId: problem.id,
     displayId: problem.display_id,
     title: problem.title,
     contestId: contest ? contest.id : null,
-    contestTitle: contest ? contest.title : null,
-    progressScope
+    contestTitle: contest ? contest.title : null
   };
 }
 
-function getProblemProgress(state, baseUrl, problem, contest, options = {}) {
+function getProblemProgress(state, baseUrl, problem, contest) {
   if (!state.problemProgress || !problem || !problem.id) {
     return null;
   }
-  const progressScope = normalizeProgressScope(options.progressScope || resolveProblemProgressScope());
-  return state.problemProgress[buildProblemProgressKey(baseUrl, contest ? contest.id : null, problem.id, progressScope)] || null;
+  return state.problemProgress[buildProblemProgressKey(baseUrl, contest ? contest.id : null, problem.id)] || null;
 }
 
 function getProblemProgressSummary(progress) {
@@ -441,7 +345,6 @@ async function updateProblemProgress(context, state, progressRef, patch) {
     title: progressRef.title,
     contestId: progressRef.contestId,
     contestTitle: progressRef.contestTitle,
-    progressScope: progressRef.progressScope,
     updatedAt: new Date().toISOString()
   }, patch);
   state.problemProgress = Object.assign({}, state.problemProgress, {
@@ -452,7 +355,7 @@ async function updateProblemProgress(context, state, progressRef, patch) {
 }
 
 function renderProblemHtml(problem, baseUrl, workspaceState = {}, _user = null) {
-  const actionLabel = workspaceState.hasWorkspace ? "打开代码" : "创建代码";
+  const actionLabel = "打开代码";
   const progressBadge = workspaceState.progressSummary ? `<span class="pill">${escapeHtml(workspaceState.progressSummary)}</span>` : "";
   const samples = (problem.samples || []).map((sample, index) => `
     <section class="sample-block">
@@ -535,619 +438,6 @@ function renderProblemHtml(problem, baseUrl, workspaceState = {}, _user = null) 
       </script>
     </body>
   </html>`;
-}
-
-function renderProblemsetWorkbenchRow(problem, state, baseUrl) {
-  const progress = getProblemProgress(state, baseUrl, problem, null);
-  const progressSummary = getProblemProgressSummary(progress);
-  const tags = Array.isArray(problem.tags) && problem.tags.length
-    ? problem.tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")
-    : '<span class="tag muted">暂无标签</span>';
-  const languages = Array.isArray(problem.languages) && problem.languages.length ? problem.languages.join(" · ") : "未知语言";
-  const payload = escapeHtml(JSON.stringify(problem));
-  return `
-    <tr>
-      <td class="problem-cell-actions">
-        <button class="primary" data-command="addQueue" data-problem="${payload}">加入队列</button>
-        <button data-command="startProblem" data-problem="${payload}">开刷</button>
-        <button data-command="openProblem" data-problem="${payload}">题面</button>
-      </td>
-      <td class="problem-cell-code">${escapeHtml(problem.display_id)}</td>
-      <td class="problem-cell-title">
-        <div class="problem-title-wrap">
-          <strong>${escapeHtml(problem.title)}</strong>
-          <div class="problem-subtitle">
-            <span class="status-pill">${escapeHtml(progressSummary)}</span>
-            ${problem.can_download_test_case ? '<span class="meta-pill accent">可下载数据</span>' : ""}
-          </div>
-          <div class="problem-card-tags">${tags}</div>
-        </div>
-      </td>
-      <td class="problem-cell-meta">${escapeHtml(problem.difficulty || "未知难度")}</td>
-      <td class="problem-cell-meta">${escapeHtml(languages)}</td>
-      <td class="problem-cell-tags">${tags}</td>
-    </tr>
-  `;
-}
-
-function renderProblemsetQueueRow(problem, state, baseUrl) {
-  const progress = getProblemProgress(state, baseUrl, problem, null);
-  const progressSummary = getProblemProgressSummary(progress);
-  const payload = escapeHtml(JSON.stringify(problem));
-  return `
-    <tr>
-      <td class="problem-cell-actions">
-        <button class="primary" data-command="startQueueItem" data-problem="${payload}">开始</button>
-        <button data-command="openQueueItem" data-problem="${payload}">题面</button>
-        <button data-command="removeQueueItem" data-problem="${payload}">移除</button>
-      </td>
-      <td class="problem-cell-code">${escapeHtml(problem.display_id)}</td>
-      <td class="problem-cell-title">
-        <div class="problem-title-wrap">
-          <strong>${escapeHtml(problem.title)}</strong>
-          <div class="problem-subtitle"><span class="status-pill">${escapeHtml(progressSummary)}</span></div>
-        </div>
-      </td>
-      <td class="problem-cell-meta">${escapeHtml(problem.difficulty || "未知难度")}</td>
-    </tr>
-  `;
-}
-
-function renderProblemsetWorkbenchSkeleton(message = "正在加载公共题库刷题台…") {
-  return `<!DOCTYPE html>
-  <html>
-    <head>
-      <meta charset="UTF-8" />
-      <style>
-        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17312f; background: radial-gradient(circle at top left, #f7ead2 0%, #f8f7f2 35%, #eef5f0 100%); }
-        .shell { max-width: 1280px; margin: 0 auto; padding: 24px; }
-        .panel { background: rgba(255,255,255,0.78); border: 1px solid rgba(23,49,47,0.08); border-radius: 22px; padding: 18px; box-shadow: 0 12px 36px rgba(23,49,47,0.06); backdrop-filter: blur(16px); }
-        .loading-card { min-height: 240px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #526b66; }
-      </style>
-    </head>
-    <body>
-      <div class="shell">
-        <div class="panel loading-card">${escapeHtml(message)}</div>
-      </div>
-    </body>
-  </html>`;
-}
-
-function renderProblemsetTable(results, state, baseUrl) {
-  if (!results.length) {
-    return '<div class="empty">先搜索一道题，再把它加入队列。你也可以直接点“直接开刷”。</div>';
-  }
-  return `
-    <div class="table-shell">
-      <table class="problem-table">
-        <thead>
-          <tr>
-            <th>操作</th>
-            <th>题号</th>
-            <th>题目</th>
-            <th>难度</th>
-            <th>语言</th>
-            <th>标签</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${results.map((problem) => renderProblemsetWorkbenchRow(problem, state, baseUrl)).join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
-function renderProblemsetQueueTable(queue, state, baseUrl) {
-  if (!queue.length) {
-    return '<div class="empty">当前队列为空。先在搜索结果里加入几道题，再开始连续刷题。</div>';
-  }
-  return `
-    <div class="table-shell queue-shell">
-      <table class="problem-table queue-table">
-        <thead>
-          <tr>
-            <th>操作</th>
-            <th>题号</th>
-            <th>题目</th>
-            <th>难度</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${queue.map((problem) => renderProblemsetQueueRow(problem, state, baseUrl)).join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
-function renderProblemsetWorkbenchHtml(viewModel) {
-  const total = Number(viewModel.total || 0);
-  const offset = Number(viewModel.offset || 0);
-  const limit = Number(viewModel.limit || 20);
-  const results = Array.isArray(viewModel.results) ? viewModel.results : [];
-  const queue = Array.isArray(viewModel.queue) ? viewModel.queue : [];
-  const startLabel = total > 0 ? Math.min(offset + 1, total) : 0;
-  const endLabel = total > 0 ? Math.min(offset + results.length, total) : results.length;
-  const difficultyOptions = ["", "Low", "Mid", "High"];
-  const difficultyLabels = { "": "全部难度", Low: "Low", Mid: "Mid", High: "High" };
-  const serialized = JSON.stringify({
-    query: viewModel.query || "",
-    difficulty: viewModel.difficulty || "",
-    tag: viewModel.tag || "",
-    limit,
-    offset
-  });
-  const resultTable = renderProblemsetTable(results, viewModel.state, viewModel.baseUrl);
-  const queueTable = renderProblemsetQueueTable(queue, viewModel.state, viewModel.baseUrl);
-  const activeProblem = viewModel.activeProblem ? `<div class="active-problem"><span class="status-pill accent">当前题</span><strong>${escapeHtml(viewModel.activeProblem.display_id)} ${escapeHtml(viewModel.activeProblem.title)}</strong></div>` : "";
-  return `<!DOCTYPE html>
-  <html>
-    <head>
-      <meta charset="UTF-8" />
-      <style>
-        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17312f; background: radial-gradient(circle at top left, #f7ead2 0%, #f8f7f2 35%, #eef5f0 100%); }
-        .shell { max-width: 1280px; margin: 0 auto; padding: 24px; }
-        .hero { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.7fr); gap: 20px; align-items: end; }
-        h1 { margin: 0 0 10px; font-size: 30px; line-height: 1.1; letter-spacing: -0.02em; }
-        .subtitle { margin: 0; color: #526b66; line-height: 1.6; }
-        .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-        .stat { background: rgba(255,255,255,0.75); border: 1px solid rgba(23,49,47,0.08); border-radius: 18px; padding: 14px 16px; backdrop-filter: blur(16px); }
-        .stat-value { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-        .stat-label { font-size: 12px; color: #5a706b; }
-        .panel { margin-top: 18px; background: rgba(255,255,255,0.78); border: 1px solid rgba(23,49,47,0.08); border-radius: 22px; padding: 18px; box-shadow: 0 12px 36px rgba(23,49,47,0.06); backdrop-filter: blur(16px); }
-        .toolbar { display: grid; grid-template-columns: 1.4fr 0.6fr 0.9fr 0.5fr auto; gap: 10px; align-items: end; }
-        .field label { display: block; font-size: 12px; color: #5a706b; margin-bottom: 6px; }
-        .field input, .field select { width: 100%; box-sizing: border-box; border: 1px solid rgba(23,49,47,0.12); border-radius: 12px; padding: 11px 12px; font: inherit; background: #fff; color: #17312f; }
-        .toolbar button, .problem-card-actions button, .queue-card-actions button, .nav-buttons button, .problem-cell-actions button { border: 1px solid rgba(23,49,47,0.12); border-radius: 10px; padding: 7px 10px; background: #fff; color: #17312f; cursor: pointer; font-size: 12px; line-height: 1.2; transition: transform 0.16s ease, box-shadow 0.16s ease; }
-        .toolbar button:hover, .problem-card-actions button:hover, .queue-card-actions button:hover, .nav-buttons button:hover, .problem-cell-actions button:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(23,49,47,0.08); }
-        .toolbar button.primary, .problem-card-actions button.primary, .queue-card-actions button.primary, .nav-buttons button.primary, .problem-cell-actions button.primary { background: linear-gradient(135deg, #0b5d5b 0%, #1e7d61 100%); color: #f7f7f2; border-color: transparent; }
-        .toolbar-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
-        .section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
-        .section-head h2 { margin: 0; font-size: 18px; }
-        .section-head p { margin: 0; color: #56706a; font-size: 13px; }
-        .nav-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
-        .panel-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.9fr); gap: 18px; margin-top: 18px; }
-        .table-shell { overflow-x: auto; border: 1px solid rgba(23,49,47,0.08); border-radius: 18px; background: #fff; }
-        .problem-table { width: 100%; border-collapse: collapse; min-width: 920px; }
-        .queue-table { min-width: 720px; }
-        .problem-table thead th { text-align: left; font-size: 12px; font-weight: 700; color: #5a706b; padding: 12px 14px; background: #f7f8f6; border-bottom: 1px solid rgba(23,49,47,0.08); }
-        .problem-table tbody td { padding: 14px 16px; border-bottom: 1px solid rgba(23,49,47,0.06); vertical-align: top; }
-        .problem-table tbody tr:hover { background: rgba(215,235,229,0.28); }
-        .problem-cell-code { white-space: nowrap; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #7a8d86; width: 90px; }
-        .problem-cell-title strong { display: block; font-size: 15px; margin-bottom: 6px; }
-        .problem-title-wrap { min-width: 0; }
-        .problem-subtitle { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-        .problem-cell-meta { white-space: nowrap; color: #36514c; font-size: 13px; }
-        .problem-cell-tags { min-width: 180px; }
-        .problem-cell-actions { white-space: nowrap; width: 220px; }
-        .problem-cell-actions button { margin: 0 6px 6px 0; }
-        .problem-code { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #7a8d86; }
-        .problem-card-meta, .problem-card-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-        .problem-card-actions, .queue-card-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-        .meta-pill, .status-pill, .tag { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 5px 9px; font-size: 11px; background: #d7ebe5; color: #17312f; }
-        .status-pill.accent, .meta-pill.accent { background: #ffe7c5; color: #8b4d08; }
-        .tag { background: #f2f5f3; color: #5d736d; }
-        .tag.muted { background: #f2f5f3; color: #5d736d; }
-        .empty { padding: 20px; border: 1px dashed rgba(23,49,47,0.18); border-radius: 18px; color: #5a706b; background: rgba(255,255,255,0.5); }
-        .error { margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: #ffe8e6; color: #8d342b; border: 1px solid #efc1bc; }
-        .active-problem { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
-        .workspace-tip { margin-top: 10px; color: #5a706b; font-size: 13px; }
-        .loading { margin-top: 10px; color: #5a706b; }
-        @media (max-width: 980px) {
-          .hero, .toolbar, .panel-grid { grid-template-columns: 1fr; }
-          .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-          .section-head, .problem-card-top { flex-direction: column; align-items: flex-start; }
-          .problem-cell-actions { white-space: normal; }
-          .problem-cell-tags { min-width: 0; }
-          .problem-table { min-width: 760px; }
-          .queue-table { min-width: 620px; }
-          .toolbar-actions { justify-content: flex-start; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="shell">
-        <div class="hero">
-          <div>
-            <h1>公共题库刷题台</h1>
-            <p class="subtitle">在这里搜索、筛选、编排和连续刷题。把题目加进队列后，可以直接开刷、跳到下一题，或者随机抽题继续。</p>
-            ${activeProblem}
-          </div>
-          <div class="stats">
-            <div class="stat"><div class="stat-value">${escapeHtml(String(total))}</div><div class="stat-label">当前结果数</div></div>
-            <div class="stat"><div class="stat-value">${escapeHtml(String(queue.length))}</div><div class="stat-label">刷题队列</div></div>
-            <div class="stat"><div class="stat-value">${escapeHtml(String(startLabel))}</div><div class="stat-label">当前页起始</div></div>
-            <div class="stat"><div class="stat-value">${escapeHtml(String(limit))}</div><div class="stat-label">每页题数</div></div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="section-head">
-            <div>
-              <h2>搜索与筛选</h2>
-              <p>支持题号、标题、难度和标签筛选。搜索结果可直接加入队列或开刷。</p>
-            </div>
-            <div class="nav-buttons">
-              <button type="button" data-command="nextQueue">继续下一题</button>
-              <button type="button" data-command="randomQueue">随机一题</button>
-              <button type="button" data-command="clearQueue">清空队列</button>
-            </div>
-          </div>
-          <form class="toolbar" id="search-form">
-            <div class="field">
-              <label>关键词</label>
-              <input id="problemset-keyword" name="keyword" type="text" placeholder="题号 / 标题" value="${escapeHtml(viewModel.query || "")}" />
-            </div>
-            <div class="field">
-              <label>难度</label>
-              <select id="problemset-difficulty" name="difficulty">
-                ${difficultyOptions.map((item) => `<option value="${escapeHtml(item)}" ${String(item) === String(viewModel.difficulty || "") ? "selected" : ""}>${escapeHtml(difficultyLabels[item])}</option>`).join("")}
-              </select>
-            </div>
-            <div class="field">
-              <label>标签</label>
-              <input id="problemset-tag" name="tag" type="text" placeholder="例如 dp / graph" value="${escapeHtml(viewModel.tag || "")}" />
-            </div>
-            <div class="field">
-              <label>每页</label>
-              <select id="problemset-limit" name="limit">
-                ${[10, 20, 30, 50].map((item) => `<option value="${item}" ${Number(item) === Number(limit) ? "selected" : ""}>${item}</option>`).join("")}
-              </select>
-            </div>
-            <div class="toolbar-actions">
-              <button type="submit" class="primary">搜索</button>
-              <button type="button" data-command="prevPage">上一页</button>
-              <button type="button" data-command="nextPage">下一页</button>
-            </div>
-          </form>
-          ${viewModel.loading ? '<div class="loading">正在加载题库…</div>' : ""}
-          ${viewModel.error ? `<div class="error">${escapeHtml(viewModel.error)}</div>` : ""}
-        </div>
-
-        <div class="panel-grid">
-          <section class="panel">
-            <div class="section-head">
-              <div>
-                <h2>搜索结果</h2>
-                <p>${results.length ? `当前显示第 ${startLabel} - ${endLabel} 题` : "没有匹配题目"}</p>
-              </div>
-              <div class="nav-buttons">
-                <button type="button" data-command="reloadSearch">重新加载</button>
-              </div>
-            </div>
-            ${resultTable}
-          </section>
-
-          <section class="panel">
-            <div class="section-head">
-              <div>
-                <h2>刷题队列</h2>
-                <p>按加入顺序连续刷题。每道题都能单独打开、移除或直接开刷。</p>
-              </div>
-              <div class="nav-buttons">
-                <button type="button" data-command="queueToTop">优先下一题</button>
-              </div>
-            </div>
-            ${queueTable}
-          </section>
-        </div>
-      </div>
-      <script type="application/json" id="problemset-workbench-state">${escapeHtml(serialized)}</script>
-      <script>
-        const vscode = acquireVsCodeApi();
-        const currentStateElement = document.getElementById("problemset-workbench-state");
-        let current = { limit: 20 };
-        try {
-          current = JSON.parse(currentStateElement ? currentStateElement.textContent || "{}" : "{}");
-        } catch (error) {
-          current = { limit: 20 };
-        }
-        function send(command, payload = {}) {
-          vscode.postMessage(Object.assign({ command }, payload));
-        }
-        window.addEventListener("error", (event) => {
-          const shell = document.querySelector(".shell");
-          if (!shell) {
-            return;
-          }
-          const error = document.createElement("div");
-          error.className = "error";
-          error.textContent = "刷题台脚本错误：" + (event.message || "未知错误");
-          shell.insertBefore(error, shell.firstChild);
-        });
-        document.getElementById("search-form").addEventListener("submit", (event) => {
-          event.preventDefault();
-          send("search", {
-            query: document.getElementById("problemset-keyword").value.trim(),
-            difficulty: document.getElementById("problemset-difficulty").value,
-            tag: document.getElementById("problemset-tag").value.trim(),
-            limit: Number(document.getElementById("problemset-limit").value) || current.limit || 20,
-            offset: 0
-          });
-        });
-        document.querySelectorAll("[data-command]").forEach((button) => {
-          button.addEventListener("click", () => {
-            const command = button.getAttribute("data-command");
-            const encoded = button.getAttribute("data-problem");
-            let payload = {};
-            if (encoded) {
-              try {
-                payload = JSON.parse(encoded);
-              } catch (error) {
-                payload = {};
-              }
-            }
-            send(command, payload);
-          });
-        });
-      </script>
-    </body>
-  </html>`;
-}
-
-function getProblemsetWorkbenchState(state) {
-  if (!state.problemsetWorkbench) {
-    state.problemsetWorkbench = {
-      query: "",
-      difficulty: "",
-      tag: "",
-      limit: 20,
-      offset: 0,
-      total: 0,
-      results: [],
-      loading: false,
-      error: null
-    };
-  }
-  return state.problemsetWorkbench;
-}
-
-function buildProblemsetWorkbenchViewModel(state, client) {
-  const workbench = getProblemsetWorkbenchState(state);
-  return {
-    query: workbench.query || "",
-    difficulty: workbench.difficulty || "",
-    tag: workbench.tag || "",
-    limit: workbench.limit || 20,
-    offset: workbench.offset || 0,
-    total: workbench.total || 0,
-    results: workbench.results || [],
-    loading: Boolean(workbench.loading),
-    error: workbench.error || null,
-    queue: state.problemsetSelections || [],
-    activeProblem: state.activeProblem && !state.activeContest ? state.activeProblem : null,
-    state,
-    baseUrl: client.baseUrl
-  };
-}
-
-async function refreshProblemsetWorkbenchPanel(state, client) {
-  if (!state.problemsetPanel) {
-    return;
-  }
-  state.problemsetPanel.title = "XMUOJ 公共题库刷题台";
-  state.problemsetPanel.webview.html = renderProblemsetWorkbenchHtml(buildProblemsetWorkbenchViewModel(state, client));
-}
-
-async function loadProblemsetWorkbenchResults(context, client, state, treeProvider, params = {}) {
-  const workbench = getProblemsetWorkbenchState(state);
-  const nextState = Object.assign({}, workbench, {
-    query: params.query !== undefined ? params.query : workbench.query,
-    difficulty: params.difficulty !== undefined ? params.difficulty : workbench.difficulty,
-    tag: params.tag !== undefined ? params.tag : workbench.tag,
-    limit: params.limit !== undefined ? Number(params.limit) || 20 : workbench.limit || 20,
-    offset: params.offset !== undefined ? Math.max(0, Number(params.offset) || 0) : workbench.offset || 0,
-    loading: true,
-    error: null
-  });
-  state.problemsetWorkbench = nextState;
-  await refreshProblemsetWorkbenchPanel(state, client);
-  try {
-    const response = await client.getProblemset({
-      keyword: nextState.query || undefined,
-      difficulty: nextState.difficulty || undefined,
-      tag: nextState.tag || undefined,
-      limit: nextState.limit,
-      offset: nextState.offset
-    });
-    state.problemsetWorkbench = Object.assign({}, nextState, {
-      loading: false,
-      error: null,
-      total: Number(response.count || response.total || (response.results && response.results.length) || 0),
-      results: response.results || []
-    });
-    await refreshProblemsetWorkbenchPanel(state, client);
-    if (treeProvider) {
-      treeProvider.refresh();
-    }
-    return state.problemsetWorkbench;
-  } catch (error) {
-    state.problemsetWorkbench = Object.assign({}, nextState, {
-      loading: false,
-      error: error.message || String(error),
-      results: []
-    });
-    await refreshProblemsetWorkbenchPanel(state, client);
-    throw error;
-  }
-}
-
-async function openProblemsetWorkbench(context, client, state, treeProvider) {
-  if (!state.problemsetPanel) {
-    const panel = vscode.window.createWebviewPanel(
-      "xmuojProblemsetWorkbench",
-      "XMUOJ 公共题库刷题台",
-      getProblemViewColumn(),
-      { enableScripts: true, retainContextWhenHidden: true }
-    );
-    panel.webview.html = renderProblemsetWorkbenchSkeleton();
-    panel.onDidDispose(() => {
-      if (state.problemsetPanel === panel) {
-        state.problemsetPanel = null;
-      }
-      if (typeof state.persistenceHook === "function") {
-        state.persistenceHook().catch(() => null);
-      }
-    });
-    state.problemsetPanel = panel;
-    panel.webview.onDidReceiveMessage(async (message) => {
-      try {
-        const payload = message && message.problem ? message.problem : (message && message.id ? message : null);
-        if (message.command === "search") {
-          await loadProblemsetWorkbenchResults(context, client, state, treeProvider, {
-            query: message.query || "",
-            difficulty: message.difficulty || "",
-            tag: message.tag || "",
-            limit: message.limit || 20,
-            offset: 0
-          });
-        } else if (message.command === "reloadSearch") {
-          const workbench = getProblemsetWorkbenchState(state);
-          await loadProblemsetWorkbenchResults(context, client, state, treeProvider, {
-            query: workbench.query,
-            difficulty: workbench.difficulty,
-            tag: workbench.tag,
-            limit: workbench.limit,
-            offset: workbench.offset
-          });
-        } else if (message.command === "nextPage") {
-          const workbench = getProblemsetWorkbenchState(state);
-          const nextOffset = Math.max(0, (workbench.offset || 0) + (workbench.limit || 20));
-          if (workbench.total && nextOffset >= workbench.total) {
-            vscode.window.showInformationMessage("已经是最后一页");
-            return;
-          }
-          await loadProblemsetWorkbenchResults(context, client, state, treeProvider, { offset: nextOffset });
-        } else if (message.command === "prevPage") {
-          const workbench = getProblemsetWorkbenchState(state);
-          const nextOffset = Math.max(0, (workbench.offset || 0) - (workbench.limit || 20));
-          await loadProblemsetWorkbenchResults(context, client, state, treeProvider, { offset: nextOffset });
-        } else if (message.command === "addQueue" && payload) {
-          upsertProblemsetSelection(state, payload, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          treeProvider.refresh();
-          await refreshProblemsetWorkbenchPanel(state, client);
-        } else if (message.command === "removeQueueItem" && payload) {
-          removeProblemsetSelection(state, payload);
-          await persistProblemsetSelections(context, state);
-          treeProvider.refresh();
-          await refreshProblemsetWorkbenchPanel(state, client);
-        } else if (message.command === "clearQueue") {
-          const confirmed = await vscode.window.showWarningMessage("确定要清空公共题库刷题队列吗？", { modal: true }, "清空");
-          if (confirmed !== "清空") {
-            return;
-          }
-          clearProblemsetSelections(state);
-          await persistProblemsetSelections(context, state);
-          treeProvider.refresh();
-          await refreshProblemsetWorkbenchPanel(state, client);
-        } else if (message.command === "queueToTop") {
-          const nextProblem = getNextProblemsetSelection(state, client.baseUrl) || (state.problemsetSelections || [])[0];
-          if (!nextProblem) {
-            vscode.window.showInformationMessage("当前队列为空");
-            return;
-          }
-          clearContestContext(state);
-          updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
-          const detail = await openProblemDetail(client, state, { id: nextProblem.id, display_id: nextProblem.display_id, title: nextProblem.title }, null, "");
-          upsertProblemsetSelection(state, detail, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          if (treeProvider) {
-            treeProvider.refresh();
-          }
-        } else if (message.command === "nextQueue") {
-          const nextProblem = getNextProblemsetSelection(state, client.baseUrl);
-          if (!nextProblem) {
-            vscode.window.showInformationMessage("队列里还没有下一题");
-            return;
-          }
-          clearContestContext(state);
-          updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
-          const detail = await openProblemDetail(client, state, { id: nextProblem.id, display_id: nextProblem.display_id, title: nextProblem.title }, null, "");
-          await startWorkingOnProblem(context, client, state, state.outputChannel, detail, null);
-          upsertProblemsetSelection(state, detail, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          if (treeProvider) {
-            treeProvider.refresh();
-          }
-        } else if (message.command === "randomQueue") {
-          const randomProblem = getRandomProblemsetSelection(state, client.baseUrl);
-          if (!randomProblem) {
-            vscode.window.showInformationMessage("队列里还没有题目");
-            return;
-          }
-          clearContestContext(state);
-          updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
-          const detail = await openProblemDetail(client, state, { id: randomProblem.id, display_id: randomProblem.display_id, title: randomProblem.title }, null, "");
-          await startWorkingOnProblem(context, client, state, state.outputChannel, detail, null);
-          upsertProblemsetSelection(state, detail, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          if (treeProvider) {
-            treeProvider.refresh();
-          }
-        } else if (message.command === "openProblem" && payload) {
-          clearContestContext(state);
-          updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
-          const detail = await openProblemDetail(client, state, payload, null, "");
-          upsertProblemsetSelection(state, detail, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          if (treeProvider) {
-            treeProvider.refresh();
-          }
-        } else if (message.command === "startProblem" && payload) {
-          clearContestContext(state);
-          updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
-          const detail = await openProblemDetail(client, state, payload, null, "");
-          upsertProblemsetSelection(state, detail, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          await startWorkingOnProblem(context, client, state, state.outputChannel, detail, null);
-          if (treeProvider) {
-            treeProvider.refresh();
-          }
-        } else if (message.command === "openQueueItem" && payload) {
-          clearContestContext(state);
-          updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
-          const detail = await openProblemDetail(client, state, payload, null, "");
-          upsertProblemsetSelection(state, detail, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          if (treeProvider) {
-            treeProvider.refresh();
-          }
-        } else if (message.command === "startQueueItem" && payload) {
-          clearContestContext(state);
-          updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
-          const detail = await openProblemDetail(client, state, payload, null, "");
-          upsertProblemsetSelection(state, detail, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          await startWorkingOnProblem(context, client, state, state.outputChannel, detail, null);
-          if (treeProvider) {
-            treeProvider.refresh();
-          }
-        }
-      } catch (error) {
-        await refreshProblemsetWorkbenchPanel(state, client);
-        vscode.window.showErrorMessage(error.message || String(error));
-      }
-    });
-  } else {
-    state.problemsetPanel.reveal(getProblemViewColumn(), false);
-  }
-  if (!state.problemsetWorkbench || !Array.isArray(state.problemsetWorkbench.results) || !state.problemsetWorkbench.results.length) {
-    try {
-      await loadProblemsetWorkbenchResults(context, client, state, treeProvider, { offset: 0 });
-    } catch (error) {
-      state.problemsetWorkbench = Object.assign({}, getProblemsetWorkbenchState(state), {
-        loading: false,
-        error: error.message || String(error),
-        results: []
-      });
-      await refreshProblemsetWorkbenchPanel(state, client);
-    }
-  } else {
-    await refreshProblemsetWorkbenchPanel(state, client);
-  }
-  return state.problemsetPanel;
 }
 
 function getSubmissionStatusPresentation(result) {
@@ -2164,20 +1454,7 @@ async function loadContestWorkspace(context, client, state, treeProvider, contes
 }
 
 async function findExistingProblemWorkspaceForOpenPanels(problem, contest) {
-  const workspace = await findExistingProblemWorkspace(problem, contest);
-  // 如果元数据存在但没有语言（批量初始化创建的目录），视为没有工作区
-  if (workspace && workspace.metadata && !workspace.metadata.language) {
-    return null;
-  }
-  // 检查源代码文件是否实际存在（防止文件被误删）
-  if (workspace && workspace.sourceFilePath) {
-    try {
-      await fs.access(workspace.sourceFilePath);
-    } catch {
-      return null;
-    }
-  }
-  return workspace;
+  return findExistingProblemWorkspace(problem, contest);
 }
 
 async function getCurrentProblemWorkspaceState(state, problem, contest) {
@@ -2309,9 +1586,8 @@ async function openProblemDetail(client, state, problem, contest, contestPasswor
     panel.webview.onDidReceiveMessage(async (message) => {
       try {
         if (message.command === "startWork") {
-          // 使用 state.activeProblem / state.activeContest 而不是闭包捕获的 detail/contest，
-          // 因为面板复用时闭包中的 detail/contest 仍是上一次打开题目的值。
-          await vscode.commands.executeCommand("xmuoj.startWorkingOnProblem", state.activeProblem, state.activeContest);
+          // 直接使用本地 problem 对象，避免再次网络请求
+          await vscode.commands.executeCommand("xmuoj.startWorkingOnProblem", detail, contest);
         } else if (message.command === "runTests") {
           await vscode.commands.executeCommand("xmuoj.runLocalTests");
         } else if (message.command === "downloadTests") {
@@ -2545,7 +1821,7 @@ async function resolveLanguageSwitchRequest(client, state, menuItem) {
     
     const sourceContext = await resolveSourceContext(client, state, problem, contest);
     if (!sourceContext || !sourceContext.metadataContext || !sourceContext.metadataContext.metadata || !sourceContext.metadataContext.problemDir) {
-      vscode.window.showWarningMessage("无法切换代码语言：请先为这道题创建本地工作区，再切换语言。可以先点“创建代码”。");
+      vscode.window.showWarningMessage("无法切换代码语言：请先为这道题创建本地工作区，再切换语言。可以先点“打开代码”。");
       return { problem, contest, sourceContext: null, detail: null };
     }
 
@@ -2583,72 +1859,6 @@ async function resolveLanguageSwitchRequest(client, state, menuItem) {
 
 
 
-async function initContestProblemFolders(context, client, state, outputChannel, workspaceEntry) {
-  const targetWorkspace = workspaceEntry && workspaceEntry.contest
-    ? { contest: workspaceEntry.contest, problems: workspaceEntry.problems || [] }
-    : state.contestWorkspace;
-  const targetContestPassword = workspaceEntry && Object.prototype.hasOwnProperty.call(workspaceEntry, "contestPassword")
-    ? (workspaceEntry.contestPassword || "")
-    : (state.contestPassword || "");
-  if (!targetWorkspace || !targetWorkspace.contest) {
-    vscode.window.showWarningMessage("请先打开一个比赛，再批量创建题目目录");
-    return;
-  }
-  const rootPath = await chooseWorkspaceRoot();
-  if (!rootPath) {
-    return;
-  }
-
-  outputChannel.clear();
-  outputChannel.show(true);
-  outputChannel.appendLine(`目标实验：${targetWorkspace.contest.title} (#${targetWorkspace.contest.id})`);
-  outputChannel.appendLine(`工作区根目录：${rootPath}`);
-  const created = [];
-  for (const problem of targetWorkspace.problems || []) {
-    try {
-      const detail = await client.getProblemWorkspace(problem.id, targetWorkspace.contest.id, targetContestPassword || undefined);
-      const problemDir = buildProblemDirectory(rootPath, detail, targetWorkspace.contest);
-      const samplesDir = path.join(problemDir, "samples");
-      await fs.mkdir(samplesDir, { recursive: true });
-
-      const markdownPath = path.join(problemDir, "problem.md");
-      await fs.writeFile(markdownPath, buildProblemMarkdown(detail, targetWorkspace.contest), "utf8");
-
-      for (let index = 0; index < (detail.samples || []).length; index += 1) {
-        const sample = detail.samples[index];
-        const sampleNumber = index + 1;
-        await fs.writeFile(path.join(samplesDir, `${sampleNumber}.in`), sample.input || "", "utf8");
-        await fs.writeFile(path.join(samplesDir, `${sampleNumber}.out`), sample.output || "", "utf8");
-      }
-
-      const metadata = {
-        version: 1,
-        baseUrl: client.baseUrl,
-        problemId: detail.id,
-        contestId: targetWorkspace.contest.id,
-        contestTitle: targetWorkspace.contest.title,
-        displayId: detail.display_id,
-        title: detail.title,
-        language: null,
-        sourceFile: null,
-        sourceFiles: {},
-        createdAt: new Date().toISOString()
-      };
-      const metadataPath = path.join(problemDir, METADATA_FILE_NAME);
-      await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), "utf8");
-
-      created.push(problemDir);
-      outputChannel.appendLine(`已创建 ${detail.display_id} → ${problemDir}`);
-    } catch (error) {
-      outputChannel.appendLine(`${problem.display_id} 创建失败：${error.message}`);
-    }
-  }
-  if (created.length) {
-    vscode.window.showInformationMessage(`已为实验「${targetWorkspace.contest.title}」批量创建 ${created.length} 个题目的本地目录`);
-  } else {
-    vscode.window.showWarningMessage("没有成功创建任何题目目录");
-  }
-}
 async function materializeContestWorkspace(context, client, state, outputChannel) {
   if (!state.contestWorkspace) {
     vscode.window.showWarningMessage("请先打开一个比赛，再批量生成本地工作区");
@@ -2803,7 +2013,7 @@ function activate(context) {
   const state = {
     contestWorkspace: null,
     openContestWorkspaces: [],
-    problemsetSelections: context.globalState.get(PROBLEMSET_SELECTIONS_KEY, []),
+    problemsetSelections: [],
     contestPassword: "",
     user: null,
     lastSubmissionResult: context.globalState.get(LAST_SUBMISSION_RESULT_KEY, null),
@@ -2818,15 +2028,10 @@ function activate(context) {
     baseUrl: client.baseUrl,
     currentSourcePath: null,
     currentTreeFilePath: null,
-    workbenchLayout: context.globalState.get(WORKBENCH_LAYOUT_KEY, null),
-    problemsetWorkbench: null,
-    problemsetPanel: null,
-    outputChannel
+    workbenchLayout: context.globalState.get(WORKBENCH_LAYOUT_KEY, null)
   };
   state.resultPanelFocus = null;
   state.persistenceHook = () => persistWorkbenchLayout(context, state);
-  state.userStatusBar = userStatusBar;
-  state.contestStatusBar = contestStatusBar;
 
   const treeProvider = new ProblemTreeDataProvider(state);
   const codeLensProvider = new XmuojCodeLensProvider();
@@ -2962,11 +2167,34 @@ function activate(context) {
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.browseProblemset", async () => {
+    const keyword = await vscode.window.showInputBox({
+      prompt: "按题目标题或题号搜索公开题目",
+      ignoreFocusOut: true
+    });
     try {
-      clearContestContext(state);
+      const problemData = await client.getProblemset({ keyword: keyword || undefined });
+      if (!problemData.results.length) {
+        vscode.window.showInformationMessage("没有找到符合条件的题目");
+        return;
+      }
+      const pick = await vscode.window.showQuickPick(
+        problemData.results.map(problem => ({
+          label: `${problem.display_id} ${problem.title}`,
+          description: problem.difficulty,
+          detail: (problem.languages || []).join(", "),
+          problem
+        })),
+        { title: "选择一道公开题目", ignoreFocusOut: true }
+      );
+      if (!pick) {
+        return;
+      }
+      state.contestWorkspace = null;
       updateStatusBars(state, userStatusBar, contestStatusBar, client);
       treeProvider.refresh();
-      await openProblemsetWorkbench(context, client, state, treeProvider);
+      const detail = await openProblemDetail(client, state, pick.problem, null, "");
+      upsertProblemsetSelection(state, detail, client.baseUrl);
+      treeProvider.refresh();
     } catch (error) {
       vscode.window.showErrorMessage(error.message);
     }
@@ -2996,36 +2224,21 @@ function activate(context) {
     }
   }));
 
-  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.refreshContest", async (workspaceEntry) => {
-    if (workspaceEntry && workspaceEntry.contest) {
-      syncActiveContestByEntry(state, workspaceEntry);
-    }
-    const targetContest = workspaceEntry && workspaceEntry.contest
-      ? workspaceEntry.contest
-      : (state.contestWorkspace ? state.contestWorkspace.contest : null);
-    const targetPassword = workspaceEntry && Object.prototype.hasOwnProperty.call(workspaceEntry, "contestPassword")
-      ? (workspaceEntry.contestPassword || "")
-      : state.contestPassword;
-    if (!targetContest) {
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.refreshContest", async () => {
+    if (!state.contestWorkspace) {
       vscode.window.showWarningMessage("当前还没有加载实验");
       return;
     }
     try {
-      await loadContestWorkspace(context, client, state, treeProvider, targetContest.id, targetPassword);
+      await loadContestWorkspace(context, client, state, treeProvider, state.contestWorkspace.contest.id, state.contestPassword);
       updateStatusBars(state, userStatusBar, contestStatusBar, client);
       await focusExplorerView();
-      vscode.window.showInformationMessage(`实验刷新成功：${targetContest.title}`);
     } catch (error) {
       vscode.window.showErrorMessage(error.message);
     }
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.revealContestWorkspace", async (workspaceEntry) => {
-    if (workspaceEntry && workspaceEntry.contest) {
-      syncActiveContestByEntry(state, workspaceEntry);
-      updateStatusBars(state, userStatusBar, contestStatusBar, client);
-      treeProvider.refresh();
-    }
     const contest = (workspaceEntry && workspaceEntry.contest)
       || (state.contestWorkspace && state.contestWorkspace.contest);
     if (!contest || !contest.id) {
@@ -3046,7 +2259,7 @@ function activate(context) {
     }
     const uri = vscode.Uri.file(contestDir);
     await vscode.commands.executeCommand("revealFileInOS", uri);
-    vscode.window.showInformationMessage(`实验「${contest.title || contest.id}」目录：${contestDir}`);
+    vscode.window.showInformationMessage(`实验目录：${contestDir}`);
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.revealProblemsetWorkspace", async () => {
@@ -3086,11 +2299,11 @@ function activate(context) {
       return;
     }
     try {
-      clearContestContext(state);
+      state.contestWorkspace = null;
+      state.activeContest = null;
       updateStatusBars(state, userStatusBar, contestStatusBar, client);
       const detail = await openProblemDetail(client, state, { id: item.id, display_id: item.display_id, title: item.title }, null, "");
       upsertProblemsetSelection(state, detail, client.baseUrl);
-      await persistProblemsetSelections(context, state);
       treeProvider.refresh();
     } catch (error) {
       vscode.window.showErrorMessage(error.message);
@@ -3118,15 +2331,13 @@ function activate(context) {
       if (confirmed !== "删除全部") {
         return;
       }
-      clearProblemsetSelections(state);
-      await persistProblemsetSelections(context, state);
+      state.problemsetSelections = [];
     } else {
       const confirmed = await vscode.window.showWarningMessage(`确定要删除题目“${picked.value.display_id} ${picked.value.title}”吗？`, { modal: true }, "删除题目");
       if (confirmed !== "删除题目") {
         return;
       }
       state.problemsetSelections = current.filter((item) => !(String(item.id) === String(picked.value.id) && normalizeBaseUrlForKey(item.baseUrl) === normalizeBaseUrlForKey(picked.value.baseUrl)));
-      await persistProblemsetSelections(context, state);
     }
     treeProvider.refresh();
   }));
@@ -3140,7 +2351,6 @@ function activate(context) {
       return;
     }
     removeProblemsetSelection(state, item);
-    await persistProblemsetSelections(context, state);
     treeProvider.refresh();
   }));
 
@@ -3780,35 +2990,6 @@ function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.materializeContestWorkspace", async () => {
     try {
       await materializeContestWorkspace(context, client, state, outputChannel);
-      treeProvider.refresh();
-    } catch (error) {
-      outputChannel.appendLine(error.stack || error.message);
-      outputChannel.show(true);
-      vscode.window.showErrorMessage(error.message);
-    }
-  }));
-
-  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.initContestWorkspace", async (workspaceEntry) => {
-    try {
-      if (workspaceEntry && workspaceEntry.contest) {
-        syncActiveContestByEntry(state, workspaceEntry);
-        updateStatusBars(state, userStatusBar, contestStatusBar, client);
-        treeProvider.refresh();
-      }
-      const targetContest = workspaceEntry && workspaceEntry.contest
-        ? workspaceEntry.contest
-        : (state.contestWorkspace ? state.contestWorkspace.contest : null);
-      if (targetContest) {
-        const confirmed = await vscode.window.showWarningMessage(
-          `将为实验「${targetContest.title}」批量创建题目目录，确认继续吗？`,
-          { modal: true },
-          "继续"
-        );
-        if (confirmed !== "继续") {
-          return;
-        }
-      }
-      await initContestProblemFolders(context, client, state, outputChannel, workspaceEntry);
       treeProvider.refresh();
     } catch (error) {
       outputChannel.appendLine(error.stack || error.message);

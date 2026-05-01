@@ -1,8 +1,8 @@
 {
   "name": "xmuoj-vscode",
   "displayName": "XMUOJ",
-  "description": "在VSCode/Trae中提供XMUOJ的沉浸式刷题体验。",
-  "version": "0.0.87",
+  "description": "在 VS Code 中完成 XMUOJ 的找题、读题、本地测试和提交。",
+  "version": "0.0.82",
   "publisher": "xmuoj",
   "scripts": {
     "package": "vsce package --allow-missing-repository --skip-license",
@@ -12,7 +12,7 @@
     "vscode": "^1.88.0"
   },
   "dependencies": {
-    "adm-zip": "^0.5.17"
+    "adm-zip": "^0.5.16"
   },
   "devDependencies": {
     "@vscode/vsce": "^3.6.2"
@@ -74,11 +74,7 @@
       },
       {
         "command": "xmuoj.login",
-        "title": "XMUOJ：登录",
-        "icon": {
-          "light": "media/toolbar-login.svg",
-          "dark": "media/toolbar-login.svg"
-        }
+        "title": "XMUOJ：登录"
       },
       {
         "command": "xmuoj.logout",
@@ -86,7 +82,7 @@
       },
       {
         "command": "xmuoj.openContest",
-        "title": "XMUOJ：打开实验",
+        "title": "XMUOJ：打开比赛",
         "icon": {
           "light": "media/toolbar-open-contest.svg",
           "dark": "media/toolbar-open-contest.svg"
@@ -94,7 +90,7 @@
       },
       {
         "command": "xmuoj.browseContests",
-        "title": "XMUOJ：浏览实验",
+        "title": "XMUOJ：浏览比赛",
         "icon": {
           "light": "media/toolbar-browse-contests.svg",
           "dark": "media/toolbar-browse-contests.svg"
@@ -102,7 +98,7 @@
       },
       {
         "command": "xmuoj.browseProblemset",
-        "title": "XMUOJ：浏览公共题库"
+        "title": "XMUOJ：浏览题库"
       },
       {
         "command": "xmuoj.openProblemsetProblem",
@@ -125,14 +121,6 @@
         }
       },
       {
-        "command": "xmuoj.initContestWorkspace",
-        "title": "XMUOJ：批量创建题目目录",
-        "icon": {
-          "light": "media/toolbar-init-workspace.svg",
-          "dark": "media/toolbar-init-workspace.svg"
-        }
-      },
-      {
         "command": "xmuoj.revealContestWorkspace",
         "title": "XMUOJ：打开实验目录"
       },
@@ -146,31 +134,27 @@
       },
       {
         "command": "xmuoj.openContestWorkspaceByItem",
-        "title": "XMUOJ：切换到实验列表中的实验"
+        "title": "XMUOJ：切换到比赛列表中的比赛"
       },
       {
         "command": "xmuoj.openContestWorkspaceProblem",
-        "title": "XMUOJ：打开实验列表中的题目"
+        "title": "XMUOJ：打开比赛列表中的题目"
       },
       {
         "command": "xmuoj.manageContestWorkspaceSelections",
-        "title": "XMUOJ：管理实验列表"
+        "title": "XMUOJ：管理比赛列表"
       },
       {
         "command": "xmuoj.removeContestWorkspaceSelection",
-        "title": "XMUOJ：删除实验列表项"
+        "title": "XMUOJ：移除比赛列表项"
       },
       {
         "command": "xmuoj.startWorkingOnProblem",
-        "title": "XMUOJ：开始编码"
+        "title": "XMUOJ：打开代码"
       },
       {
         "command": "xmuoj.createProblemWorkspace",
-        "title": "XMUOJ：创建公共题库工作区",
-        "icon": {
-          "light": "media/toolbar-folder.svg",
-          "dark": "media/toolbar-folder.svg"
-        }
+        "title": "XMUOJ：创建本地题目工作区"
       },
       {
         "command": "xmuoj.downloadTestCases",
@@ -182,7 +166,7 @@
       },
       {
         "command": "xmuoj.switchProblemLanguage",
-        "title": "XMUOJ：切换编程语言"
+        "title": "XMUOJ：切换代码语言"
       },
       {
         "command": "xmuoj.generateAiSolution",
@@ -206,11 +190,11 @@
       },
       {
         "command": "xmuoj.materializeContestWorkspace",
-        "title": "XMUOJ：批量生成实验工作区"
+        "title": "XMUOJ：批量生成比赛工作区"
       },
       {
         "command": "xmuoj.showLastLocalReport",
-        "title": "XMUOJ：查看最近实验报告"
+        "title": "XMUOJ：查看最近本地报告"
       },
       {
         "command": "xmuoj.showLastSubmissionResult",
@@ -292,35 +276,35 @@
     "menus": {
       "view/title": [
         {
-          "command": "xmuoj.login",
+          "command": "xmuoj.browseContests",
           "when": "view == xmuojExplorer",
           "group": "navigation"
         },
         {
-          "command": "xmuoj.createProblemWorkspace",
+          "command": "xmuoj.openContest",
           "when": "view == xmuojExplorer",
           "group": "navigation@1"
         },
         {
-          "command": "xmuoj.browseContests",
-          "when": "view == xmuojExplorer",
-          "group": "navigation@2"
-        },
-        {
           "command": "xmuoj.refreshContest",
           "when": "view == xmuojExplorer",
-          "group": "navigation@3"
-        },
-        {
-          "command": "xmuoj.initContestWorkspace",
-          "when": "view == xmuojExplorer",
-          "group": "navigation@4"
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
         {
+          "command": "xmuoj.removeProblemsetSelection",
+          "when": "view == xmuojExplorer && viewItem == problemsetSelection",
+          "group": "inline"
+        },
+        {
           "command": "xmuoj.revealProblemWorkspaceEntry",
           "when": "view == xmuojExplorer && (viewItem == problemWorkspaceFile || viewItem == problemWorkspaceFolder)",
+          "group": "navigation"
+        },
+        {
+          "command": "xmuoj.switchProblemLanguage",
+          "when": "view == xmuojExplorer && (viewItem == problem || viewItem == problemsetSelection)",
           "group": "navigation"
         }
       ],
