@@ -175,10 +175,21 @@ export default {
       data
     })
   },
-  getContestList (offset, limit, keyword) {
+  deleteContest (id, hard = false) {
+    return ajax('admin/contest', 'delete', {
+      params: {
+        id,
+        hard: hard ? '1' : '0'
+      }
+    })
+  },
+  getContestList (offset, limit, keyword, owner) {
     let params = {paging: true, offset, limit}
     if (keyword) {
       params.keyword = keyword
+    }
+    if (owner) {
+      params.owner = owner
     }
     return ajax('admin/contest', 'get', {
       params: params

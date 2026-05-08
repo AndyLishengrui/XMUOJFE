@@ -1,11 +1,17 @@
 <template>
   <div class="view">
     <Panel title="Contest List">
-      <div slot="header">
+      <div slot="header" style="display:flex;gap:8px;">
+        <el-input
+          v-model="ownerKeyword"
+          prefix-icon="el-icon-user"
+          placeholder="Search by owner"
+          style="width:180px;">
+        </el-input>
         <el-input
           v-model="keyword"
           prefix-icon="el-icon-search"
-          placeholder="Keywords">
+          placeholder="Search by title">
         </el-input>
       </div>
       <el-table
@@ -30,6 +36,13 @@
         <el-table-column
           prop="title"
           label="Title">
+        </el-table-column>
+        <el-table-column
+          label="Owner"
+          width="140">
+          <template slot-scope="scope">
+            {{ scope.row.created_by.username }}
+          </template>
         </el-table-column>
         <el-table-column
           label="Rule Type"
@@ -70,7 +83,7 @@
         </el-table-column>
         <el-table-column
           fixed="right"
-          width="300"
+          width="360"
           label="Operation">
           <div slot-scope="scope">
             <icon-btn name="Edit" icon="edit" @click.native="goEdit(scope.row.id)"></icon-btn>
@@ -81,6 +94,8 @@
                       @click.native="openDownloadOptions(scope.row.id, 1)"></icon-btn>
             <icon-btn icon="download" name="Download All Submissions"
                       @click.native="openDownloadOptions(scope.row.id, 0)"></icon-btn>
+            <icon-btn icon="trash" name="Delete"
+                      @click.native="deleteContest(scope.row)"></icon-btn>
           </div>
         </el-table-column>
       </el-table>
@@ -122,6 +137,7 @@
         total: 0,
         contestList: [],
         keyword: '',
+        ownerKeyword: '',
         loading: false,
         excludeAdmin: true,
         currentPage: 1,
@@ -148,6 +164,7 @@
 
         this.syncingRouteState = true
         this.keyword = query.keyword || ''
+        this.ownerKeyword = query.owner || ''
         this.currentPage = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1
         this.pageSize = this.pageSizes.includes(parsedPageSize) ? parsedPageSize : 15
         this.syncingRouteState = false
@@ -156,6 +173,9 @@
         const query = {}
         if (this.keyword) {
           query.keyword = this.keyword
+        }
+        if (this.ownerKeyword) {
+          query.owner = this.ownerKeyword
         }
         if (this.currentPage > 1) {
           query.page = String(this.currentPage)
@@ -166,6 +186,7 @@
 
         const currentQuery = this.$route.query || {}
         const queryUnchanged = currentQuery.keyword === query.keyword &&
+          currentQuery.owner === query.owner &&
           currentQuery.page === query.page &&
           currentQuery.page_size === query.page_size &&
           Object.keys(currentQuery).length === Object.keys(query).length
@@ -196,7 +217,7 @@
           this.syncRouteQuery()
         }
         this.loading = true
-        api.getContestList((page - 1) * this.pageSize, this.pageSize, this.keyword).then(res => {
+        api.getContestList((page - 1) * this.pageSize, this.pageSize, this.keyword, this.ownerKeyword).then(res => {
           this.loading = false
           this.total = res.data.data.total
           this.contestList = res.data.data.results
@@ -223,6 +244,28 @@
       goContestProblemList (contestId) {
         this.$router.push({name: 'contest-problem-list', params: {contestId}})
       },
+      deleteContest (row) {
+        this.$confirm(
+          'Hard delete will permanently remove this contest and related data (submissions/ranks). Continue?',
+          'Warning',
+          {
+            type: 'warning'
+          }
+        ).then(() => {
+          this.loading = true
+          api.deleteContest(row.id, true).then(() => {
+            this.$success('Contest deleted successfully')
+            this.getContestList(this.currentPage)
+          }).catch((err) => {
+            const message = err && err.data && err.data.data
+              ? err.data.data
+              : 'Delete failed. Please check owner permission or contest status and try again.'
+            this.$error(message)
+          }).finally(() => {
+            this.loading = false
+          })
+        }).catch(() => {})
+      },
       handleVisibleSwitch (row) {
         api.editContest(row)
       }
@@ -233,6 +276,12 @@
         this.getContestList(this.currentPage, false)
       },
       'keyword' () {
+        if (this.syncingRouteState) {
+          return
+        }
+        this.currentChange(1)
+      },
+      'ownerKeyword' () {
         if (this.syncingRouteState) {
           return
         }
