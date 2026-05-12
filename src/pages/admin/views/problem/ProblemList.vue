@@ -13,22 +13,6 @@
             <el-switch v-model="showSource" active-text="Show Source"></el-switch>
           </div>
         </div>
-        <div v-if="contestId" class="contest-batch-language-row">
-          <span class="contest-batch-language-label">可选编程语言</span>
-          <el-checkbox-group v-model="batchContestLanguages" class="contest-batch-language-options">
-            <el-checkbox
-              v-for="lang in contestLanguageOptions"
-              :key="'contest-batch-lang-' + lang.name"
-              :label="lang.name"
-            >{{ lang.name }}</el-checkbox>
-          </el-checkbox-group>
-          <el-button
-            type="primary"
-            size="small"
-            :loading="batchContestLanguageLoading"
-            @click="submitBatchContestLanguages"
-          >批量设置</el-button>
-        </div>
       </div>
       <el-table
         v-loading="loading"
@@ -121,6 +105,22 @@
           </div>
         </el-table-column>
       </el-table>
+      <div v-if="contestId" class="contest-batch-language-row">
+        <span class="contest-batch-language-label">语言限制</span>
+        <el-checkbox-group v-model="batchContestLanguages" class="contest-batch-language-options">
+          <el-checkbox
+            v-for="lang in contestLanguageOptions"
+            :key="'contest-batch-lang-' + lang.name"
+            :label="lang.name"
+          >{{ lang.name }}</el-checkbox>
+        </el-checkbox-group>
+        <el-button
+          type="primary"
+          size="small"
+          :loading="batchContestLanguageLoading"
+          @click="submitBatchContestLanguages"
+        >批量设置</el-button>
+      </div>
       <div class="panel-options">
         <el-button v-if="isBatchManageEnabled" type="warning" size="small" :disabled="selectedProblemIds.length === 0"
                    @click="batchTagsDialogVisible = true">Batch Edit Tags
@@ -330,7 +330,8 @@
           return
         }
         api.getLanguages().then(res => {
-          this.contestLanguageOptions = (res.data.data && res.data.data.languages) || []
+          const all = (res.data.data && res.data.data.languages) || []
+          this.contestLanguageOptions = all.filter(l => !/python2/i.test(l.name))
         }).catch(() => {
           this.contestLanguageOptions = []
         })
@@ -531,13 +532,14 @@
   }
 
   .contest-batch-language-row {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid #ebeef5;
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 14px;
     flex-wrap: wrap;
+    padding: 8px 20px;
+    background: #f8f9fa;
+    border-top: 1px solid #ebeef5;
+    border-bottom: 1px solid #ebeef5;
   }
 
   .contest-batch-language-label {
