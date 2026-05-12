@@ -54,6 +54,30 @@ export default {
       }
     })
   },
+  getUserContestSummary (username = undefined, offset = 0, limit = 20) {
+    return ajax('profile/contests', 'get', {
+      params: {
+        username,
+        offset,
+        limit
+      }
+    })
+  },
+  getUserContestDetail (contestID, username = undefined) {
+    return ajax('profile/contest_detail', 'get', {
+      params: {
+        contest_id: contestID,
+        username
+      }
+    })
+  },
+  calibrateContest (contestID) {
+    return ajax('profile/contest_calibrate', 'post', {
+      data: {
+        contest_id: contestID
+      }
+    })
+  },
   updateProfile (profile) {
     return ajax('profile', 'put', {
       data: profile
@@ -227,10 +251,11 @@ export default {
       }
     })
   },
-  submissionExists (problemID) {
+  submissionExists (problemID, contestID = undefined) {
     return ajax('submission_exists', 'get', {
       params: {
-        problem_id: problemID
+        problem_id: problemID,
+        contest_id: contestID
       }
     })
   },

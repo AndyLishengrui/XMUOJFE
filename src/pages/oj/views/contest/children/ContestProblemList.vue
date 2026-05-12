@@ -69,15 +69,19 @@
       this.getContestProblems()
     },
     methods: {
+      ensureStatusColumn (problems) {
+        if (!this.isAuthenticated) {
+          return
+        }
+        if (this.contestRuleType === 'ACM') {
+          this.addStatusColumn(this.ACMTableColumns, problems)
+        } else if (this.OIContestRealTimePermission) {
+          this.addStatusColumn(this.ACMTableColumns, problems)
+        }
+      },
       getContestProblems () {
         this.$store.dispatch('getContestProblems').then(res => {
-          if (this.isAuthenticated) {
-            if (this.contestRuleType === 'ACM') {
-              this.addStatusColumn(this.ACMTableColumns, res.data.data)
-            } else if (this.OIContestRealTimePermission) {
-              this.addStatusColumn(this.ACMTableColumns, res.data.data)
-            }
-          }
+          this.ensureStatusColumn(res.data.data)
         })
       },
       goContestProblem (row) {
@@ -95,6 +99,18 @@
         problems: state => state.contest.contestProblems
       }),
       ...mapGetters(['isAuthenticated', 'contestRuleType', 'OIContestRealTimePermission'])
+    },
+    watch: {
+      isAuthenticated (val, oldVal) {
+        if (val && !oldVal) {
+          this.getContestProblems()
+        }
+      },
+      problems (val) {
+        if (Array.isArray(val) && val.length > 0) {
+          this.ensureStatusColumn(val)
+        }
+      }
     }
   }
 </script>

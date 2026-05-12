@@ -75,14 +75,20 @@
                 <span> [ <Icon type="arrow-left-a"></Icon> 点击左侧按钮，查看详情 ]</span>
               </template>
               <template v-else-if="this.contestID && !OIContestRealTimePermission">
-                <Alert type="success" show-icon>{{$t('m.Submitted_successfully')}}</Alert>
+                <Alert type="success" show-icon>
+                  {{$t('m.Submitted_successfully')}}
+                  <a style="margin-left: 8px;" @click="handleRoute(submissionRoute)">查看我的提交</a>
+                </Alert>
               </template>
             </div>
             <div v-else-if="problem.my_status === 0">
               <Alert type="success" show-icon>{{$t('m.You_have_solved_the_problem')}}</Alert>
             </div>
             <div v-else-if="this.contestID && !OIContestRealTimePermission && submissionExists">
-              <Alert type="success" show-icon>{{$t('m.You_have_submitted_a_solution')}}</Alert>
+              <Alert type="success" show-icon>
+                {{$t('m.You_have_submitted_a_solution')}}
+                <a style="margin-left: 8px;" @click="handleRoute(submissionRoute)">查看我的提交</a>
+              </Alert>
             </div>
             <div v-if="contestEnded">
               <Alert type="warning" show-icon>{{$t('m.Contest_has_ended')}}</Alert>
@@ -123,9 +129,9 @@
           </VerticalMenu-item>
         </template>
 
-        <VerticalMenu-item v-if="!this.contestID || OIContestRealTimePermission" :route="submissionRoute">
+          <VerticalMenu-item :route="submissionRoute">
           <Icon type="navicon-round"></Icon>
-           {{$t('m.Submissions')}}
+            {{ this.contestID && !OIContestRealTimePermission ? '我的提交' : $t('m.Submissions') }}
         </VerticalMenu-item>
 
         <template v-if="this.contestID">
@@ -295,7 +301,7 @@
           this.$Loading.finish()
           let problem = res.data.data
           this.changeDomTitle({title: problem.title})
-          api.submissionExists(problem.id).then(res => {
+          api.submissionExists(problem.id, this.contestID).then(res => {
             this.submissionExists = res.data.data
           })
           problem.languages = problem.languages.sort()
@@ -486,7 +492,7 @@
       }
     },
     computed: {
-      ...mapGetters(['problemSubmitDisabled', 'contestRuleType', 'OIContestRealTimePermission', 'contestStatus', 'canViewContestRank']),
+      ...mapGetters(['problemSubmitDisabled', 'contestRuleType', 'OIContestRealTimePermission', 'contestStatus', 'canViewContestRank', 'isAuthenticated']),
       contest () {
         return this.$store.state.contest.contest
       },
@@ -501,7 +507,11 @@
       },
       submissionRoute () {
         if (this.contestID) {
-          return {name: 'contest-submission-list', query: {problemID: this.problemID}}
+          const query = {problemID: this.problemID}
+          if (!this.OIContestRealTimePermission && this.isAuthenticated) {
+            query.myself = '1'
+          }
+          return {name: 'contest-submission-list', query}
         } else {
           return {name: 'submission-list', query: {problemID: this.problemID}}
         }
