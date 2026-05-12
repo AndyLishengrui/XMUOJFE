@@ -55,7 +55,7 @@
         <Tabs v-model="activeTab" class="uh-tabs">
 
           <!-- Tab: 已解决题目 -->
-          <TabPane label="已解决题目" name="problems">
+          <TabPane label="公共题库" name="problems">
             <div class="uh-tab-body" v-if="profile.user">
               <div v-if="problems.length === 0" class="uh-empty">
                 <Icon type="ios-checkmark-circle-outline" size="40" color="#ccc"></Icon>
@@ -174,7 +174,7 @@
   </div>
 </template>
 <script>
-  import { mapActions } from 'vuex'
+  import { mapActions, mapGetters } from 'vuex'
   import time from '@/utils/time'
   import api from '@oj/api'
 
@@ -247,6 +247,7 @@
       }
     },
     computed: {
+      ...mapGetters(['isSuperAdmin', 'user']),
       displayedProblems () {
         return this.showAll ? this.problems : this.problems.slice(0, this.showLimit)
       },
@@ -262,7 +263,14 @@
     methods: {
       ...mapActions(['changeDomTitle']),
       init () {
-        this.username = this.$route.query.username
+        const qUsername = this.$route.query.username
+        // Permission gate: only SuperAdmin may view other people's home page.
+        // Admin and regular users are silently redirected to their own home.
+        if (qUsername && qUsername !== this.user.username && !this.isSuperAdmin) {
+          this.$router.replace({ name: 'user-home' })
+          return
+        }
+        this.username = qUsername
         api.getUserInfo(this.username).then(res => {
           this.changeDomTitle({ title: res.data.data.user.username })
           this.profile = res.data.data
