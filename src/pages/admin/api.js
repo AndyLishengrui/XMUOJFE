@@ -336,6 +336,11 @@ export default {
       data
     })
   },
+  batchUpdateContestProblemLanguages (data) {
+    return ajax('admin/contest/problem/batch_languages', 'post', {
+      data
+    })
+  },
   deleteContestProblem (id) {
     return ajax('admin/contest/problem', 'delete', {
       params: {

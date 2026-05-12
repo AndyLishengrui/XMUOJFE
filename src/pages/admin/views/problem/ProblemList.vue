@@ -13,6 +13,22 @@
             <el-switch v-model="showSource" active-text="Show Source"></el-switch>
           </div>
         </div>
+        <div v-if="contestId" class="contest-batch-language-row">
+          <span class="contest-batch-language-label">可选编程语言</span>
+          <el-checkbox-group v-model="batchContestLanguages" class="contest-batch-language-options">
+            <el-checkbox
+              v-for="lang in contestLanguageOptions"
+              :key="'contest-batch-lang-' + lang.name"
+              :label="lang.name"
+            >{{ lang.name }}</el-checkbox>
+          </el-checkbox-group>
+          <el-button
+            type="primary"
+            size="small"
+            :loading="batchContestLanguageLoading"
+            @click="submitBatchContestLanguages"
+          >批量设置</el-button>
+        </div>
       </div>
       <el-table
         v-loading="loading"
@@ -226,6 +242,9 @@
         availableTags: [],
         batchTagsDialogVisible: false,
         batchSourceDialogVisible: false,
+        contestLanguageOptions: [],
+        batchContestLanguages: [],
+        batchContestLanguageLoading: false,
         batchTags: {
           operation: 'replace',
           tags: []
@@ -247,6 +266,7 @@
       this.routeName = this.$route.name
       this.contestId = this.$route.params.contestId
       this.applyRouteState(this.$route)
+      this.fetchContestLanguageOptions()
       if (this.isBatchManageEnabled) {
         this.fetchAvailableTags()
       }
@@ -303,6 +323,18 @@
           this.availableTags = res.data.data.map(item => item.name)
         }).catch(() => {})
       },
+      fetchContestLanguageOptions () {
+        if (!this.contestId) {
+          this.contestLanguageOptions = []
+          this.batchContestLanguages = []
+          return
+        }
+        api.getLanguages().then(res => {
+          this.contestLanguageOptions = (res.data.data && res.data.data.languages) || []
+        }).catch(() => {
+          this.contestLanguageOptions = []
+        })
+      },
       resetBatchTagsState () {
         this.batchTags = {
           operation: 'replace',
@@ -358,8 +390,34 @@
             problem.isEditing = false
           }
           this.problemList = res.data.data.results
+          if (this.contestId && this.batchContestLanguages.length === 0 && this.problemList.length > 0) {
+            this.batchContestLanguages = Array.isArray(this.problemList[0].languages)
+              ? this.problemList[0].languages.slice()
+              : []
+          }
         }, res => {
           this.loading = false
+        })
+      },
+      submitBatchContestLanguages () {
+        if (!this.contestId) {
+          return
+        }
+        const languages = Array.from(new Set(this.batchContestLanguages.map(item => String(item).trim()).filter(item => item)))
+        if (languages.length === 0) {
+          this.$error('请至少选择一种语言')
+          return
+        }
+        this.batchContestLanguageLoading = true
+        api.batchUpdateContestProblemLanguages({
+          contest_id: Number(this.contestId),
+          languages: languages
+        }).then(res => {
+          const updated = (res.data && res.data.data && res.data.data.updated_count) || 0
+          this.$success(`批量设置成功，已更新 ${updated} 道题目`)
+          this.getProblemList(this.currentPage)
+        }).catch(() => {}).finally(() => {
+          this.batchContestLanguageLoading = false
         })
       },
       submitBatchTags () {
@@ -441,6 +499,7 @@
         this.contestId = newVal.params.contestId
         this.routeName = newVal.name
         this.applyRouteState(newVal)
+        this.fetchContestLanguageOptions()
         if (this.isBatchManageEnabled) {
           this.fetchAvailableTags()
         }
@@ -469,6 +528,28 @@
     align-items: center;
     gap: 12px;
     white-space: nowrap;
+  }
+
+  .contest-batch-language-row {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #ebeef5;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .contest-batch-language-label {
+    color: #606266;
+    font-weight: 600;
+  }
+
+  .contest-batch-language-options {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
   }
 
   .tag-list-cell {
