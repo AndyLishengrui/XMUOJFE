@@ -1,14 +1,28 @@
 <template>
   <div>
     <Panel>
-      <div slot="title">{{$t('m.Problems_List')}}</div>
+      <div slot="title" class="title-bar">
+        <span>{{$t('m.Problems_List')}}</span>
+        <span v-if="isAuthenticated" class="progress-stats">
+          ({{ completedCount }}/{{ problems.length }})
+        </span>
+        <i-switch
+          v-if="isAuthenticated && completedCount > 0"
+          v-model="hideCompleted"
+          size="small"
+          class="hide-completed-switch"
+          @on-change="onHideCompletedChange">
+          <span slot="open">{{$t('m.Show_All')}}</span>
+          <span slot="close">{{$t('m.Hide_Completed')}}</span>
+        </i-switch>
+      </div>
       <Table v-if="contestRuleType == 'ACM' || OIContestRealTimePermission"
              :columns="ACMTableColumns"
-             :data="problems"
+             :data="displayProblems"
              @on-row-click="goContestProblem"
              :no-data-text="$t('m.No_Problems')"></Table>
       <Table v-else
-             :data="problems"
+             :data="displayProblems"
              :columns="OITableColumns"
              @on-row-click="goContestProblem"
              no-data-text="$t('m.No_Problems')"></Table>
@@ -26,6 +40,7 @@
     mixins: [ProblemMixin],
     data () {
       return {
+        hideCompleted: false,
         ACMTableColumns: [
           {
             title: '#',
@@ -68,6 +83,10 @@
     mounted () {
       this.getContestProblems()
     },
+    created () {
+      const saved = localStorage.getItem(`contest_${this.$route.params.contestID}_hide_completed`)
+      this.hideCompleted = saved === '1'
+    },
     methods: {
       ensureStatusColumn (problems) {
         if (!this.isAuthenticated) {
@@ -92,13 +111,23 @@
             problemID: row._id
           }
         })
+      },
+      onHideCompletedChange (val) {
+        localStorage.setItem(`contest_${this.$route.params.contestID}_hide_completed`, val ? '1' : '0')
       }
     },
     computed: {
       ...mapState({
         problems: state => state.contest.contestProblems
       }),
-      ...mapGetters(['isAuthenticated', 'contestRuleType', 'OIContestRealTimePermission'])
+      ...mapGetters(['isAuthenticated', 'contestRuleType', 'OIContestRealTimePermission']),
+      completedCount () {
+        return this.problems.filter(p => p.my_status === 0).length
+      },
+      displayProblems () {
+        if (!this.hideCompleted) return this.problems
+        return this.problems.filter(p => p.my_status !== 0)
+      }
     },
     watch: {
       isAuthenticated (val, oldVal) {
@@ -116,4 +145,17 @@
 </script>
 
 <style scoped lang="less">
+  .title-bar {
+    display: flex;
+    align-items: center;
+    .progress-stats {
+      font-size: 14px;
+      color: #808695;
+      margin-left: 12px;
+      font-weight: normal;
+    }
+    .hide-completed-switch {
+      margin-left: 16px;
+    }
+  }
 </style>

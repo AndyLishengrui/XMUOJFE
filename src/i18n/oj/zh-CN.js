@@ -138,6 +138,8 @@ export const m = {
   // ContestProblemList.vue
   Problems_List: '问题列表',
   No_Problems: '尚无问题',
+  Hide_Completed: '隐藏已完成',
+  Show_All: '显示全部',
   // CodeMirror.vue
   Language: '编程语言',
   Theme: '主题',
