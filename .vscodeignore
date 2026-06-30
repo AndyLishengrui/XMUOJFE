@@ -1,6 +1,7 @@
 .vscode/**
 .gitignore
 xmuoj-vscode-*.vsix
+xmuoj-vscode-*-release-assets.zip
 xmuoj/**
 .trae/**
 .node-version

@@ -2,83 +2,74 @@
 
 在 VS Code 中完成 XMUOJ 的找题、读题、写代码、本地测试和提交。
 
-## 亮点
-
-- 侧边栏按“设置 / 公共题库 / 实验题库”组织，常用操作集中可见
-- 一键打开代码、切换代码语言、运行本地测试、提交评测、查看结果报表
-- 题面、代码、结果支持 side mode 分栏打开，减少来回切换
-- 自动创建本地题目工作区，保存 `.xmuoj.json` 元数据和多语言源码
-- 结果报表按题目聚合展示本地测试和在线评测，不混入其他题
-
 ## 主要功能
 
 - 登录 XMUOJ，浏览实验题库和公共题库
-- 打开题目后创建或恢复本地代码文件
-- 下载公开测试数据，生成本地任务
-- 支持 C、C++、Java、Python3 本地测试
-- 提交当前文件并轮询判题结果
-- 保存最近提交历史，并支持查看、筛选、清理
-- 重新打开 VS Code 后恢复最近的题面、代码和结果报表布局
-
-## 常用命令
-
-- `XMUOJ：快速开始`
-- `XMUOJ：登录`
-- `XMUOJ：浏览实验题库`
-- `XMUOJ：浏览题库`
-- `XMUOJ：打开代码`
-- `XMUOJ：切换代码语言`
-- `XMUOJ：运行本地测试`
-- `XMUOJ：提交当前文件`
-- `XMUOJ：打开当前题结果报表`
-- `XMUOJ：管理最近提交历史`
-- `XMUOJ：选择本地工作目录`
-
-## 常用配置
-
-- `xmuoj.localWorkspaceRoot`：本地工作区根目录
-- `xmuoj.editor.shortcuts`：编辑器顶部快捷入口
-- `xmuoj.enableSideMode`：是否启用分栏布局
-- `xmuoj.colorizeProblems`：是否显示状态颜色和图标
+- 打开题目，自动创建或恢复本地代码工作区
+- 下载测试数据并在本地运行，支持 C、C++、Java、Python3
+- 提交当前文件，自动检查题目语言限制并轮询判题结果
+- 保存提交历史，支持查看、筛选、清理
+- 题面、代码、结果支持分栏布局；重启 VS Code 后自动恢复上次布局
+- 实验（Contest）状态感知：自动提示进行中 / 准备中 / 已结束
 
 ## 使用流程
 
 1. 执行 `XMUOJ：快速开始` 并选择本地工作区目录
-2. 登录后，通过“浏览实验题库”或“浏览题库”打开题目
+2. 登录后，通过"浏览实验题库"或"浏览题库"打开题目
 3. 点击 `打开代码` 创建或恢复本地工作区
 4. 需要换语言时点击 `切换代码语言`
 5. 写完后运行 `本地测试`
 6. 通过后执行 `提交当前文件`
 7. 在 `结果报表` 中查看本地和在线结果
 
+## 常用命令
+
+| 命令 | 说明 |
+|------|------|
+| `XMUOJ：快速开始` | 初始化工作区并登录 |
+| `XMUOJ：登录` | 登录账户 |
+| `XMUOJ：浏览实验题库` | 打开实验列表 |
+| `XMUOJ：浏览题库` | 打开公共题库 |
+| `XMUOJ：打开代码` | 打开或创建当前题目源码 |
+| `XMUOJ：切换代码语言` | 扫描本地文件，切换或创建语言模板 |
+| `XMUOJ：运行本地测试` | 用本地测试数据验证代码 |
+| `XMUOJ：提交当前文件` | 在线提交并等待判题 |
+| `XMUOJ：打开当前题结果报表` | 查看本题本地和在线结果 |
+| `XMUOJ：管理最近提交历史` | 查看、筛选、清理提交记录 |
+
+## 常用配置
+
+| 配置项 | 说明 |
+|--------|------|
+| `xmuoj.localWorkspaceRoot` | 本地工作区根目录 |
+| `xmuoj.enableSideMode` | 是否启用分栏布局（默认开启） |
+| `xmuoj.colorizeProblems` | 是否在题目树中显示状态颜色和图标 |
+| `xmuoj.editor.shortcuts` | 编辑器顶部显示哪些快捷操作（CodeLens） |
+
 ## 本地工作区结构
 
-- 实验题库：`{localWorkspaceRoot}/contest-{id}/{problemId}-{title}/`
-- 公共题库：`{localWorkspaceRoot}/problemsets/{problemId}-{title}/`
-
-每个题目目录包含：
-- `problem.md`：题目描述
-- `.xmuoj.json`：题目元数据
-- 多语言源码文件（如 `main.cpp`、`Main.java`、`main.py` 等）
-- `samples/`：样例输入输出
-- `testcases/`：测试数据（下载后）
+```
+{localWorkspaceRoot}/
+  contest-{id}/           # 实验题库
+    {problemId}-{title}/
+      problem.md          # 题目描述
+      .xmuoj.json         # 题目元数据
+      main.cpp / Main.java / main.py / main.c
+      samples/            # 样例输入输出
+      testcases/          # 下载的测试数据
+  problemsets/            # 公共题库
+    {problemId}-{title}/
+```
 
 ## 安装
 
-最新安装包：
-
-- `xmuoj-vscode-0.0.77.vsix`
-- 路径：`/Users/andyshengruilee/Downloads/OpenJudgeFE/xmuoj-vscode/xmuoj-vscode-0.0.77.vsix`
-
-命令行安装：
-
 ```bash
-code --install-extension /Users/andyshengruilee/Downloads/OpenJudgeFE/xmuoj-vscode/xmuoj-vscode-0.0.77.vsix
+code --install-extension xmuoj-vscode-0.0.90.vsix
 ```
 
 ## 补充说明
 
 - 插件已内置对自签名证书的支持，无需额外配置
-- 如果提示 `/api/plugin/` 返回 `404`，说明站点后端尚未部署插件接口
-- 如果题目绑定失效，提交前会提示重新绑定当前题目
-- 插件会自动迁移旧的工作区配置到新的本地工作区根目录
+- 提交时若当前语言不在题目支持列表内，插件会自动提示并阻止提交
+- 实验密码在会话内缓存，同一实验无需重复输入
+- 如果题目绑定失效，提交前会提示重新绑定

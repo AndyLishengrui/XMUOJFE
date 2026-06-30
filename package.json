@@ -2,7 +2,7 @@
   "name": "xmuoj-vscode",
   "displayName": "XMUOJ",
   "description": "在VSCode/Trae中提供XMUOJ的沉浸式刷题体验。",
-  "version": "0.0.87",
+  "version": "0.0.91",
   "publisher": "xmuoj",
   "scripts": {
     "package": "vsce package --allow-missing-repository --skip-license",
@@ -300,21 +300,6 @@
           "command": "xmuoj.createProblemWorkspace",
           "when": "view == xmuojExplorer",
           "group": "navigation@1"
-        },
-        {
-          "command": "xmuoj.browseContests",
-          "when": "view == xmuojExplorer",
-          "group": "navigation@2"
-        },
-        {
-          "command": "xmuoj.refreshContest",
-          "when": "view == xmuojExplorer",
-          "group": "navigation@3"
-        },
-        {
-          "command": "xmuoj.initContestWorkspace",
-          "when": "view == xmuojExplorer",
-          "group": "navigation@4"
         }
       ],
       "view/item/context": [

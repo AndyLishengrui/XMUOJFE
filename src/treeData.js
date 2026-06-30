@@ -94,6 +94,44 @@ function getProgressPresentation(progress) {
   return { summary: "未开始", badge: "TODO", iconId: "circle-large-outline", colorId: "disabledForeground" };
 }
 
+function normalizeContestStatus(status) {
+  const raw = String(status || "").trim();
+  const lower = raw.toLowerCase();
+  if (raw === "-1") {
+    return { key: "ended", label: "结束" };
+  }
+  if (raw === "0") {
+    return { key: "running", label: "进行中" };
+  }
+  if (raw === "1") {
+    return { key: "pending", label: "准备中" };
+  }
+  if (["ended", "end", "finished", "closed", "over", "结束", "已结束"].includes(lower) || ["结束", "已结束"].includes(raw)) {
+    return { key: "ended", label: "结束" };
+  }
+  if (["pending", "preparing", "scheduled", "not_started", "not-started", "准备中", "未开始"].includes(lower) || ["准备中", "未开始"].includes(raw)) {
+    return { key: "pending", label: "准备中" };
+  }
+  if (["running", "active", "started", "ongoing", "live", "进行中", "已开始"].includes(lower) || ["进行中", "已开始"].includes(raw)) {
+    return { key: "running", label: "进行中" };
+  }
+  return { key: raw ? lower : "unknown", label: raw || "未知" };
+}
+
+function getContestStatusSummary(contest) {
+  const status = normalizeContestStatus(contest && contest.status ? contest.status : "");
+  if (status.key === "ended") {
+    return "已结束 · 仅本地测评";
+  }
+  if (status.key === "pending") {
+    return "准备中";
+  }
+  if (status.key === "running") {
+    return "进行中";
+  }
+  return `状态未知（原始值：${status.label}）`;
+}
+
 class InfoTreeItem extends vscode.TreeItem {
   constructor(label, description, iconId = "info") {
     super(label, vscode.TreeItemCollapsibleState.None);
@@ -279,9 +317,10 @@ class ProblemTreeDataProvider {
           && String(this.state.baseUrl || "") === String(item.baseUrl || this.state.baseUrl || "")
         );
         const label = isActive ? `● ${item.contest.title}` : item.contest.title;
+        const statusSummary = getContestStatusSummary(item.contest);
         const description = isActive
-          ? `当前实验 · ${(item.problems || []).length} 题`
-          : `${(item.problems || []).length} 题`;
+          ? `当前实验 · ${statusSummary} · ${(item.problems || []).length} 题`
+          : `${statusSummary} · ${(item.problems || []).length} 题`;
         return new GroupTreeItem(
           `contest-workspace::${item.key}`,
           label,
@@ -381,13 +420,21 @@ class ProblemTreeDataProvider {
         return [];
       }
       const contestTitle = entry.contest && entry.contest.title ? entry.contest.title : "未命名实验";
-      return [
+      const status = normalizeContestStatus(entry.contest && entry.contest.status ? entry.contest.status : "");
+      const statusHintItems = status.key === "ended"
+        ? [new InfoTreeItem("实验状态：已结束", "当前实验已结束，不能远程提交，只能本地测评", "warning")]
+        : status.key === "pending"
+          ? [new InfoTreeItem("实验状态：准备中", "当前实验尚未开始，不能远程提交，只能本地测评", "clock")]
+          : status.key === "running"
+            ? [new InfoTreeItem("实验状态：进行中", "当前实验允许远程提交", "check")]
+            : [new InfoTreeItem(`实验状态：未知（${status.label}）`, "仅“进行中”允许远程提交；当前建议只做本地测评", "question")];
+      return statusHintItems.concat([
         new ActionTreeItem("打开实验目录", `打开实验「${contestTitle}」在本地的 contest-<实验编号> 文件夹`, "xmuoj.revealContestWorkspace", [entry]),
         new ActionTreeItem("批量创建题目目录", `为实验「${contestTitle}」批量创建 problem.md、.xmuoj.json 和样例文件（不含代码）`, "xmuoj.initContestWorkspace", [entry]),
         new ActionTreeItem("刷新实验", `刷新实验「${contestTitle}」并更新题目列表`, "xmuoj.refreshContest", [entry]),
         new ActionTreeItem("删除实验", `把实验「${contestTitle}」从实验列表中移除`, "xmuoj.removeContestWorkspaceSelection", [entry]),  
         new GroupTreeItem(`contest-workspace-problems::${entry.key}`, "题目列表", `${(entry.problems || []).length} 道`, "list-unordered", false)
-      ];
+      ]);
     }
     if (groupId.startsWith("contest-workspace-problems::")) {
       const targetKey = groupId.replace("contest-workspace-problems::", "");

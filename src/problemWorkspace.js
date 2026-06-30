@@ -18,6 +18,46 @@ const METADATA_FILE_NAME = ".xmuoj.json";
 
 const PROBLEMSET_DIR_NAME = "problemsets";
 
+function normalizeWorkspaceRootPath(inputPath) {
+  const value = String(inputPath || "").trim();
+  if (!value) {
+    return "";
+  }
+  const resolved = path.resolve(value);
+  const baseName = path.basename(resolved);
+  const parent = path.dirname(resolved);
+  const parentBaseName = path.basename(parent);
+
+  if (baseName === PROBLEMSET_DIR_NAME || /^contest-\d+$/i.test(baseName)) {
+    return parent;
+  }
+  if (parentBaseName === PROBLEMSET_DIR_NAME || /^contest-\d+$/i.test(parentBaseName)) {
+    return path.dirname(parent);
+  }
+  return resolved;
+}
+
+function buildWorkspaceRootNormalizationMessage(selectedPath, normalizedPath) {
+  const selectedResolved = path.resolve(String(selectedPath || ""));
+  const normalizedResolved = path.resolve(String(normalizedPath || ""));
+  if (!selectedResolved || selectedResolved === normalizedResolved) {
+    return "";
+  }
+  const baseName = path.basename(selectedResolved);
+  const parentBaseName = path.basename(path.dirname(selectedResolved));
+
+  if (baseName === PROBLEMSET_DIR_NAME) {
+    return `你选择的是公共题库目录「${selectedResolved}」，已自动回退为工作区根目录：${normalizedResolved}`;
+  }
+  if (/^contest-\d+$/i.test(baseName)) {
+    return `你选择的是实验目录「${selectedResolved}」，已自动回退为工作区根目录：${normalizedResolved}`;
+  }
+  if (parentBaseName === PROBLEMSET_DIR_NAME || /^contest-\d+$/i.test(parentBaseName)) {
+    return `你选择的是单题目录「${selectedResolved}」，已自动回退为工作区根目录：${normalizedResolved}`;
+  }
+  return `已自动规范目录为工作区根目录：${normalizedResolved}`;
+}
+
 function slugifyTitle(title) {
   return String(title || "problem")
     .toLowerCase()
@@ -171,7 +211,19 @@ async function chooseWorkspaceRoot(options = {}) {
   await migrateLegacyWorkspaceFoldersOnce();
   const forcePick = Boolean(options.forcePick);
   const config = vscode.workspace.getConfiguration("xmuoj");
-  let configured = String(config.get(LOCAL_WORKSPACE_ROOT_KEY, "") || "").trim();
+  let configured = normalizeWorkspaceRootPath(config.get(LOCAL_WORKSPACE_ROOT_KEY, "") || "");
+  const originalConfigured = String(config.get(LOCAL_WORKSPACE_ROOT_KEY, "") || "").trim();
+  if (configured && configured !== originalConfigured) {
+    try {
+      await config.update(LOCAL_WORKSPACE_ROOT_KEY, configured, vscode.ConfigurationTarget.Global);
+    } catch (_error) {
+      try {
+        await vscode.workspace.getConfiguration().update(`xmuoj.${LOCAL_WORKSPACE_ROOT_KEY}`, configured, vscode.ConfigurationTarget.Global);
+      } catch (_error2) {
+        /* ignore config write failure */
+      }
+    }
+  }
   if (configured && !forcePick) {
     try {
       await fs.access(configured);
@@ -180,16 +232,35 @@ async function chooseWorkspaceRoot(options = {}) {
       /* stale path, ask user again */
     }
   }
+  let defaultUri;
+  if (configured) {
+    try {
+      await fs.access(configured);
+      defaultUri = vscode.Uri.file(configured);
+    } catch (_error) {
+      defaultUri = undefined;
+    }
+  }
+  if (!defaultUri && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length) {
+    defaultUri = vscode.workspace.workspaceFolders[0].uri;
+  }
+
   const selected = await vscode.window.showOpenDialog({
     canSelectFiles: false,
     canSelectFolders: true,
     canSelectMany: false,
-    openLabel: "选择 XMUOJ 本地工作区根目录"
+    openLabel: "选择 XMUOJ 本地工作区根目录",
+    defaultUri
   });
   if (!selected || !selected[0]) {
     return null;
   }
-  const newPath = selected[0].fsPath;
+  const selectedPath = selected[0].fsPath;
+  const newPath = normalizeWorkspaceRootPath(selectedPath);
+  const normalizationMessage = buildWorkspaceRootNormalizationMessage(selectedPath, newPath);
+  if (normalizationMessage) {
+    vscode.window.showInformationMessage(normalizationMessage);
+  }
   try {
     // 尝试直接更新配置
     await config.update(LOCAL_WORKSPACE_ROOT_KEY, newPath, vscode.ConfigurationTarget.Global);
