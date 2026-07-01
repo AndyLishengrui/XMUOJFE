@@ -2,7 +2,7 @@
   "name": "xmuoj-vscode",
   "displayName": "XMUOJ",
   "description": "在VSCode/Trae中提供XMUOJ的沉浸式刷题体验。",
-  "version": "0.0.91",
+  "version": "0.0.92",
   "publisher": "xmuoj",
   "scripts": {
     "package": "vsce package --allow-missing-repository --skip-license",

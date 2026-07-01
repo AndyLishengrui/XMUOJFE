@@ -277,6 +277,52 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * 把 HTML 片段里 <img>/<source> 的相对 src 转成绝对 URL。
+ * webview 的 base 是 vscode-webview://，相对路径（/public/xxx 或 public/xxx）
+ * 无法解析到 xmuoj.com，必须显式拼上 baseUrl。
+ * 已是 http(s):/data:/blob:/vscode-: 协议的保持不变。
+ */
+function resolveRelativeUrls(html, baseUrl) {
+  const base = String(baseUrl || "").replace(/\/+$/, "");
+  if (!html || !base) {
+    return html || "";
+  }
+  const resolveSrc = (rawUrl) => {
+    const url = String(rawUrl || "").trim();
+    if (!url) {
+      return url;
+    }
+    if (/^(https?:|data:|blob:|vscode-|file:)/i.test(url)) {
+      return url;
+    }
+    // 协议相对 //host/... → 用 base 的协议补成 http(s)://host/...
+    if (url.startsWith("//")) {
+      const proto = /^(https?:)/i.exec(base);
+      return (proto ? proto[1] : "http:") + url;
+    }
+    if (url.startsWith("/")) {
+      return base + url;
+    }
+    return base + "/" + url;
+  };
+  // 匹配 <img ... src="..." ...> 和 <img ... src='...' ...>
+  return String(html)
+    .replace(/(<img\b[^>]*?\bsrc=)(["'])([^"']*)\2/gi, (match, prefix, quote, url) => prefix + quote + resolveSrc(url) + quote)
+    .replace(/(<source\b[^>]*?\bsrc=)(["'])([^"']*)\2/gi, (match, prefix, quote, url) => prefix + quote + resolveSrc(url) + quote)
+    // srcset="url1 1x, url2 2x"
+    .replace(/(<img\b[^>]*?\bsrcset=)(["'])([^"']*)\2/gi, (match, prefix, quote, candidates) => {
+      const resolved = candidates.split(",").map((entry) => {
+        const parts = entry.trim().split(/\s+/);
+        if (parts[0]) {
+          parts[0] = resolveSrc(parts[0]);
+        }
+        return parts.join(" ");
+      }).join(", ");
+      return prefix + quote + resolved + quote;
+    });
+}
+
 const ACTION_ICONS = {
   startWork: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10-6.5-10-6.5Z" fill="currentColor"/></svg>',
   continueWork: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17.25V20h2.75L17.81 8.94l-2.75-2.75L4 17.25Zm14.71-9.04a1.003 1.003 0 0 0 0-1.42l-1.5-1.5a1.003 1.003 0 0 0-1.42 0l-1.17 1.17 2.75 2.75 1.34-1Z" fill="currentColor"/></svg>',
@@ -775,10 +821,17 @@ function renderProblemHtml(problem, baseUrl, workspaceState = {}, _user = null) 
   const downloadLink = problem.test_case_manifest
     ? `${baseUrl}${problem.test_case_manifest.download_url}`
     : "";
+  // 题面 HTML 里的 <img src="/public/..."> 是相对路径，webview 解析不到；
+  // 统一转成绝对 URL（已是 http(s):/data: 等协议的保持不变）。
+  const description = resolveRelativeUrls(problem.description || "", baseUrl);
+  const inputDescription = resolveRelativeUrls(problem.input_description || "", baseUrl);
+  const outputDescription = resolveRelativeUrls(problem.output_description || "", baseUrl);
+  const hint = resolveRelativeUrls(problem.hint || "", baseUrl);
   return `<!DOCTYPE html>
   <html>
     <head>
       <meta charset="UTF-8" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src http: https: data: blob:; media-src http: https: data: blob:; style-src 'unsafe-inline' http: https:; script-src 'unsafe-inline' https://cdn.jsdelivr.net; font-src https: data:; connect-src http: https:;" />
       <style>
         body { font-family: Georgia, 'Times New Roman', serif; padding: 24px; background: linear-gradient(180deg, #f3efe3 0%, #f7f7f2 100%); color: #17312f; }
         h1, h2, h3, h4 { color: #0b5d5b; }
@@ -797,7 +850,22 @@ function renderProblemHtml(problem, baseUrl, workspaceState = {}, _user = null) 
         .action-button-label { font-size: 10px; line-height: 1.2; font-weight: 600; text-align: center; }
         pre { white-space: pre-wrap; background: #132322; color: #f6f3ea; padding: 12px; border-radius: 12px; overflow: auto; }
         a { color: #9a3b2f; }
+        img { max-width: 100%; height: auto; }
       </style>
+      <script>
+        window.MathJax = {
+          tex: {
+            inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
+            displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']],
+            processEscapes: true
+          },
+          options: {
+            skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+          },
+          svg: { fontCache: 'global' }
+        };
+      </script>
+      <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     </head>
     <body>
       <h1>${escapeHtml(problem.display_id)} ${escapeHtml(problem.title)}</h1>
@@ -811,15 +879,15 @@ function renderProblemHtml(problem, baseUrl, workspaceState = {}, _user = null) 
         <span class="pill">${escapeHtml(problem.rule_type)}</span>
         <span class="pill">${escapeHtml(problem.difficulty || "未知")}</span>
       </div>
-      <section class="panel">${problem.description || ""}</section>
+      <section class="panel">${description}</section>
       <section class="panel">
         <h2>输入描述</h2>
-        ${problem.input_description || ""}
+        ${inputDescription}
         <h2>输出描述</h2>
-        ${problem.output_description || ""}
+        ${outputDescription}
       </section>
       ${samples ? `<section class="panel"><h2>样例</h2>${samples}</section>` : ""}
-      ${problem.hint ? `<section class="panel"><h2>提示</h2>${problem.hint}</section>` : ""}
+      ${hint ? `<section class="panel"><h2>提示</h2>${hint}</section>` : ""}
       ${problem.test_case_manifest ? `<section class="panel"><h2>公开测试数据</h2><ul>${testCases}</ul><p><a href="${downloadLink}">下载测试数据压缩包</a></p></section>` : ""}
       <script>
         const vscode = acquireVsCodeApi();
