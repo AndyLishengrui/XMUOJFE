@@ -153,6 +153,8 @@ export const m = {
   Contest_Status: '状态',
   Allowed_IP_Ranges: '允许的 IP 范围',
   CIDR_Network: 'CIDR 网络',
+  Exam_Mode: '考试模式',
+  Exam_Mode_Desc: '开启后禁止学生通过插件下载测试数据',
   // Dashboard.vue
   Last_Login: '最后登录状态',
   System_Overview: '系统状况',

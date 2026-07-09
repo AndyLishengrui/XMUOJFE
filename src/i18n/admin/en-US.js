@@ -153,6 +153,8 @@ export const m = {
   Contest_Status: 'Status',
   Allowed_IP_Ranges: 'Allowed IP Ranges',
   CIDR_Network: 'CIDR Network',
+  Exam_Mode: 'Exam Mode',
+  Exam_Mode_Desc: 'Prevent students from downloading test cases via plugin',
   // Dashboard.vue
   Last_Login: 'Last Login',
   System_Overview: 'System Overview',

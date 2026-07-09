@@ -174,8 +174,9 @@
       <el-form :model="formChangeUserpassword" ref="formChangeUserpassword">
         <el-row type="flex" justify="space-between">
           <el-col :span="4">
-            <el-form-item label="目标特征串" prop="target_name" required>
-              <el-input v-model="formChangeUserpassword.target_name" style="width: 100%"></el-input>
+            <el-form-item :label="formChangeUserpassword.match_type === 'type_exact_list' ? '学号列表' : '目标特征串'" prop="target_name" required>
+              <el-input v-if="formChangeUserpassword.match_type !== 'type_exact_list'" v-model="formChangeUserpassword.target_name" style="width: 100%"></el-input>
+              <el-input v-else v-model="formChangeUserpassword.target_name" type="textarea" :rows="3" placeholder="学号，一行一个或逗号分隔" style="width: 100%"></el-input>
             </el-form-item>
           </el-col>
           <el-col :span="4">
@@ -183,21 +184,23 @@
               <el-select size="small" v-model="formChangeUserpassword.match_type">
                 <el-option label="匹配班级名" value="type_schoolname"></el-option>
                 <el-option label="匹配用户名" value="type_username"></el-option>
+                <el-option label="精确学号列表" value="type_exact_list"></el-option>
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="4">
-            <el-form-item label="学号后几位" prop="right_length" required>
-              <el-input-number v-model="formChangeUserpassword.right_length" style="width: 100%"></el-input-number>
+            <el-form-item :label="formChangeUserpassword.match_type === 'type_exact_list' ? '学号后几位' : '学号后几位'" prop="right_length">
+              <el-input-number v-model="formChangeUserpassword.right_length" style="width: 100%" :disabled="formChangeUserpassword.match_type === 'type_exact_list'"></el-input-number>
             </el-form-item>
           </el-col>
           <el-col :span="4">
-            <el-form-item label="后缀" prop="suffix" required>
-              <el-input v-model="formChangeUserpassword.suffix" style="width: 100%"></el-input>
+            <el-form-item :label="formChangeUserpassword.match_type === 'type_exact_list' ? '后缀/random' : '后缀'" prop="suffix" required>
+              <el-input v-model="formChangeUserpassword.suffix" style="width: 100%" :placeholder="formChangeUserpassword.match_type === 'type_exact_list' ? '填 random 生成随机密码' : ''"></el-input>
             </el-form-item>
           </el-col>
           <el-col :span="4">
-            <el-form-item label="新密码 = 学号后几位 + 后缀">
+            <el-form-item :label="formChangeUserpassword.match_type === 'type_exact_list' ? '新密码规则' : '新密码 = 学号后几位 + 后缀'">
+              <span v-if="formChangeUserpassword.match_type === 'type_exact_list'" style="font-size:12px;color:#909399">填 random=随机8位<br/>填其他=固定后缀</span>
               <br /><el-button type="primary" @click="changeUserpassword" icon="el-icon-fa-users" :loading="loadingChangeUserpassword">批量修改密码</el-button>
             </el-form-item>
           </el-col>
