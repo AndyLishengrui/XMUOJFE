@@ -102,6 +102,11 @@ export default {
       data
     })
   },
+  resetUserPassword (data) {
+    return ajax('admin/reset_user_password', 'post', {
+      data
+    })
+  },
   getLanguages () {
     return ajax('languages', 'get')
   },

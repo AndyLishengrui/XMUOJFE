@@ -4,7 +4,7 @@
       <div slot="header">
         <el-row :gutter="20">
           <el-col :span="8">
-            <el-button v-show="selectedUsers.length"
+            <el-button v-show="selectedUsers.length && isSuperAdmin"
                        type="warning" icon="el-icon-fa-trash"
                        @click="deleteUsers(selectedUserIDs)">Delete
             </el-button>
@@ -21,7 +21,7 @@
         ref="table"
         :data="userList"
         style="width: 100%">
-        <el-table-column type="selection" width="55"></el-table-column>
+        <el-table-column v-if="isSuperAdmin" type="selection" width="55"></el-table-column>
 
         <el-table-column prop="id" label="ID"></el-table-column>
 
@@ -51,8 +51,11 @@
 
         <el-table-column fixed="right" label="Option" width="200">
           <template slot-scope="{row}">
-            <icon-btn name="Edit" icon="edit" @click.native="openUserDialog(row.id)"></icon-btn>
-            <icon-btn name="Delete" icon="trash" @click.native="deleteUsers([row.id])"></icon-btn>
+            <template v-if="isSuperAdmin">
+              <icon-btn name="Edit" icon="edit" @click.native="openUserDialog(row.id)"></icon-btn>
+              <icon-btn name="Delete" icon="trash" @click.native="deleteUsers([row.id])"></icon-btn>
+            </template>
+            <icon-btn v-else name="Reset PW" icon="edit" @click.native="openResetPasswordDialog(row.id, row.username, row.real_name)"></icon-btn>
           </template>
         </el-table-column>
       </el-table>
@@ -70,7 +73,7 @@
       </div>
     </Panel>
 
-    <Panel>
+    <Panel v-if="isSuperAdmin">
       <span slot="title">{{$t('m.Import_User')}}
         <el-popover placement="right" trigger="hover">
           <p>仅支持逗号分隔的、Unicode编码的csv文件。<br />每个用户一行，分别为：学号,姓名,班级<br />若用户已存在，仅更新班级信息，其余不变；否则按照默认密码123456新建用户。</p>
@@ -122,7 +125,7 @@
       </template>
     </Panel>
 
-    <Panel :title="$t('m.Generate_User')">
+    <Panel v-if="isSuperAdmin" :title="$t('m.Generate_User')">
       <el-form :model="formGenerateUser" ref="formGenerateUser">
         <el-row type="flex" justify="space-between">
           <el-col :span="4">
@@ -170,7 +173,7 @@
       </el-form>
     </Panel>
 
-    <Panel :title="$t('m.User_New_Password')">
+    <Panel v-if="isSuperAdmin" :title="$t('m.User_New_Password')">
       <el-form :model="formChangeUserpassword" ref="formChangeUserpassword">
         <el-row type="flex" justify="space-between">
           <el-col :span="4">
@@ -283,6 +286,24 @@
         <save @click.native="saveUser()"></save>
       </span>
     </el-dialog>
+
+    <el-dialog title="Reset Password" :visible.sync="showResetPasswordDialog" :close-on-click-modal="false" width="450px">
+      <el-form :model="resetPasswordForm" label-width="120px" label-position="left">
+        <el-form-item label="Username">
+          <el-input v-model="resetPasswordForm.username" disabled></el-input>
+        </el-form-item>
+        <el-form-item label="Real Name">
+          <el-input v-model="resetPasswordForm.real_name" disabled></el-input>
+        </el-form-item>
+        <el-form-item label="New Password" required>
+          <el-input v-model="resetPasswordForm.new_password" type="password" placeholder="Minimum 6 characters"></el-input>
+        </el-form-item>
+      </el-form>
+      <span slot="footer" class="dialog-footer">
+        <cancel @click.native="showResetPasswordDialog = false">Cancel</cancel>
+        <save @click.native="submitResetPassword()"></save>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
@@ -290,6 +311,7 @@
   import papa from 'papaparse'
   import api from '../../api.js'
   import utils from '@/utils/utils'
+  import { mapGetters } from 'vuex'
 
   export default {
     name: 'User',
@@ -330,6 +352,13 @@
           right_length: 0,
           suffix: '123456',
           match_type: 'type_schoolname'
+        },
+        showResetPasswordDialog: false,
+        resetPasswordForm: {
+          user_id: 0,
+          username: '',
+          real_name: '',
+          new_password: ''
         }
       }
     },
@@ -501,9 +530,29 @@
       },
       handleResetData () {
         this.uploadUsers = []
+      },
+      openResetPasswordDialog (id, username, realName) {
+        this.resetPasswordForm.user_id = id
+        this.resetPasswordForm.username = username
+        this.resetPasswordForm.real_name = realName || ''
+        this.resetPasswordForm.new_password = ''
+        this.showResetPasswordDialog = true
+      },
+      submitResetPassword () {
+        if (!this.resetPasswordForm.new_password || this.resetPasswordForm.new_password.length < 6) {
+          this.$error('Password must be at least 6 characters')
+          return
+        }
+        api.resetUserPassword({
+          user_id: this.resetPasswordForm.user_id,
+          new_password: this.resetPasswordForm.new_password
+        }).then(res => {
+          this.showResetPasswordDialog = false
+        }).catch(() => {})
       }
     },
     computed: {
+      ...mapGetters(['isSuperAdmin']),
       selectedUserIDs () {
         let ids = []
         for (let user of this.selectedUsers) {
