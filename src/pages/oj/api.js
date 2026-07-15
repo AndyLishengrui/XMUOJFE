@@ -295,6 +295,28 @@ export default {
     return ajax('admin/contest/acm_helper', 'put', {
       data
     })
+  },
+  // notification APIs
+  getNotifUnreadCount () {
+    return ajax('notifications/unread_count', 'get')
+  },
+  getNotifications (offset, limit) {
+    return ajax('notifications', 'get', {
+      params: {offset, limit}
+    })
+  },
+  markNotificationRead (notifId) {
+    return ajax('notifications/read', 'post', {
+      data: {id: notifId}
+    })
+  },
+  deleteNotification (notifId) {
+    return ajax('notifications/delete', 'delete', {
+      params: {id: notifId}
+    })
+  },
+  batchMarkRead () {
+    return ajax('notifications/batch_read', 'post')
   }
 }
 

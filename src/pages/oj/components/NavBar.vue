@@ -42,35 +42,44 @@
           {{$t('m.FAQ')}}
         </Menu-item>
       </Submenu>
-      <template v-if="!isAuthenticated">
-        <div class="btn-menu">
-          <Button type="ghost"
-                  ref="loginBtn"
-                  shape="circle"
-                  @click="handleBtnClick('login')">{{$t('m.Login')}}
-          </Button>
-          <Button v-if="website.allow_register"
-                  type="ghost"
-                  shape="circle"
-                  @click="handleBtnClick('register')"
-                  style="margin-left: 5px;">{{$t('m.Register')}}
-          </Button>
-        </div>
-      </template>
-      <template v-else>
-        <Dropdown class="drop-menu" @on-click="handleRoute" placement="bottom" trigger="click">
-          <Button type="text" class="drop-menu-title">{{ profile.real_name }}
-            <Icon type="arrow-down-b"></Icon>
-          </Button>
-          <Dropdown-menu slot="list">
-            <Dropdown-item name="/user-home">{{$t('m.MyHome')}}</Dropdown-item>
-            <Dropdown-item name="/status?myself=1">{{$t('m.MySubmissions')}}</Dropdown-item>
-            <Dropdown-item name="/setting/profile">{{$t('m.Settings')}}</Dropdown-item>
-            <Dropdown-item v-if="isAdminRole" name="/admin">{{$t('m.Management')}}</Dropdown-item>
-            <Dropdown-item divided name="/logout">{{$t('m.Logout')}}</Dropdown-item>
-          </Dropdown-menu>
-        </Dropdown>
-      </template>
+      <div class="right-menu">
+        <template v-if="isAuthenticated">
+          <div class="notif-bell" @click="goNotifications">
+            <Badge :count="unreadCount" :overflow-count="99">
+              <Icon type="ios-notifications-outline" size="22"></Icon>
+            </Badge>
+          </div>
+        </template>
+        <template v-if="!isAuthenticated">
+          <div class="btn-menu">
+            <Button type="ghost"
+                    ref="loginBtn"
+                    shape="circle"
+                    @click="handleBtnClick('login')">{{$t('m.Login')}}
+            </Button>
+            <Button v-if="website.allow_register"
+                    type="ghost"
+                    shape="circle"
+                    @click="handleBtnClick('register')"
+                    style="margin-left: 5px;">{{$t('m.Register')}}
+            </Button>
+          </div>
+        </template>
+        <template v-else>
+          <Dropdown class="drop-menu" @on-click="handleRoute" placement="bottom" trigger="click">
+            <Button type="text" class="drop-menu-title">{{ profile.real_name }}
+              <Icon type="arrow-down-b"></Icon>
+            </Button>
+            <Dropdown-menu slot="list">
+              <Dropdown-item name="/user-home">{{$t('m.MyHome')}}</Dropdown-item>
+              <Dropdown-item name="/status?myself=1">{{$t('m.MySubmissions')}}</Dropdown-item>
+              <Dropdown-item name="/setting/profile">{{$t('m.Settings')}}</Dropdown-item>
+              <Dropdown-item v-if="isAdminRole" name="/admin">{{$t('m.Management')}}</Dropdown-item>
+              <Dropdown-item divided name="/logout">{{$t('m.Logout')}}</Dropdown-item>
+            </Dropdown-menu>
+          </Dropdown>
+        </template>
+      </div>
     </Menu>
     <Modal v-model="modalVisible" :width="400">
       <div slot="header" class="modal-title">{{$t('m.Welcome_to')}} {{website.website_name_shortcut}}</div>
@@ -92,9 +101,16 @@
     },
     mounted () {
       this.getProfile()
+      this.fetchUnreadCount()
+      this._notifTimer = setInterval(() => { this.fetchUnreadCount() }, 30000)
+    },
+    beforeDestroy () {
+      if (this._notifTimer) {
+        clearInterval(this._notifTimer)
+      }
     },
     methods: {
-      ...mapActions(['getProfile', 'changeModalStatus']),
+      ...mapActions(['getProfile', 'changeModalStatus', 'fetchUnreadCount']),
       handleRoute (route) {
         if (route && route.indexOf('admin') < 0) {
           this.$router.push(route)
@@ -107,10 +123,13 @@
           visible: true,
           mode: mode
         })
+      },
+      goNotifications () {
+        this.$router.push('/notifications')
       }
     },
     computed: {
-      ...mapGetters(['website', 'modalStatus', 'user', 'profile', 'isAuthenticated', 'isAdminRole']),
+      ...mapGetters(['website', 'modalStatus', 'user', 'profile', 'isAuthenticated', 'isAdminRole', 'unreadCount']),
       // 跟随路由变化
       activeMenu () {
         return '/' + this.$route.path.split('/')[1]
@@ -153,11 +172,22 @@
     .drop-menu {
       float: right;
       margin-right: 30px;
-      position: absolute;
-      right: 10px;
       &-title {
         font-size: 18px;
       }
+    }
+    .right-menu {
+      position: absolute;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .notif-bell {
+      cursor: pointer;
+      padding: 6px;
+      color: #666;
+      &:hover { color: #2d8cf0; }
     }
     .btn-menu {
       font-size: 16px;

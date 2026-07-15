@@ -35,6 +35,29 @@
     <Col :span="20">
       <Highlight :code="submission.code" :language="submission.language" :border-color="status.color"></Highlight>
     </Col>
+
+    <!-- 算法助教分析：仅WA时显示，无报告则零影响 -->
+    <Col v-if="coachReport" :span="20" style="margin-top: 16px;">
+      <div style="background: #fff; border: 1px solid #e8e8e8; border-radius: 4px; padding: 16px;">
+        <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #333;">
+          💡 算法助教分析
+          <span v-if="coachReport.status === 'done'" style="color: #19be6b; font-size: 12px; margin-left: 8px;">已确认</span>
+        </div>
+        <div v-if="coachReport.code_analysis" style="margin-bottom: 10px;">
+          <div style="font-weight: 600; color: #555; margin-bottom: 4px;">📋 代码分析</div>
+          <div style="white-space: pre-wrap; color: #666; line-height: 1.7;">{{coachReport.code_analysis}}</div>
+        </div>
+        <div v-if="coachReport.hints" style="margin-bottom: 10px;">
+          <div style="font-weight: 600; color: #555; margin-bottom: 4px;">💡 改进提示</div>
+          <div style="white-space: pre-wrap; color: #666; line-height: 1.7;">{{coachReport.hints}}</div>
+        </div>
+        <div v-if="coachReport.common_pitfall" style="margin-bottom: 10px;">
+          <div style="font-weight: 600; color: #555; margin-bottom: 4px;">⚠️ 常见陷阱</div>
+          <div style="white-space: pre-wrap; color: #666; line-height: 1.7;">{{coachReport.common_pitfall}}</div>
+        </div>
+      </div>
+    </Col>
+
     <Col v-if="submission.can_unshare" :span="20">
       <div id="share-btn">
         <Button v-if="submission.shared"
@@ -56,6 +79,7 @@
   import {JUDGE_STATUS} from '@/utils/constants'
   import utils from '@/utils/utils'
   import Highlight from '@/pages/oj/components/Highlight'
+  import axios from 'axios'
 
   export default {
     name: 'submissionDetails',
@@ -65,6 +89,7 @@
     data () {
       return {
         isCn: true,
+        coachReport: null,
         columns: [
           {
             title: this.$i18n.t('m.ID'),
@@ -153,9 +178,27 @@
             }
           }
           this.submission = data
+          // 仅WA + 非考试模式时获取助教分析，非阻塞
+          if (data.result === -1 && data.problem && !data.contest_is_exam) {
+            this.fetchCoachReport(data.username, data.problem)
+          }
         }, () => {
           this.loading = false
         })
+      },
+      fetchCoachReport (username, problemId) {
+        axios.get('/coach/reports/' + username + '/' + problemId, {baseURL: '', timeout: 5000})
+          .then(res => {
+            console.log('Coach report loaded:', res.data)
+            if (res.data && res.data.code_analysis) {
+              this.coachReport = res.data
+              console.log('Coach report set to component data')
+            }
+          })
+          .catch(() => {
+            // 无报告或请求失败 → 不显示，零影响
+            this.coachReport = null
+          })
       },
       shareSubmission (shared) {
         let data = {id: this.submission.id, shared: shared}

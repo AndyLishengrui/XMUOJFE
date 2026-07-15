@@ -321,5 +321,27 @@ export const m = {
   You_have_enabled_two_factor_authentication: 'You have enabled two-factor authentication',
   Enter_the_code_from_your_application: 'Enter the code from your application',
   Open_TFA: 'Open TFA',
-  Close_TFA: 'Close TFA'
+  Close_TFA: 'Close TFA',
+  // Notification
+  Notifications: 'Notifications',
+  MarkAllRead: 'Mark All Read',
+  NoNotifications: 'No notifications',
+  Notification_Manage: 'Notification',
+  Send_Notification: 'Send',
+  Sent_Notifications: 'Sent',
+  Recipients: 'Recipients',
+  Search_User: 'Search user',
+  Notification_Title: 'Title',
+  Title_Placeholder: 'Enter notification title',
+  Content: 'Content',
+  Content_Placeholder: 'Enter content (optional)',
+  Link: 'Link',
+  Send: 'Send',
+  Recipient: 'Recipient',
+  Read: 'Read',
+  Unread: 'Unread',
+  Create_Time: 'Time',
+  Fill_Required: 'Please fill required fields',
+  Not_found: 'Not found',
+  Sent_successfully: 'Sent successfully'
 }

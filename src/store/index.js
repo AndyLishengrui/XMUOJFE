@@ -2,6 +2,7 @@ import Vue from 'vue'
 import Vuex from 'vuex'
 import user from './modules/user'
 import contest from './modules/contest'
+import notification from './modules/notification'
 import api from '@oj/api'
 import types from './types'
 import i18n from '@/i18n'
@@ -62,7 +63,8 @@ const rootActions = {
 export default new Vuex.Store({
   modules: {
     user,
-    contest
+    contest,
+    notification
   },
   state: rootState,
   getters: rootGetters,

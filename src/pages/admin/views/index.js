@@ -12,8 +12,10 @@ import Login from './general/Login.vue'
 import Home from './Home.vue'
 import ProblemImportOrExport from './problem/ImportAndExport.vue'
 import ProblemTagGovernance from './problem/ProblemTagGovernance.vue'
+import NotificationAdmin from './general/NotificationAdmin.vue'
 
 export {
   Announcement, User, Conf, JudgeServer, Problem, ProblemList, Contest,
-  ContestList, Login, Home, PruneTestCase, Dashboard, ProblemImportOrExport, ProblemTagGovernance
+  ContestList, Login, Home, PruneTestCase, Dashboard, ProblemImportOrExport, ProblemTagGovernance,
+  NotificationAdmin
 }

@@ -14,7 +14,8 @@ import {
   ResetPassword,
   SubmissionDetails,
   SubmissionList,
-  UserHome
+  UserHome,
+  NotificationList
 } from '../views'
 
 import * as Contest from '@oj/views/contest'
@@ -130,6 +131,12 @@ export default [
     path: '/user-home',
     component: UserHome,
     meta: {requiresAuth: true, title: 'm.MyHome'}
+  },
+  {
+    name: 'notifications',
+    path: '/notifications',
+    component: NotificationList,
+    meta: {requiresAuth: true, title: 'm.Notifications'}
   },
   {
     path: '/setting',

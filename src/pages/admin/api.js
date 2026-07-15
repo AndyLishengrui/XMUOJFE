@@ -371,6 +371,17 @@ export default {
     return ajax('export_problem', 'post', {
       data
     })
+  },
+  // notification
+  sendNotification (data) {
+    return ajax('admin/notification', 'post', {
+      data
+    })
+  },
+  getSentNotifications (offset, limit) {
+    return ajax('admin/notification/sent', 'get', {
+      params: {offset, limit}
+    })
   }
 }
 
