@@ -73,6 +73,7 @@
             <Dropdown-menu slot="list">
               <Dropdown-item name="/user-home">{{$t('m.MyHome')}}</Dropdown-item>
               <Dropdown-item name="/status?myself=1">{{$t('m.MySubmissions')}}</Dropdown-item>
+              <Dropdown-item name="/messages">站内信</Dropdown-item>
               <Dropdown-item name="/setting/profile">{{$t('m.Settings')}}</Dropdown-item>
               <Dropdown-item v-if="isAdminRole" name="/admin">{{$t('m.Management')}}</Dropdown-item>
               <Dropdown-item divided name="/logout">{{$t('m.Logout')}}</Dropdown-item>
@@ -112,7 +113,9 @@
     methods: {
       ...mapActions(['getProfile', 'changeModalStatus', 'fetchUnreadCount']),
       handleRoute (route) {
-        if (route && route.indexOf('admin') < 0) {
+        if (route === '/messages') {
+          window.location.href = '/messages'
+        } else if (route && route.indexOf('admin') < 0) {
           this.$router.push(route)
         } else {
           window.open('/admin/')
