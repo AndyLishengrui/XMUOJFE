@@ -57,6 +57,13 @@
             {{ scope.row.create_time | localtime }}
           </template>
         </el-table-column>
+        <el-table-column label="操作" width="80" fixed="right">
+          <template slot-scope="scope">
+            <el-button type="text" size="small" @click="viewDetail(scope.row.id)">
+              📋 详情
+            </el-button>
+          </template>
+        </el-table-column>
       </el-table>
       <div class="panel-options">
         <el-button size="small" icon="el-icon-refresh" @click="loadSentNotifications">刷新</el-button>
@@ -136,6 +143,9 @@ export default {
     currentChange (page) {
       this.currentPage = page
       this.loadSentNotifications()
+    },
+    viewDetail (id) {
+      window.open('/admin/noteDetail?id=' + id, '_blank')
     }
   }
 }

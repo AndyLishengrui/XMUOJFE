@@ -36,24 +36,24 @@
       <Highlight :code="submission.code" :language="submission.language" :border-color="status.color"></Highlight>
     </Col>
 
-    <!-- 算法助教分析：仅WA时显示，无报告则零影响 -->
-    <Col v-if="coachReport" :span="20" style="margin-top: 16px;">
-      <div style="background: #fff; border: 1px solid #e8e8e8; border-radius: 4px; padding: 16px;">
-        <div style="font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #333;">
+    <!-- 算法助教分析：WA 或 Partial 时显示，无报告则零影响 -->
+    <Col v-if="coachReport" :span="20" style="margin-top: 18px;">
+      <div style="background: #fff; border: 1px solid #d9d9d9; border-radius: 6px; padding: 20px 24px;">
+        <div style="font-size: 18px; font-weight: 700; margin-bottom: 16px; color: #1a1a2e; border-bottom: 2px solid #e8f0fe; padding-bottom: 10px;">
           💡 算法助教分析
-          <span v-if="coachReport.status === 'done'" style="color: #19be6b; font-size: 12px; margin-left: 8px;">已确认</span>
+          <span v-if="coachReport.status === 'done'" style="background: #e8f8e8; color: #2e7d32; font-size: 12px; margin-left: 10px; padding: 2px 10px; border-radius: 10px;">已确认</span>
         </div>
-        <div v-if="coachReport.code_analysis" style="margin-bottom: 10px;">
-          <div style="font-weight: 600; color: #555; margin-bottom: 4px;">📋 代码分析</div>
-          <div style="white-space: pre-wrap; color: #666; line-height: 1.7;">{{coachReport.code_analysis}}</div>
+        <div v-if="coachReport.code_analysis" style="margin-bottom: 14px; background: #fafbfc; border-radius: 4px; padding: 14px 16px;">
+          <div style="font-weight: 700; color: #333; margin-bottom: 8px; font-size: 15px;">📋 代码分析</div>
+          <div style="white-space: pre-wrap; color: #444; line-height: 1.8; font-size: 15px;">{{coachReport.code_analysis}}</div>
         </div>
-        <div v-if="coachReport.hints" style="margin-bottom: 10px;">
-          <div style="font-weight: 600; color: #555; margin-bottom: 4px;">💡 改进提示</div>
-          <div style="white-space: pre-wrap; color: #666; line-height: 1.7;">{{coachReport.hints}}</div>
+        <div v-if="coachReport.hints" style="margin-bottom: 14px; background: #fafbfc; border-radius: 4px; padding: 14px 16px;">
+          <div style="font-weight: 700; color: #333; margin-bottom: 8px; font-size: 15px;">💡 改进提示</div>
+          <div style="white-space: pre-wrap; color: #444; line-height: 1.8; font-size: 15px;">{{coachReport.hints}}</div>
         </div>
-        <div v-if="coachReport.common_pitfall" style="margin-bottom: 10px;">
-          <div style="font-weight: 600; color: #555; margin-bottom: 4px;">⚠️ 常见陷阱</div>
-          <div style="white-space: pre-wrap; color: #666; line-height: 1.7;">{{coachReport.common_pitfall}}</div>
+        <div v-if="coachReport.common_pitfall" style="margin-bottom: 14px; background: #fafbfc; border-radius: 4px; padding: 14px 16px;">
+          <div style="font-weight: 700; color: #333; margin-bottom: 8px; font-size: 15px;">⚠️ 常见陷阱</div>
+          <div style="white-space: pre-wrap; color: #444; line-height: 1.8; font-size: 15px;">{{coachReport.common_pitfall}}</div>
         </div>
       </div>
     </Col>
@@ -178,8 +178,8 @@
             }
           }
           this.submission = data
-          // 仅WA + 非考试模式时获取助教分析，非阻塞
-          if (data.result === -1 && data.problem && !data.contest_is_exam) {
+          // WA (-1) 或 Partial Accepted (8) 时获取助教分析，非阻塞
+          if ((data.result === -1 || data.result === 8) && data.problem && !data.contest_is_exam) {
             this.fetchCoachReport(data.username, data.problem)
           }
         }, () => {
