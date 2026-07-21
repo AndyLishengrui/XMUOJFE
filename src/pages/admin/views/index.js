@@ -14,9 +14,11 @@ import ProblemImportOrExport from './problem/ImportAndExport.vue'
 import ProblemTagGovernance from './problem/ProblemTagGovernance.vue'
 import CourseList from './course/CourseList.vue'
 import CourseChapters from './course/CourseChapters.vue'
+import NotificationAdmin from './general/NotificationAdmin.vue'
 
 export {
   Announcement, User, Conf, JudgeServer, Problem, ProblemList, Contest,
   ContestList, Login, Home, PruneTestCase, Dashboard, ProblemImportOrExport, ProblemTagGovernance,
-  CourseList, CourseChapters
+  CourseList, CourseChapters,
+  NotificationAdmin
 }

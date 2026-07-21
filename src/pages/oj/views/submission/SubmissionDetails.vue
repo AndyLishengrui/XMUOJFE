@@ -35,6 +35,29 @@
     <Col :span="20">
       <Highlight :code="submission.code" :language="submission.language" :border-color="status.color"></Highlight>
     </Col>
+
+    <!-- 算法助教分析：WA 或 Partial 时显示，无报告则零影响 -->
+    <Col v-if="coachReport" :span="20" style="margin-top: 18px;">
+      <div style="background: #fff; border: 1px solid #d9d9d9; border-radius: 6px; padding: 20px 24px;">
+        <div style="font-size: 18px; font-weight: 700; margin-bottom: 16px; color: #1a1a2e; border-bottom: 2px solid #e8f0fe; padding-bottom: 10px;">
+          💡 算法助教分析
+          <span v-if="coachReport.status === 'done'" style="background: #e8f8e8; color: #2e7d32; font-size: 12px; margin-left: 10px; padding: 2px 10px; border-radius: 10px;">已确认</span>
+        </div>
+        <div v-if="coachReport.code_analysis" style="margin-bottom: 14px; background: #fafbfc; border-radius: 4px; padding: 14px 16px;">
+          <div style="font-weight: 700; color: #333; margin-bottom: 8px; font-size: 15px;">📋 代码分析</div>
+          <div style="white-space: pre-wrap; color: #444; line-height: 1.8; font-size: 15px;">{{coachReport.code_analysis}}</div>
+        </div>
+        <div v-if="coachReport.hints" style="margin-bottom: 14px; background: #fafbfc; border-radius: 4px; padding: 14px 16px;">
+          <div style="font-weight: 700; color: #333; margin-bottom: 8px; font-size: 15px;">💡 改进提示</div>
+          <div style="white-space: pre-wrap; color: #444; line-height: 1.8; font-size: 15px;">{{coachReport.hints}}</div>
+        </div>
+        <div v-if="coachReport.common_pitfall" style="margin-bottom: 14px; background: #fafbfc; border-radius: 4px; padding: 14px 16px;">
+          <div style="font-weight: 700; color: #333; margin-bottom: 8px; font-size: 15px;">⚠️ 常见陷阱</div>
+          <div style="white-space: pre-wrap; color: #444; line-height: 1.8; font-size: 15px;">{{coachReport.common_pitfall}}</div>
+        </div>
+      </div>
+    </Col>
+
     <Col v-if="submission.can_unshare" :span="20">
       <div id="share-btn">
         <Button v-if="submission.shared"
@@ -56,6 +79,7 @@
   import {JUDGE_STATUS} from '@/utils/constants'
   import utils from '@/utils/utils'
   import Highlight from '@/pages/oj/components/Highlight'
+  import axios from 'axios'
 
   export default {
     name: 'submissionDetails',
@@ -65,6 +89,7 @@
     data () {
       return {
         isCn: true,
+        coachReport: null,
         columns: [
           {
             title: this.$i18n.t('m.ID'),
@@ -153,9 +178,27 @@
             }
           }
           this.submission = data
+          // WA (-1) 或 Partial Accepted (8) 时获取助教分析，非阻塞
+          if ((data.result === -1 || data.result === 8) && data.problem && !data.contest_is_exam) {
+            this.fetchCoachReport(data.username, data.problem)
+          }
         }, () => {
           this.loading = false
         })
+      },
+      fetchCoachReport (username, problemId) {
+        axios.get('/coach/reports/' + username + '/' + problemId, {baseURL: '', timeout: 5000})
+          .then(res => {
+            console.log('Coach report loaded:', res.data)
+            if (res.data && res.data.code_analysis) {
+              this.coachReport = res.data
+              console.log('Coach report set to component data')
+            }
+          })
+          .catch(() => {
+            // 无报告或请求失败 → 不显示，零影响
+            this.coachReport = null
+          })
       },
       shareSubmission (shared) {
         let data = {id: this.submission.id, shared: shared}

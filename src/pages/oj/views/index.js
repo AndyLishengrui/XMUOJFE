@@ -21,6 +21,7 @@ const Problem = () => import(/* webpackChunkName: "Problem" */ '@oj/views/proble
 
 const CourseList = () => import(/* webpackChunkName: "course" */ '@oj/views/course/CourseList.vue')
 const CourseDetail = () => import(/* webpackChunkName: "course" */ '@oj/views/course/CourseDetail.vue')
+const NotificationList = () => import(/* webpackChunkName: "notification" */ '@oj/views/notification/NotificationList.vue')
 
 export {
   Home, NotFound, Announcements,
@@ -29,7 +30,8 @@ export {
   ACMRank, OIRank,
   SubmissionList, SubmissionDetails,
   ApplyResetPassword, ResetPassword,
-  CourseList, CourseDetail
+  CourseList, CourseDetail,
+  NotificationList
 }
 /* 组件导出分为两类, 一类常用的直接导出，另一类诸如Login, Logout等用懒加载,懒加载不在此处导出
  *   在对应的route内加载

@@ -102,6 +102,11 @@ export default {
       data
     })
   },
+  resetUserPassword (data) {
+    return ajax('admin/reset_user_password', 'post', {
+      data
+    })
+  },
   getLanguages () {
     return ajax('languages', 'get')
   },
@@ -425,6 +430,17 @@ export default {
   },
   getProblemTitles (ids) {
     return ajax('admin/groups/problem_titles', 'post', { data: { ids } })
+  },
+  // notification
+  sendNotification (data) {
+    return ajax('admin/notification', 'post', {
+      data
+    })
+  },
+  getSentNotifications (offset, limit) {
+    return ajax('admin/notification/sent', 'get', {
+      params: {offset, limit}
+    })
   }
 }
 

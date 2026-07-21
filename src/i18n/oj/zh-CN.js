@@ -138,6 +138,8 @@ export const m = {
   // ContestProblemList.vue
   Problems_List: '问题列表',
   No_Problems: '尚无问题',
+  Hide_Completed: '隐藏已完成',
+  Show_All: '显示全部',
   // CodeMirror.vue
   Language: '编程语言',
   Theme: '主题',
@@ -324,5 +326,27 @@ export const m = {
   You_have_enabled_two_factor_authentication: '您已激活双因素认证',
   Enter_the_code_from_your_application: '请输入应用程序的认证码',
   Open_TFA: '激活双因素认证',
-  Close_TFA: '关闭双因素认证'
+  Close_TFA: '关闭双因素认证',
+  // Notification
+  Notifications: '消息中心',
+  MarkAllRead: '全部已读',
+  NoNotifications: '暂无消息',
+  Notification_Manage: '消息管理',
+  Send_Notification: '发送消息',
+  Sent_Notifications: '已发送',
+  Recipients: '接收人',
+  Search_User: '搜索用户',
+  Notification_Title: '消息标题',
+  Title_Placeholder: '请输入消息标题',
+  Content: '正文',
+  Content_Placeholder: '请输入消息正文（可选）',
+  Link: '跳转链接',
+  Send: '发送',
+  Recipient: '接收人',
+  Read: '已读',
+  Unread: '未读',
+  Create_Time: '发送时间',
+  Fill_Required: '请填写必填项',
+  Not_found: '未找到',
+  Sent_successfully: '发送成功'
 }
