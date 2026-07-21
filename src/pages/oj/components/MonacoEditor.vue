@@ -411,6 +411,17 @@
         // Register C++ template completion provider
         registerCppTemplateCompletion()
 
+        // Prevent Monaco from hijacking wheel events. Monaco internally
+        // attaches wheel handlers with useCapture that eat all wheel input
+        // even when the editor is full-height and needs no inner scroll.
+        // We intercept at the capture phase (before Monaco's handler fires)
+        // and redirect the scroll to the page.
+        this.$refs.editorContainer.addEventListener('wheel', (e) => {
+          window.scrollBy(0, e.deltaY)
+          e.preventDefault()
+          e.stopPropagation()
+        }, true)
+
         this.editor = monaco.editor.create(this.$refs.editorContainer, {
           value: this.value,
           language: this.mode[this.language] || 'plaintext',
@@ -428,7 +439,8 @@
           tabSize: this.tabSize,
           scrollbar: {
             vertical: 'hidden',
-            horizontal: 'auto'
+            horizontal: 'auto',
+            alwaysConsumeMouseWheel: false
           },
           overviewRulerLanes: 0,
           hideCursorInOverviewRuler: true,
@@ -440,19 +452,20 @@
         // Enable completion based on setting
         this.updateCompletion()
 
-        // Dynamic height: grow with code, lock page scroll position
+        // Dynamic height: grow with code so Monaco never needs internal scroll.
+        // No max-height cap — when the container IS the content, mouse wheel
+        // passes through to the page naturally instead of getting captured by
+        // Monaco's invisible inner scroll area.
         let lastHeight = 0
         const updateHeight = () => {
           const model = this.editor.getModel()
           if (!model) return
           const lineCount = model.getLineCount()
-          const newHeight = Math.max(300, Math.min(lineCount * 20 + 40, 900))
+          const newHeight = Math.max(300, lineCount * 20 + 40)
           if (newHeight === lastHeight) return
           lastHeight = newHeight
-          const scrollY = window.scrollY
           this.$refs.editorContainer.style.height = newHeight + 'px'
           this.editor.layout()
-          window.scrollTo(0, scrollY)
         }
         updateHeight()
 
@@ -574,7 +587,6 @@
   .monaco-container {
     width: 100%;
     min-height: 300px;
-    max-height: 900px;
     border: 1px solid #e8e8e8;
     border-radius: 4px;
     overflow: hidden;
