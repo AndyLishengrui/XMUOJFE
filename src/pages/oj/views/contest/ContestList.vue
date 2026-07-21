@@ -114,7 +114,7 @@
     beforeRouteEnter (to, from, next) {
       api.getContestList(0, limit).then((res) => {
         next((vm) => {
-          vm.contests = res.data.data.results
+          vm.contests = res.data.data.results.filter(c => !c.title.startsWith('[教材]'))
           vm.total = res.data.data.total
         })
       }, (res) => {
@@ -134,7 +134,8 @@
       getContestList (page = 1) {
         let offset = (page - 1) * this.limit
         api.getContestList(offset, this.limit, this.query).then((res) => {
-          this.contests = res.data.data.results
+          // 隐藏教材关联的比赛，保持实验列表整洁
+          this.contests = res.data.data.results.filter(c => !c.title.startsWith('[教材]'))
           this.total = res.data.data.total
         })
       },

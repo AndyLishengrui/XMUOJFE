@@ -14,7 +14,9 @@ import {
   ResetPassword,
   SubmissionDetails,
   SubmissionList,
-  UserHome
+  UserHome,
+  CourseList,
+  CourseDetail
 } from '../views'
 
 import * as Contest from '@oj/views/contest'
@@ -56,6 +58,18 @@ export default [
     path: '/problem/:problemID',
     meta: {title: 'm.Problems'},
     component: Problem
+  },
+  {
+    name: 'course-list',
+    path: '/course',
+    meta: {title: 'Course_List'},
+    component: CourseList
+  },
+  {
+    name: 'course-detail',
+    path: '/course/:courseId',
+    meta: {title: 'Course_Detail'},
+    component: CourseDetail
   },
   {
     name: 'submission-list',

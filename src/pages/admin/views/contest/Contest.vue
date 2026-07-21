@@ -60,6 +60,16 @@
               </el-switch>
             </el-form-item>
           </el-col>
+          <el-col :span="8">
+            <el-form-item :label="$t('m.Exam_Mode')">
+              <el-switch
+                v-model="contest.is_exam"
+                active-color="#ff4949"
+                inactive-color="#13ce66">
+              </el-switch>
+              <span style="font-size:12px;color:#999;margin-left:8px">{{ $t('m.Exam_Mode_Desc') }}</span>
+            </el-form-item>
+          </el-col>
           <el-col :span="24">
             <el-form-item :label="$t('m.Allowed_IP_Ranges')">
               <div v-for="(range, index) in contest.allowed_ip_ranges" :key="index">
@@ -104,6 +114,7 @@
           password: '',
           real_time_rank: true,
           visible: true,
+          is_exam: false,
           allowed_ip_ranges: [{
             value: ''
           }]

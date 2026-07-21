@@ -80,8 +80,8 @@ module.exports = {
       {
         test: /\.js$/,
         loader: 'babel-loader?cacheDirectory=true',
-        exclude: /node_modules/,
-        include: [resolve('src'), resolve('test')]
+        exclude: /node_modules\/(?!monaco-editor)/,
+        include: [resolve('src'), resolve('test'), /node_modules\/monaco-editor/]
       },
       {
         test: /\.(png|jpe?g|gif|svg)(\?.*)?$/,

@@ -1,0 +1,318 @@
+[
+  {
+    "heading": "快速排序算法模板 —— 模板题 AcWing 785. 快速排序",
+    "code": "void quick_sort(int q[], int l, int r)\n{\n    if (l >= r) return;\n\n    int i = l - 1, j = r + 1, x = q[l + r >> 1];\n    while (i < j)\n    {\n        do i ++ ; while (q[i] < x);\n        do j -- ; while (q[j] > x);\n        if (i < j) swap(q[i], q[j]);\n    }\n    quick_sort(q, l, j), quick_sort(q, j + 1, r);\n}"
+  },
+  {
+    "heading": "归并排序算法模板 —— 模板题 AcWing 787. 归并排序",
+    "code": "void merge_sort(int q[], int l, int r)\n{\n    if (l >= r) return;\n\n    int mid = l + r >> 1;\n    merge_sort(q, l, mid);\n    merge_sort(q, mid + 1, r);\n\n    int k = 0, i = l, j = mid + 1;\n    while (i <= mid && j <= r)\n        if (q[i] <= q[j]) tmp[k ++ ] = q[i ++ ];\n        else tmp[k ++ ] = q[j ++ ];\n\n    while (i <= mid) tmp[k ++ ] = q[i ++ ];\n    while (j <= r) tmp[k ++ ] = q[j ++ ];\n\n    for (i = l, j = 0; i <= r; i ++, j ++ ) q[i] = tmp[j];\n}",
+    "triggers": [
+      "void mer"
+    ]
+  },
+  {
+    "heading": "整数二分算法模板 —— 模板题 AcWing 789. 数的范围",
+    "code": "bool check(int x) {/* ... */} // 检查x是否满足某种性质\n\n// 区间[l, r]被划分成[l, mid]和[mid + 1, r]时使用：\nint bsearch_1(int l, int r)\n{\n    while (l < r)\n    {\n        int mid = l + r >> 1;\n        if (check(mid)) r = mid;    // check()判断mid是否满足性质\n        else l = mid + 1;\n    }\n    return l;\n}\n// 区间[l, r]被划分成[l, mid - 1]和[mid, r]时使用：\nint bsearch_2(int l, int r)\n{\n    while (l < r)\n    {\n        int mid = l + r + 1 >> 1;\n        if (check(mid)) l = mid;\n        else r = mid - 1;\n    }\n    return l;\n}"
+  },
+  {
+    "heading": "浮点数二分算法模板 —— 模板题 AcWing 790. 数的三次方根",
+    "code": "bool check(double x) {/* ... */} // 检查x是否满足某种性质\n\ndouble bsearch_3(double l, double r)\n{\n    const double eps = 1e-6;   // eps 表示精度，取决于题目对精度的要求\n    while (r - l > eps)\n    {\n        double mid = (l + r) / 2;\n        if (check(mid)) r = mid;\n        else l = mid;\n    }\n    return l;\n}"
+  },
+  {
+    "heading": "高精度加法 —— 模板题 AcWing 791. 高精度加法",
+    "code": "// C = A + B, A >= 0, B >= 0\nvector<int> add(vector<int> &A, vector<int> &B)\n{\n    if (A.size() < B.size()) return add(B, A);\n\n    vector<int> C;\n    int t = 0;\n    for (int i = 0; i < A.size(); i ++ )\n    {\n        t += A[i];\n        if (i < B.size()) t += B[i];\n        C.push_back(t % 10);\n        t /= 10;\n    }\n\n    if (t) C.push_back(t);\n    return C;\n}",
+    "triggers": [
+      "vector<int> add"
+    ]
+  },
+  {
+    "heading": "高精度减法 —— 模板题 AcWing 792. 高精度减法",
+    "code": "// C = A - B, 满足A >= B, A >= 0, B >= 0\nvector<int> sub(vector<int> &A, vector<int> &B)\n{\n    vector<int> C;\n    for (int i = 0, t = 0; i < A.size(); i ++ )\n    {\n        t = A[i] - t;\n        if (i < B.size()) t -= B[i];\n        C.push_back((t + 10) % 10);\n        if (t < 0) t = 1;\n        else t = 0;\n    }\n\n    while (C.size() > 1 && C.back() == 0) C.pop_back();\n    return C;\n}",
+    "triggers": [
+      "vector<int> sub"
+    ]
+  },
+  {
+    "heading": "高精度乘低精度 —— 模板题 AcWing 793. 高精度乘法",
+    "code": "// C = A * b, A >= 0, b >= 0\nvector<int> mul(vector<int> &A, int b)\n{\n    vector<int> C;\n\n    int t = 0;\n    for (int i = 0; i < A.size() || t; i ++ )\n    {\n        if (i < A.size()) t += A[i] * b;\n        C.push_back(t % 10);\n        t /= 10;\n    }\n\n    while (C.size() > 1 && C.back() == 0) C.pop_back();\n\n    return C;\n}",
+    "triggers": [
+      "vector<int> mul"
+    ]
+  },
+  {
+    "heading": "高精度除以低精度 —— 模板题 AcWing 794. 高精度除法",
+    "code": "// A / b = C ... r, A >= 0, b > 0\nvector<int> div(vector<int> &A, int b, int &r)\n{\n    vector<int> C;\n    r = 0;\n    for (int i = A.size() - 1; i >= 0; i -- )\n    {\n        r = r * 10 + A[i];\n        C.push_back(r / b);\n        r %= b;\n    }\n    reverse(C.begin(), C.end());\n    while (C.size() > 1 && C.back() == 0) C.pop_back();\n    return C;\n}",
+    "triggers": [
+      "vector<int> div"
+    ]
+  },
+  {
+    "heading": "一维前缀和 —— 模板题 AcWing 795. 前缀和",
+    "code": "S[i] = a[1] + a[2] + ... a[i]\na[l] + ... + a[r] = S[r] - S[l - 1]"
+  },
+  {
+    "heading": "二维前缀和 —— 模板题 AcWing 796. 子矩阵的和",
+    "code": "S[i, j] = 第i行j列格子左上部分所有元素的和\n以(x1, y1)为左上角，(x2, y2)为右下角的子矩阵的和为：\nS[x2, y2] - S[x1 - 1, y2] - S[x2, y1 - 1] + S[x1 - 1, y1 - 1]"
+  },
+  {
+    "heading": "一维差分 —— 模板题 AcWing 797. 差分",
+    "code": "给区间[l, r]中的每个数加上c：B[l] += c, B[r + 1] -= c"
+  },
+  {
+    "heading": "二维差分 —— 模板题 AcWing 798. 差分矩阵",
+    "code": "给以(x1, y1)为左上角，(x2, y2)为右下角的子矩阵中的所有元素加上c：\nS[x1, y1] += c, S[x2 + 1, y1] -= c, S[x1, y2 + 1] -= c, S[x2 + 1, y2 + 1] += c"
+  },
+  {
+    "heading": "位运算 —— 模板题 AcWing 801. 二进制中1的个数",
+    "code": "求n的第k位数字: n >> k & 1\n返回n的最后一位1：lowbit(n) = n & -n",
+    "triggers": [
+      "int lo"
+    ]
+  },
+  {
+    "heading": "双指针算法 —— 模板题 AcWIng 799. 最长连续不重复子序列, AcWing 800. 数组元素的目标和",
+    "code": "for (int i = 0, j = 0; i < n; i ++ )\n{\n    while (j < i && check(i, j)) j ++ ;\n\n    // 具体问题的逻辑\n}\n常见问题分类：\n    (1) 对于一个序列，用两个指针维护一段区间\n    (2) 对于两个序列，维护某种次序，比如归并排序中合并两个有序序列的操作"
+  },
+  {
+    "heading": "离散化 —— 模板题 AcWing 802. 区间和",
+    "code": "vector<int> alls; // 存储所有待离散化的值\nsort(alls.begin(), alls.end()); // 将所有值排序\nalls.erase(unique(alls.begin(), alls.end()), alls.end());   // 去掉重复元素\n\n// 二分求出x对应的离散化的值\nint find(int x) // 找到第一个大于等于x的位置\n{\n    int l = 0, r = alls.size() - 1;\n    while (l < r)\n    {\n        int mid = l + r >> 1;\n        if (alls[mid] >= x) r = mid;\n        else l = mid + 1;\n    }\n    return r + 1; // 映射到1, 2, ...n\n}"
+  },
+  {
+    "heading": "区间合并 —— 模板题 AcWing 803. 区间合并",
+    "code": "// 将所有存在交集的区间合并\nvoid merge(vector<PII> &segs)\n{\n    vector<PII> res;\n\n    sort(segs.begin(), segs.end());\n\n    int st = -2e9, ed = -2e9;\n    for (auto seg : segs)\n        if (ed < seg.first)\n        {\n            if (st != -2e9) res.push_back({st, ed});\n            st = seg.first, ed = seg.second;\n        }\n        else ed = max(ed, seg.second);\n\n    if (st != -2e9) res.push_back({st, ed});\n\n    segs = res;\n}"
+  },
+  {
+    "heading": "单链表 —— 模板题 AcWing 826. 单链表",
+    "code": "// head存储链表头，e[]存储节点的值，ne[]存储节点的next指针，idx表示当前用到了哪个节点\nint head, e[N], ne[N], idx;\n\n// 初始化\nvoid init()\n{\n    head = -1;\n    idx = 0;\n}\n\n// 在链表头插入一个数a\nvoid insert(int a)\n{\n    e[idx] = a, ne[idx] = head, head = idx ++ ;\n}\n\n// 将头结点删除，需要保证头结点存在\nvoid remove()\n{\n    head = ne[head];\n}"
+  },
+  {
+    "heading": "双链表 —— 模板题 AcWing 827. 双链表",
+    "code": "// e[]表示节点的值，l[]表示节点的左指针，r[]表示节点的右指针，idx表示当前用到了哪个节点\nint e[N], l[N], r[N], idx;\n\n// 初始化\nvoid init()\n{\n    //0是左端点，1是右端点\n    r[0] = 1, l[1] = 0;\n    idx = 2;\n}\n\n// 在节点a的右边插入一个数x\nvoid insert(int a, int x)\n{\n    e[idx] = x;\n    l[idx] = a, r[idx] = r[a];\n    l[r[a]] = idx, r[a] = idx ++ ;\n}\n\n// 删除节点a\nvoid remove(int a)\n{\n    l[r[a]] = l[a];\n    r[l[a]] = r[a];\n}"
+  },
+  {
+    "heading": "栈 —— 模板题 AcWing 828. 模拟栈",
+    "code": "// tt表示栈顶\nint stk[N], tt = 0;\n\n// 向栈顶插入一个数\nstk[ ++ tt] = x;\n\n// 从栈顶弹出一个数\ntt -- ;\n\n// 栈顶的值\nstk[tt];\n\n// 判断栈是否为空，如果 tt > 0，则表示不为空\nif (tt > 0)\n{\n\n}"
+  },
+  {
+    "heading": "队列 —— 模板题 AcWing 829. 模拟队列",
+    "code": "// hh 表示队头，tt表示队尾\nint q[N], hh = 0, tt = -1;\n\n// 向队尾插入一个数\nq[ ++ tt] = x;\n\n// 从队头弹出一个数\nhh ++ ;\n\n// 队头的值\nq[hh];\n\n// 判断队列是否为空，如果 hh <= tt，则表示不为空\nif (hh <= tt)\n{\n\n}"
+  },
+  {
+    "heading": "单调栈 —— 模板题 AcWing 830. 单调栈",
+    "code": "常见模型：找出每个数左边离它最近的比它大/小的数\nint tt = 0;\nfor (int i = 1; i <= n; i ++ )\n{\n    while (tt && check(stk[tt], i)) tt -- ;\n    stk[ ++ tt] = i;\n}"
+  },
+  {
+    "heading": "单调队列 —— 模板题 AcWing 154. 滑动窗口",
+    "code": "常见模型：找出滑动窗口中的最大值/最小值\nint hh = 0, tt = -1;\nfor (int i = 0; i < n; i ++ )\n{\n    while (hh <= tt && check_out(q[hh])) hh ++ ;  // 判断队头是否滑出窗口\n    while (hh <= tt && check(q[tt], i)) tt -- ;\n    q[ ++ tt] = i;\n}"
+  },
+  {
+    "heading": "KMP —— 模板题 AcWing 831. KMP字符串",
+    "code": "// s[]是长文本，p[]是模式串，n是s的长度，m是p的长度\n求模式串的next数组：\nfor (int i = 2, j = 0; i <= m; i ++ )\n{\n    while (j && p[i] != p[j + 1]) j = ne[j];\n    if (p[i] == p[j + 1]) j ++ ;\n    ne[i] = j;\n}\n\n// 匹配\nfor (int i = 1, j = 0; i <= n; i ++ )\n{\n    while (j && s[i] != p[j + 1]) j = ne[j];\n    if (s[i] == p[j + 1]) j ++ ;\n    if (j == m)\n    {\n        j = ne[j];\n        // 匹配成功后的逻辑\n    }\n}"
+  },
+  {
+    "heading": "Trie树 —— 模板题 AcWing 835. Trie字符串统计",
+    "code": "int son[N][26], cnt[N], idx;\n// 0号点既是根节点，又是空节点\n// son[][]存储树中每个节点的子节点\n// cnt[]存储以每个节点结尾的单词数量\n\n// 插入一个字符串\nvoid insert(char *str)\n{\n    int p = 0;\n    for (int i = 0; str[i]; i ++ )\n    {\n        int u = str[i] - 'a';\n        if (!son[p][u]) son[p][u] = ++ idx;\n        p = son[p][u];\n    }\n    cnt[p] ++ ;\n}\n\n// 查询字符串出现的次数\nint query(char *str)\n{\n    int p = 0;\n    for (int i = 0; str[i]; i ++ )\n    {\n        int u = str[i] - 'a';\n        if (!son[p][u]) return 0;\n        p = son[p][u];\n    }\n    return cnt[p];\n}",
+    "triggers": [
+      "void ins"
+    ]
+  },
+  {
+    "heading": "并查集 —— 模板题 AcWing 836. 合并集合, AcWing 837. 连通块中点的数量",
+    "code": "(1)朴素并查集：\n\n    int p[N]; //存储每个点的祖宗节点\n\n    // 返回x的祖宗节点\n    int find(int x)\n    {\n        if (p[x] != x) p[x] = find(p[x]);\n        return p[x];\n    }\n\n    // 初始化，假定节点编号是1~n\n    for (int i = 1; i <= n; i ++ ) p[i] = i;\n\n    // 合并a和b所在的两个集合：\n    p[find(a)] = find(b);\n\n\n(2)维护size的并查集：\n\n    int p[N], size[N];\n    //p[]存储每个点的祖宗节点, size[]只有祖宗节点的有意义，表示祖宗节点所在集合中的点的数量\n\n    // 返回x的祖宗节点\n    int find(int x)\n    {\n        if (p[x] != x) p[x] = find(p[x]);\n        return p[x];\n    }\n\n    // 初始化，假定节点编号是1~n\n    for (int i = 1; i <= n; i ++ )\n    {\n        p[i] = i;\n        size[i] = 1;\n    }\n\n    // 合并a和b所在的两个集合：\n    size[find(b)] += size[find(a)];\n    p[find(a)] = find(b);\n\n\n(3)维护到祖宗节点距离的并查集：\n\n    int p[N], d[N];\n    //p[]存储每个点的祖宗节点, d[x]存储x到p[x]的距离\n\n    // 返回x的祖宗节点\n    int find(int x)\n    {\n        if (p[x] != x)\n        {\n            int u = find(p[x]);\n            d[x] += d[p[x]];\n            p[x] = u;\n        }\n        return p[x];\n    }\n\n    // 初始化，假定节点编号是1~n\n    for (int i = 1; i <= n; i ++ )\n    {\n        p[i] = i;\n        d[i] = 0;\n    }\n\n    // 合并a和b所在的两个集合：\n    p[find(a)] = find(b);\n    d[find(a)] = distance; // 根据具体问题，初始化find(a)的偏移量",
+    "triggers": [
+      "int find"
+    ]
+  },
+  {
+    "heading": "堆 —— 模板题 AcWing 838. 堆排序, AcWing 839. 模拟堆",
+    "code": "// h[N]存储堆中的值, h[1]是堆顶，x的左儿子是2x, 右儿子是2x + 1\n// ph[k]存储第k个插入的点在堆中的位置\n// hp[k]存储堆中下标是k的点是第几个插入的\nint h[N], ph[N], hp[N], size;\n\n// 交换两个点，及其映射关系\nvoid heap_swap(int a, int b)\n{\n    swap(ph[hp[a]],ph[hp[b]]);\n    swap(hp[a], hp[b]);\n    swap(h[a], h[b]);\n}\n\nvoid down(int u)\n{\n    int t = u;\n    if (u * 2 <= size && h[u * 2] < h[t]) t = u * 2;\n    if (u * 2 + 1 <= size && h[u * 2 + 1] < h[t]) t = u * 2 + 1;\n    if (u != t)\n    {\n        heap_swap(u, t);\n        down(t);\n    }\n}\n\nvoid up(int u)\n{\n    while (u / 2 && h[u] < h[u / 2])\n    {\n        heap_swap(u, u / 2);\n        u >>= 1;\n    }\n}\n\n// O(n)建堆\nfor (int i = n / 2; i; i -- ) down(i);"
+  },
+  {
+    "heading": "一般哈希 —— 模板题 AcWing 840. 模拟散列表",
+    "code": "(1) 拉链法\n    int h[N], e[N], ne[N], idx;\n\n    // 向哈希表中插入一个数\n    void insert(int x)\n    {\n        int k = (x % N + N) % N;\n        e[idx] = x;\n        ne[idx] = h[k];\n        h[k] = idx ++ ;\n    }\n\n    // 在哈希表中查询某个数是否存在\n    bool find(int x)\n    {\n        int k = (x % N + N) % N;\n        for (int i = h[k]; i != -1; i = ne[i])\n            if (e[i] == x)\n                return true;\n\n        return false;\n    }\n\n(2) 开放寻址法\n    int h[N];\n\n    // 如果x在哈希表中，返回x的下标；如果x不在哈希表中，返回x应该插入的位置\n    int find(int x)\n    {\n        int t = (x % N + N) % N;\n        while (h[t] != null && h[t] != x)\n        {\n            t ++ ;\n            if (t == N) t = 0;\n        }\n        return t;\n    }"
+  },
+  {
+    "heading": "字符串哈希 —— 模板题 AcWing 841. 字符串哈希",
+    "code": "核心思想：将字符串看成P进制数，P的经验值是131或13331，取这两个值的冲突概率低\n小技巧：取模的数用2^64，这样直接用unsigned long long存储，溢出的结果就是取模的结果\n\ntypedef unsigned long long ULL;\nULL h[N], p[N]; // h[k]存储字符串前k个字母的哈希值, p[k]存储 P^k mod 2^64\n\n// 初始化\np[0] = 1;\nfor (int i = 1; i <= n; i ++ )\n{\n    h[i] = h[i - 1] * P + str[i];\n    p[i] = p[i - 1] * P;\n}\n\n// 计算子串 str[l ~ r] 的哈希值\nULL get(int l, int r)\n{\n    return h[r] - h[l - 1] * p[r - l + 1];\n}",
+    "triggers": [
+      "ULL get"
+    ]
+  },
+  {
+    "heading": "C++ STL简介",
+    "code": "vector, 变长数组，倍增的思想\n    size()  返回元素个数\n    empty()  返回是否为空\n    clear()  清空\n    front()/back()\n    push_back()/pop_back()\n    begin()/end()\n    []\n    支持比较运算，按字典序\n\npair<int, int>\n    first, 第一个元素\n    second, 第二个元素\n    支持比较运算，以first为第一关键字，以second为第二关键字（字典序）\n\nstring，字符串\n    size()/length()  返回字符串长度\n    empty()\n    clear()\n    substr(起始下标，(子串长度))  返回子串\n    c_str()  返回字符串所在字符数组的起始地址\n\nqueue, 队列\n    size()\n    empty()\n    push()  向队尾插入一个元素\n    front()  返回队头元素\n    back()  返回队尾元素\n    pop()  弹出队头元素\n\npriority_queue, 优先队列，默认是大根堆\n    size()\n    empty()\n    push()  插入一个元素\n    top()  返回堆顶元素\n    pop()  弹出堆顶元素\n    定义成小根堆的方式：priority_queue<int, vector<int>, greater<int>> q;\n\nstack, 栈\n    size()\n    empty()\n    push()  向栈顶插入一个元素\n    top()  返回栈顶元素\n    pop()  弹出栈顶元素\n\ndeque, 双端队列\n    size()\n    empty()\n    clear()\n    front()/back()\n    push_back()/pop_back()\n    push_front()/pop_front()\n    begin()/end()\n    []\n\nset, map, multiset, multimap, 基于平衡二叉树（红黑树），动态维护有序序列\n    size()\n    empty()\n    clear()\n    begin()/end()\n    ++, -- 返回前驱和后继，时间复杂度 O(logn)\n\n    set/multiset\n        insert()  插入一个数\n        find()  查找一个数\n        count()  返回某一个数的个数\n        erase()\n            (1) 输入是一个数x，删除所有x   O(k + logn)\n            (2) 输入一个迭代器，删除这个迭代器\n        lower_bound()/upper_bound()\n            lower_bound(x)  返回大于等于x的最小的数的迭代器\n            upper_bound(x)  返回大于x的最小的数的迭代器\n    map/multimap\n        insert()  插入的数是一个pair\n        erase()  输入的参数是pair或者迭代器\n        find()\n        []  注意multimap不支持此操作。 时间复杂度是 O(logn)\n        lower_bound()/upper_bound()\n\nunordered_set, unordered_map, unordered_multiset, unordered_multimap, 哈希表\n    和上面类似，增删改查的时间复杂度是 O(1)\n    不支持 lower_bound()/upper_bound()， 迭代器的++，--\n\nbitset, 圧位\n    bitset<10000> s;\n    ~, &, |, ^\n    >>, <<\n    ==, !=\n    []\n\n    count()  返回有多少个1\n\n    any()  判断是否至少有一个1\n    none()  判断是否全为0\n\n    set()  把所有位置成1\n    set(k, v)  将第k位变成v\n    reset()  把所有位变成0\n    flip()  等价于~\n    flip(k) 把第k位取反"
+  },
+  {
+    "heading": "树与图的存储（邻接表）",
+    "code": "// 对于每个点k，开一个单链表，存储k所有可以走到的点。h[k]存储这个单链表的头结点\nint h[N], e[N], ne[N], idx;\n\n// 添加一条边a->b\nvoid add(int a, int b)\n{\n    e[idx] = b, ne[idx] = h[a], h[a] = idx ++ ;\n}\n\n// 初始化\nidx = 0;\nmemset(h, -1, sizeof h);",
+    "triggers": [
+      "int h",
+      "void ad"
+    ]
+  },
+  {
+    "heading": "DFS 深度优先遍历 —— 模板题 AcWing 846. 树的重心",
+    "code": "int dfs(int u)\n{\n    st[u] = true; // st[u] 表示点u已经被遍历过\n\n    for (int i = h[u]; i != -1; i = ne[i])\n    {\n        int j = e[i];\n        if (!st[j]) dfs(j);\n    }\n}"
+  },
+  {
+    "heading": "BFS 宽度优先遍历 —— 模板题 AcWing 847. 图中点的层次",
+    "code": "queue<int> q;\nst[1] = true; // 表示1号点已经被遍历过\nq.push(1);\n\nwhile (q.size())\n{\n    int t = q.front();\n    q.pop();\n\n    for (int i = h[t]; i != -1; i = ne[i])\n    {\n        int j = e[i];\n        if (!st[j])\n        {\n            st[j] = true; // 表示点j已经被遍历过\n            q.push(j);\n        }\n    }\n}"
+  },
+  {
+    "heading": "拓扑排序 —— 模板题 AcWing 848. 有向图的拓扑序列",
+    "code": "bool topsort()\n{\n    int hh = 0, tt = -1;\n\n    // d[i] 存储点i的入度\n    for (int i = 1; i <= n; i ++ )\n        if (!d[i])\n            q[ ++ tt] = i;\n\n    while (hh <= tt)\n    {\n        int t = q[hh ++ ];\n\n        for (int i = h[t]; i != -1; i = ne[i])\n        {\n            int j = e[i];\n            if (-- d[j] == 0)\n                q[ ++ tt] = j;\n        }\n    }\n\n    // 如果所有点都入队了，说明存在拓扑序列；否则不存在拓扑序列。\n    return tt == n - 1;\n}",
+    "triggers": [
+      "bool top"
+    ]
+  },
+  {
+    "heading": "朴素dijkstra算法 —— 模板题 AcWing 849. Dijkstra求最短路 I",
+    "code": "int g[N][N];  // 存储每条边\nint dist[N];  // 存储1号点到每个点的最短距离\nbool st[N];   // 存储每个点的最短路是否已经确定\n\n// 求1号点到n号点的最短路，如果不存在则返回-1\nint dijkstra()\n{\n    memset(dist, 0x3f, sizeof dist);\n    dist[1] = 0;\n\n    for (int i = 0; i < n - 1; i ++ )\n    {\n        int t = -1;     // 在还未确定最短路的点中，寻找距离最小的点\n        for (int j = 1; j <= n; j ++ )\n            if (!st[j] && (t == -1 || dist[t] > dist[j]))\n                t = j;\n\n        // 用t更新其他点的距离\n        for (int j = 1; j <= n; j ++ )\n            dist[j] = min(dist[j], dist[t] + g[t][j]);\n\n        st[t] = true;\n    }\n\n    if (dist[n] == 0x3f3f3f3f) return -1;\n    return dist[n];\n}",
+    "triggers": [
+      "int dij"
+    ]
+  },
+  {
+    "heading": "堆优化版dijkstra —— 模板题 AcWing 850. Dijkstra求最短路 II",
+    "code": "typedef pair<int, int> PII;\n\nint n;      // 点的数量\nint h[N], w[N], e[N], ne[N], idx;       // 邻接表存储所有边\nint dist[N];        // 存储所有点到1号点的距离\nbool st[N];     // 存储每个点的最短距离是否已确定\n\n// 求1号点到n号点的最短距离，如果不存在，则返回-1\nint dijkstra()\n{\n    memset(dist, 0x3f, sizeof dist);\n    dist[1] = 0;\n    priority_queue<PII, vector<PII>, greater<PII>> heap;\n    heap.push({0, 1});      // first存储距离，second存储节点编号\n\n    while (heap.size())\n    {\n        auto t = heap.top();\n        heap.pop();\n\n        int ver = t.second, distance = t.first;\n\n        if (st[ver]) continue;\n        st[ver] = true;\n\n        for (int i = h[ver]; i != -1; i = ne[i])\n        {\n            int j = e[i];\n            if (dist[j] > distance + w[i])\n            {\n                dist[j] = distance + w[i];\n                heap.push({dist[j], j});\n            }\n        }\n    }\n\n    if (dist[n] == 0x3f3f3f3f) return -1;\n    return dist[n];\n}",
+    "triggers": [
+      "int dij"
+    ]
+  },
+  {
+    "heading": "Bellman-Ford算法 —— 模板题 AcWing 853. 有边数限制的最短路",
+    "code": "int n, m;       // n表示点数，m表示边数\nint dist[N];        // dist[x]存储1到x的最短路距离\n\nstruct Edge     // 边，a表示出点，b表示入点，w表示边的权重\n{\n    int a, b, w;\n}edges[M];\n\n// 求1到n的最短路距离，如果无法从1走到n，则返回-1。\nint bellman_ford()\n{\n    memset(dist, 0x3f, sizeof dist);\n    dist[1] = 0;\n\n    for (int i = 0; i < n; i ++ )\n    {\n        for (int j = 0; j < m; j ++ )\n        {\n            int a = edges[j].a, b = edges[j].b, w = edges[j].w;\n            if (dist[b] > dist[a] + w)\n                dist[b] = dist[a] + w;\n        }\n    }\n\n    if (dist[n] > 0x3f3f3f3f / 2) return -1;\n    return dist[n];\n}"
+  },
+  {
+    "heading": "spfa 最短路 —— 模板题 AcWing 851. spfa求最短路",
+    "code": "int n;      // 总点数\nint h[N], w[N], e[N], ne[N], idx;       // 邻接表存储所有边\nint dist[N];        // 存储每个点到1号点的最短距离\nbool st[N];     // 存储每个点是否在队列中\n\n// 求1号点到n号点的最短路距离，如果从1号点无法走到n号点则返回-1\nint spfa()\n{\n    memset(dist, 0x3f, sizeof dist);\n    dist[1] = 0;\n\n    queue<int> q;\n    q.push(1);\n    st[1] = true;\n\n    while (q.size())\n    {\n        auto t = q.front();\n        q.pop();\n\n        st[t] = false;\n\n        for (int i = h[t]; i != -1; i = ne[i])\n        {\n            int j = e[i];\n            if (dist[j] > dist[t] + w[i])\n            {\n                dist[j] = dist[t] + w[i];\n                if (!st[j])     // 如果队列中已存在j，则不需要将j重复插入\n                {\n                    q.push(j);\n                    st[j] = true;\n                }\n            }\n        }\n    }\n\n    if (dist[n] == 0x3f3f3f3f) return -1;\n    return dist[n];\n}",
+    "triggers": [
+      "int spf"
+    ]
+  },
+  {
+    "heading": "spfa判断负环 —— 模板题 AcWing 852. spfa判断负环",
+    "code": "int n;      // 总点数\nint h[N], w[N], e[N], ne[N], idx;       // 邻接表存储所有边\nint dist[N], cnt[N];        // dist[x]存储1号点到x的最短距离，cnt[x]存储1到x的最短路中经过的点数\nbool st[N];     // 存储每个点是否在队列中\n\n// 如果存在负环，则返回true，否则返回false。\nbool spfa()\n{\n    queue<int> q;\n    for (int i = 1; i <= n; i ++ )\n    {\n        q.push(i);\n        st[i] = true;\n    }\n\n    while (q.size())\n    {\n        auto t = q.front();\n        q.pop();\n\n        st[t] = false;\n\n        for (int i = h[t]; i != -1; i = ne[i])\n        {\n            int j = e[i];\n            if (dist[j] > dist[t] + w[i])\n            {\n                dist[j] = dist[t] + w[i];\n                cnt[j] = cnt[t] + 1;\n                if (cnt[j] >= n) return true;\n                if (!st[j])\n                {\n                    q.push(j);\n                    st[j] = true;\n                }\n            }\n        }\n    }\n\n    return false;\n}",
+    "triggers": [
+      "bool spf"
+    ]
+  },
+  {
+    "heading": "floyd算法 —— 模板题 AcWing 854. Floyd求最短路",
+    "code": "// 初始化：\n//     for (int i = 1; i <= n; i ++ )\n//         for (int j = 1; j <= n; j ++ )\n//             if (i == j) d[i][j] = 0;\n//             else d[i][j] = INF;\n\n// 算法结束后，d[a][b]表示a到b的最短距离\nvoid floyd()\n{\n    for (int k = 1; k <= n; k ++ )\n        for (int i = 1; i <= n; i ++ )\n            for (int j = 1; j <= n; j ++ )\n                d[i][j] = min(d[i][j], d[i][k] + d[k][j]);\n}"
+  },
+  {
+    "heading": "prim最小生成树 —— 模板题 AcWing 858. Prim算法求最小生成树",
+    "code": "int n;      // n表示点数\nint g[N][N];        // 邻接矩阵，存储所有边\nint dist[N];        // 存储其他点到当前最小生成树的距离\nbool st[N];     // 存储每个点是否已经在生成树中\n\n\n// 如果图不连通，则返回INF(值是0x3f3f3f3f), 否则返回最小生成树的树边权重之和\nint prim()\n{\n    memset(dist, 0x3f, sizeof dist);\n\n    int res = 0;\n    for (int i = 0; i < n; i ++ )\n    {\n        int t = -1;\n        for (int j = 1; j <= n; j ++ )\n            if (!st[j] && (t == -1 || dist[t] > dist[j]))\n                t = j;\n\n        if (i && dist[t] == INF) return INF;\n\n        if (i) res += dist[t];\n        st[t] = true;\n\n        for (int j = 1; j <= n; j ++ ) dist[j] = min(dist[j], g[t][j]);\n    }\n\n    return res;\n}"
+  },
+  {
+    "heading": "kruskal最小生成树 —— 模板题 AcWing 859. Kruskal算法求最小生成树",
+    "code": "int n, m;       // n是点数，m是边数\nint p[N];       // 并查集的父节点数组\n\nstruct Edge     // 存储边\n{\n    int a, b, w;\n\n    bool operator< (const Edge &W)const\n    {\n        return w < W.w;\n    }\n}edges[M];\n\nint find(int x)     // 并查集核心操作\n{\n    if (p[x] != x) p[x] = find(p[x]);\n    return p[x];\n}\n\nint kruskal()\n{\n    sort(edges, edges + m);\n\n    for (int i = 1; i <= n; i ++ ) p[i] = i;    // 初始化并查集\n\n    int res = 0, cnt = 0;\n    for (int i = 0; i < m; i ++ )\n    {\n        int a = edges[i].a, b = edges[i].b, w = edges[i].w;\n\n        a = find(a), b = find(b);\n        if (a != b)     // 如果两个连通块不连通，则将这两个连通块合并\n        {\n            p[a] = b;\n            res += w;\n            cnt ++ ;\n        }\n    }\n\n    if (cnt < n - 1) return INF;\n    return res;\n}"
+  },
+  {
+    "heading": "染色法判定二分图 —— 模板题 AcWing 860. 染色法判定二分图",
+    "code": "int n;      // n表示点数\nint h[N], e[M], ne[M], idx;     // 邻接表存储图\nint color[N];       // 表示每个点的颜色，-1表示未染色，0表示白色，1表示黑色\n\n// 参数：u表示当前节点，c表示当前点的颜色\nbool dfs(int u, int c)\n{\n    color[u] = c;\n    for (int i = h[u]; i != -1; i = ne[i])\n    {\n        int j = e[i];\n        if (color[j] == -1)\n        {\n            if (!dfs(j, !c)) return false;\n        }\n        else if (color[j] == c) return false;\n    }\n\n    return true;\n}\n\nbool check()\n{\n    memset(color, -1, sizeof color);\n    bool flag = true;\n    for (int i = 1; i <= n; i ++ )\n        if (color[i] == -1)\n            if (!dfs(i, 0))\n            {\n                flag = false;\n                break;\n            }\n    return flag;\n}"
+  },
+  {
+    "heading": "匈牙利算法 —— 模板题 AcWing 861. 二分图的最大匹配",
+    "code": "int n1, n2;     // n1表示第一个集合中的点数，n2表示第二个集合中的点数\nint h[N], e[M], ne[M], idx;     // 邻接表存储所有边\nint match[N];       // 存储第二个集合中的每个点当前匹配的第一个集合中的点是哪个\nbool st[N];     // 表示第二个集合中的每个点是否已经被遍历过\n\nbool find(int x)\n{\n    for (int i = h[x]; i != -1; i = ne[i])\n    {\n        int j = e[i];\n        if (!st[j])\n        {\n            st[j] = true;\n            if (match[j] == 0 || find(match[j]))\n            {\n                match[j] = x;\n                return true;\n            }\n        }\n    }\n\n    return false;\n}\n\n// 求最大匹配数，依次枚举第一个集合中的每个点能否匹配第二个集合中的点\nint res = 0;\nfor (int i = 1; i <= n1; i ++ )\n{\n    memset(st, false, sizeof st);\n    if (find(i)) res ++ ;\n}",
+    "triggers": [
+      "bool find"
+    ]
+  },
+  {
+    "heading": "试除法判定质数 —— 模板题 AcWing 866. 试除法判定质数",
+    "code": "bool is_prime(int x)\n{\n    if (x < 2) return false;\n    for (int i = 2; i <= x / i; i ++ )\n        if (x % i == 0)\n            return false;\n    return true;\n}",
+    "triggers": [
+      "bool is_p"
+    ]
+  },
+  {
+    "heading": "试除法分解质因数 —— 模板题 AcWing 867. 分解质因数",
+    "code": "void divide(int x)\n{\n    for (int i = 2; i <= x / i; i ++ )\n        if (x % i == 0)\n        {\n            int s = 0;\n            while (x % i == 0) x /= i, s ++ ;\n            cout << i << ' ' << s << endl;\n        }\n    if (x > 1) cout << x << ' ' << 1 << endl;\n    cout << endl;\n}"
+  },
+  {
+    "heading": "朴素筛法求素数 —— 模板题 AcWing 868. 筛质数",
+    "code": "int primes[N], cnt;     // primes[]存储所有素数\nbool st[N];         // st[x]存储x是否被筛掉\n\nvoid get_primes(int n)\n{\n    for (int i = 2; i <= n; i ++ )\n    {\n        if (st[i]) continue;\n        primes[cnt ++ ] = i;\n        for (int j = i + i; j <= n; j += i)\n            st[j] = true;\n    }\n}"
+  },
+  {
+    "heading": "线性筛法求素数 —— 模板题 AcWing 868. 筛质数",
+    "code": "int primes[N], cnt;     // primes[]存储所有素数\nbool st[N];         // st[x]存储x是否被筛掉\n\nvoid get_primes(int n)\n{\n    for (int i = 2; i <= n; i ++ )\n    {\n        if (!st[i]) primes[cnt ++ ] = i;\n        for (int j = 0; primes[j] <= n / i; j ++ )\n        {\n            st[primes[j] * i] = true;\n            if (i % primes[j] == 0) break;\n        }\n    }\n}",
+    "triggers": [
+      "void get_p"
+    ]
+  },
+  {
+    "heading": "试除法求所有约数 —— 模板题 AcWing 869. 试除法求约数",
+    "code": "vector<int> get_divisors(int x)\n{\n    vector<int> res;\n    for (int i = 1; i <= x / i; i ++ )\n        if (x % i == 0)\n        {\n            res.push_back(i);\n            if (i != x / i) res.push_back(x / i);\n        }\n    sort(res.begin(), res.end());\n    return res;\n}"
+  },
+  {
+    "heading": "欧几里得算法（最大公约数） —— 模板题 AcWing 872. 最大公约数",
+    "code": "int gcd(int a, int b)\n{\n    return b ? gcd(b, a % b) : a;\n}",
+    "triggers": [
+      "int gc"
+    ]
+  },
+  {
+    "heading": "求欧拉函数 —— 模板题 AcWing 873. 欧拉函数",
+    "code": "int phi(int x)\n{\n    int res = x;\n    for (int i = 2; i <= x / i; i ++ )\n        if (x % i == 0)\n        {\n            res = res / i * (i - 1);\n            while (x % i == 0) x /= i;\n        }\n    if (x > 1) res = res / x * (x - 1);\n\n    return res;\n}",
+    "triggers": [
+      "int phi"
+    ]
+  },
+  {
+    "heading": "筛法求欧拉函数 —— 模板题 AcWing 874. 筛法求欧拉函数",
+    "code": "int primes[N], cnt;     // primes[]存储所有素数\nint euler[N];           // 存储每个数的欧拉函数\nbool st[N];         // st[x]存储x是否被筛掉\n\n\nvoid get_eulers(int n)\n{\n    euler[1] = 1;\n    for (int i = 2; i <= n; i ++ )\n    {\n        if (!st[i])\n        {\n            primes[cnt ++ ] = i;\n            euler[i] = i - 1;\n        }\n        for (int j = 0; primes[j] <= n / i; j ++ )\n        {\n            int t = primes[j] * i;\n            st[t] = true;\n            if (i % primes[j] == 0)\n            {\n                euler[t] = euler[i] * primes[j];\n                break;\n            }\n            euler[t] = euler[i] * (primes[j] - 1);\n        }\n    }\n}",
+    "triggers": [
+      "void get_eu"
+    ]
+  },
+  {
+    "heading": "快速幂 —— 模板题 AcWing 875. 快速幂",
+    "code": "// 求 m^k mod p，时间复杂度 O(logk)\nint qmi(int m, int k, int p)\n{\n    int res = 1 % p, t = m;\n    while (k)\n    {\n        if (k&1) res = res * t % p;\n        t = t * t % p;\n        k >>= 1;\n    }\n    return res;\n}",
+    "triggers": [
+      "int qm"
+    ]
+  },
+  {
+    "heading": "扩展欧几里得算法 —— 模板题 AcWing 877. 扩展欧几里得算法",
+    "code": "// 求x, y，使得ax + by = gcd(a, b)\nint exgcd(int a, int b, int &x, int &y)\n{\n    if (!b)\n    {\n        x = 1; y = 0;\n        return a;\n    }\n    int d = exgcd(b, a % b, y, x);\n    y -= (a/b) * x;\n    return d;\n}",
+    "triggers": [
+      "int exgc"
+    ]
+  },
+  {
+    "heading": "高斯消元 —— 模板题 AcWing 883. 高斯消元解线性方程组",
+    "code": "// a[N][N]是增广矩阵\nint gauss()\n{\n    int c, r;\n    for (c = 0, r = 0; c < n; c ++ )\n    {\n        int t = r;\n        for (int i = r; i < n; i ++ )   // 找到绝对值最大的行\n            if (fabs(a[i][c]) > fabs(a[t][c]))\n                t = i;\n\n        if (fabs(a[t][c]) < eps) continue;\n\n        for (int i = c; i <= n; i ++ ) swap(a[t][i], a[r][i]);\n        for (int i = n; i >= c; i -- ) a[r][i] /= a[r][c];\n        for (int i = r + 1; i < n; i ++ )\n            if (fabs(a[i][c]) > eps)\n                for (int j = n; j >= c; j -- )\n                    a[i][j] -= a[r][j] * a[i][c];\n\n        r ++ ;\n    }\n\n    if (r < n)\n    {\n        for (int i = r; i < n; i ++ )\n            if (fabs(a[i][n]) > eps)\n                return 2; // 无解\n        return 1; // 有无穷多组解\n    }\n\n    for (int i = n - 1; i >= 0; i -- )\n        for (int j = i + 1; j < n; j ++ )\n            a[i][n] -= a[i][j] * a[j][n];\n\n    return 0; // 有唯一解\n}",
+    "triggers": [
+      "int gau"
+    ]
+  },
+  {
+    "heading": "递推法求组合数 —— 模板题 AcWing 885. 求组合数 I",
+    "code": "// c[a][b] 表示从a个苹果中选b个的方案数\nfor (int i = 0; i < N; i ++ )\n    for (int j = 0; j <= i; j ++ )\n        if (!j) c[i][j] = 1;\n        else c[i][j] = (c[i - 1][j] + c[i - 1][j - 1]) % mod;"
+  },
+  {
+    "heading": "预处理逆元求组合数 —— 模板题 AcWing 886. 求组合数 II",
+    "code": "int qmi(int a, int k, int p)    // 快速幂模板\n{\n    int res = 1;\n    while (k)\n    {\n        if (k & 1) res = (LL)res * a % p;\n        a = (LL)a * a % p;\n        k >>= 1;\n    }\n    return res;\n}\n\n// 预处理阶乘的余数和阶乘逆元的余数\nfact[0] = infact[0] = 1;\nfor (int i = 1; i < N; i ++ )\n{\n    fact[i] = (LL)fact[i - 1] * i % mod;\n    infact[i] = (LL)infact[i - 1] * qmi(i, mod - 2, mod) % mod;\n}"
+  },
+  {
+    "heading": "Lucas定理求组合数 —— 模板题 AcWing 887. 求组合数 III",
+    "code": "int qmi(int a, int k, int p)  // 快速幂模板\n{\n    int res = 1 % p;\n    while (k)\n    {\n        if (k & 1) res = (LL)res * a % p;\n        a = (LL)a * a % p;\n        k >>= 1;\n    }\n    return res;\n}\n\nint C(int a, int b, int p)  // 通过定理求组合数C(a, b)\n{\n    if (a < b) return 0;\n\n    LL x = 1, y = 1;  // x是分子，y是分母\n    for (int i = a, j = 1; j <= b; i --, j ++ )\n    {\n        x = (LL)x * i % p;\n        y = (LL) y * j % p;\n    }\n\n    return x * (LL)qmi(y, p - 2, p) % p;\n}\n\nint lucas(LL a, LL b, int p)\n{\n    if (a < p && b < p) return C(a, b, p);\n    return (LL)C(a % p, b % p, p) * lucas(a / p, b / p, p) % p;\n}",
+    "triggers": [
+      "int lu"
+    ]
+  },
+  {
+    "heading": "分解质因数法求组合数 —— 模板题 AcWing 888. 求组合数 IV",
+    "code": "int primes[N], cnt;     // 存储所有质数\nint sum[N];     // 存储每个质数的次数\nbool st[N];     // 存储每个数是否已被筛掉\n\nvoid get_primes(int n)      // 线性筛法求素数\n{\n    for (int i = 2; i <= n; i ++ )\n    {\n        if (!st[i]) primes[cnt ++ ] = i;\n        for (int j = 0; primes[j] <= n / i; j ++ )\n        {\n            st[primes[j] * i] = true;\n            if (i % primes[j] == 0) break;\n        }\n    }\n}\n\nint get(int n, int p)       // 求n！中的次数\n{\n    int res = 0;\n    while (n)\n    {\n        res += n / p;\n        n /= p;\n    }\n    return res;\n}\n\nvector<int> mul(vector<int> a, int b)       // 高精度乘低精度模板\n{\n    vector<int> c;\n    int t = 0;\n    for (int i = 0; i < a.size(); i ++ )\n    {\n        t += a[i] * b;\n        c.push_back(t % 10);\n        t /= 10;\n    }\n\n    while (t)\n    {\n        c.push_back(t % 10);\n        t /= 10;\n    }\n\n    return c;\n}\n\nget_primes(a);  // 预处理范围内的所有质数\n\nfor (int i = 0; i < cnt; i ++ )     // 求每个质因数的次数\n{\n    int p = primes[i];\n    sum[i] = get(a, p) - get(b, p) - get(a - b, p);\n}\n\nvector<int> res;\nres.push_back(1);\n\nfor (int i = 0; i < cnt; i ++ )     // 用高精度乘法将所有质因子相乘\n    for (int j = 0; j < sum[i]; j ++ )\n        res = mul(res, primes[i]);"
+  },
+  {
+    "heading": "卡特兰数 —— 模板题 AcWing 889. 满足条件的01序列",
+    "code": "// Cat(n) = C(2n, n) / (n + 1)"
+  },
+  {
+    "heading": "NIM游戏 —— 模板题 AcWing 891. Nim游戏",
+    "code": "// 定理：NIM博弈先手必胜，当且仅当 A1 ^ A2 ^ ... ^ An != 0"
+  }
+]

@@ -26,6 +26,10 @@
       <el-menu-item index="/contest">{{$t('m.Contest_List')}}</el-menu-item>
       <el-menu-item index="/contest/create">{{$t('m.Create_Contest')}}</el-menu-item>
     </el-submenu>
+    <el-submenu index="course">
+      <template slot="title"><i class="el-icon-fa-book"></i>教材管理</template>
+      <el-menu-item index="/courses">题库列表</el-menu-item>
+    </el-submenu>
   </el-menu>
 </template>
 

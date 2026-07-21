@@ -57,14 +57,67 @@
       </Panel>
       <!--problem main end-->
       <Card :padding="20" id="submit-code" dis-hover>
-        <CodeMirror :value.sync="code"
-                    :languages="problem.languages"
-                    :language="language"
-                    :theme="theme"
-                    @resetCode="onResetToTemplate"
-                    @changeTheme="onChangeTheme"
-                    @changeLang="onChangeLang"></CodeMirror>
-        <Row type="flex" justify="space-between">
+        <MonacoEditor :value.sync="code"
+                      :languages="problem.languages"
+                      :language="language"
+                      :theme="theme"
+                      :enableTemplates="enableTemplates"
+                      @resetCode="onResetToTemplate"
+                      @changeTheme="onChangeTheme"
+                      @changeLang="onChangeLang"
+                      @debug="onDebug"
+                      @submit="submitCode"
+                      @save="onSaveCode"></MonacoEditor>
+
+        <!-- Debug Panel -->
+        <div class="debug-panel-section">
+          <div class="debug-input-area">
+            <span class="debug-label">输入</span>
+            <Input v-model="debugInput" type="textarea" :rows="3" placeholder="输入测试数据（默认使用题目样例）" />
+          </div>
+          <!-- Debug Results -->
+          <div v-if="debugResult" class="debug-results-panel">
+            <div class="debug-results-header">
+              <Icon type="ios-play" size="16" />
+              <span>运行结果</span>
+              <span class="debug-meta-inline">{{ debugResult.time_cost }}ms</span>
+            </div>
+            <div class="debug-results-body">
+              <pre class="debug-io">{{ debugResult.output }}</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Test Results Panel -->
+        <div v-if="testResults.length" class="test-results-panel">
+          <div class="test-results-header">
+            <Icon type="ios-checkmark" size="18" />
+            <span>样例测试结果</span>
+          </div>
+          <div class="test-results-body">
+            <div v-for="(result, index) in testResults" :key="index" class="test-result-item">
+              <div class="test-result-status" :class="{ 'ac': result.passed, 'wa': !result.passed }">
+                {{ result.passed ? 'AC' : 'WA' }}
+              </div>
+              <div class="test-result-content">
+                <div class="test-result-label">样例 {{ index + 1 }}</div>
+                <div v-if="!result.passed" class="test-result-diff">
+                  <div class="diff-item">
+                    <span class="diff-label">期望:</span>
+                    <pre class="diff-value expected">{{ result.expected }}</pre>
+                  </div>
+                  <div class="diff-item">
+                    <span class="diff-label">实际:</span>
+                    <pre class="diff-value actual">{{ result.actual }}</pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Submit Status -->
+        <Row type="flex" justify="space-between" style="margin-top: 15px">
           <Col :span="10">
             <div class="status" v-if="statusVisible">
               <template v-if="!this.contestID || (this.contestID && OIContestRealTimePermission)">
@@ -104,12 +157,18 @@
                 <Input v-model="captchaCode" class="captcha-code"/>
               </div>
             </template>
-            <Button type="warning" icon="edit" :loading="submitting" @click="submitCode"
-                    :disabled="problemSubmitDisabled || submitted"
-                    class="fl-right">
-              <span v-if="submitting">{{$t('m.Submitting')}}</span>
-              <span v-else>{{$t('m.Submit')}}</span>
-            </Button>
+            <div class="fl-right">
+              <Button type="primary" icon="play" @click="onDebug()"
+                      :disabled="problemSubmitDisabled || submitted"
+                      style="margin-right: 8px">
+                调试代码
+              </Button>
+              <Button type="warning" icon="edit" :loading="submitting" @click="submitCode"
+                      :disabled="problemSubmitDisabled || submitted">
+                <span v-if="submitting">{{$t('m.Submitting')}}</span>
+                <span v-else>提交代码</span>
+              </Button>
+            </div>
           </Col>
         </Row>
       </Card>
@@ -216,7 +275,7 @@
 <script>
   import {mapGetters, mapActions} from 'vuex'
   import {types} from '../../../../store'
-  import CodeMirror from '@oj/components/CodeMirror.vue'
+  import MonacoEditor from '@oj/components/MonacoEditor.vue'
   import storage from '@/utils/storage'
   import {FormMixin} from '@oj/components/mixins'
   import {JUDGE_STATUS, CONTEST_STATUS, buildProblemCodeKey} from '@/utils/constants'
@@ -230,7 +289,7 @@
   export default {
     name: 'Problem',
     components: {
-      CodeMirror
+      MonacoEditor
     },
     mixins: [FormMixin],
     data () {
@@ -246,9 +305,21 @@
         submitting: false,
         code: '',
         language: 'C++',
-        theme: 'solarized',
+        theme: 'vs',
         submissionId: '',
         submitted: false,
+        testResults: [],
+        runningTests: false,
+        debugResult: null,
+        debugInput: '',
+        debugStatus: '',
+        editorSettings: {
+          theme: 'vs',
+          fontSize: 14,
+          tabSize: 4,
+          keymap: 'standard',
+          completion: 'basic'
+        },
         result: {
           result: 9
         },
@@ -304,8 +375,12 @@
           api.submissionExists(problem.id, this.contestID).then(res => {
             this.submissionExists = res.data.data
           })
-          problem.languages = problem.languages.sort()
+          problem.languages = problem.languages.sort().filter(l => l !== 'Python2')
           this.problem = problem
+          // Init debug input with first sample
+          if (problem.samples && problem.samples.length) {
+            this.debugInput = problem.samples[0].input || ''
+          }
           if (problem.statistic_info) {
             this.changePie(problem)
           }
@@ -315,7 +390,9 @@
             return
           }
           // try to load problem template
-          this.language = this.problem.languages[0]
+          // Prefer C++ over C as default language
+          const langs = this.problem.languages
+          this.language = langs.includes('C++') ? 'C++' : langs[0]
           let template = this.problem.template
           if (template && template[this.language]) {
             this.code = template[this.language]
@@ -387,6 +464,70 @@
             }
           }
         })
+      },
+      onRunTests () {
+        if (!this.problem.samples || !this.problem.samples.length) {
+          this.$Message.warning('本题没有样例数据')
+          return
+        }
+        if (!this.code.trim()) {
+          this.$Message.warning('代码为空，请先编写代码')
+          return
+        }
+        this.runningTests = true
+        this.testResults = []
+
+        // Simulate test execution (client-side comparison)
+        // In a real implementation, this would call a local runner or sandbox API
+        setTimeout(() => {
+          this.testResults = this.problem.samples.map((sample, index) => {
+            // For now, just show the samples with a placeholder result
+            // Real test execution would require a backend sandbox
+            return {
+              passed: false,
+              expected: sample.output,
+              actual: '(本地测试暂未实现，请提交后查看结果)',
+              input: sample.input
+            }
+          })
+          this.runningTests = false
+        }, 500)
+      },
+      onDebug (input) {
+        if (!this.code.trim()) {
+          this.$Message.warning('代码为空，请先编写代码')
+          return
+        }
+        // Only use input from MonacoEditor's internal debug panel (when @debug emits a value)
+        // Otherwise keep whatever the user typed in the textarea
+        if (input !== undefined) {
+          this.debugInput = input
+        }
+        // Fallback to first sample if still empty
+        if (!this.debugInput && this.problem.samples && this.problem.samples.length) {
+          this.debugInput = this.problem.samples[0].input || ''
+        }
+        this.debugResult = null
+        this.debugStatus = 'Running...'
+
+        api.runCode({
+          problem_id: this.problem.id,
+          language: this.language,
+          code: this.code,
+          input: this.debugInput,
+          contest_id: this.contestID || undefined
+        }).then(res => {
+          this.debugResult = res.data.data
+          this.debugStatus = 'Finished'
+        }).catch(err => {
+          this.debugStatus = 'Error'
+          const msg = (err && err.data && err.data.data) ? err.data.data : '运行失败'
+          this.$Message.error(msg)
+          this.debugResult = { output: msg, time_cost: 0, memory_cost: 0 }
+        })
+      },
+      onSaveCode () {
+        this.$Message.success('代码已保存到本地')
       },
       checkSubmissionStatus () {
         // 使用setTimeout避免一些问题
@@ -495,6 +636,13 @@
       ...mapGetters(['problemSubmitDisabled', 'contestRuleType', 'OIContestRealTimePermission', 'contestStatus', 'canViewContestRank', 'isAuthenticated']),
       contest () {
         return this.$store.state.contest.contest
+      },
+      isExamContest () {
+        return this.contest && this.contest.is_exam
+      },
+      enableTemplates () {
+        // Disable template matching for exam contests
+        return !this.isExamContest
       },
       contestEnded () {
         return this.contestStatus === CONTEST_STATUS.ENDED
@@ -630,6 +778,159 @@
 
   .fl-right {
     float: right;
+  }
+
+  // Debug panel
+  .debug-panel-section {
+    margin-top: 10px;
+
+    .debug-input-area {
+      margin-bottom: 10px;
+
+      .debug-label {
+        font-weight: 600;
+        font-size: 13px;
+        margin-bottom: 4px;
+        display: inline-block;
+      }
+    }
+  }
+
+  .debug-results-panel {
+    border: 1px solid #e8eaec;
+    border-radius: 4px;
+    overflow: hidden;
+
+    .debug-results-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: #f8f8f9;
+      border-bottom: 1px solid #e8eaec;
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .debug-meta-inline {
+      margin-left: auto;
+      font-weight: 400;
+      color: #808695;
+      font-size: 12px;
+    }
+
+    .debug-results-body {
+      .debug-io {
+        margin: 0;
+        padding: 10px 12px;
+        background: #1d1e1f;
+        color: #d4d4d4;
+        font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+        font-size: 13px;
+        max-height: 200px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+        border-radius: 0;
+      }
+    }
+  }
+
+  // Test results panel
+  .test-results-panel {
+    margin-top: 15px;
+    border: 1px solid #e8eaec;
+    border-radius: 4px;
+    overflow: hidden;
+
+    .test-results-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: #f8f8f9;
+      border-bottom: 1px solid #e8eaec;
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .test-results-body {
+      padding: 10px 12px;
+    }
+
+    .test-result-item {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+      padding: 8px;
+      border-radius: 4px;
+      background: #fafafa;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+    }
+
+    .test-result-status {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 12px;
+
+      &.ac {
+        background: #edfff3;
+        color: #19be6b;
+      }
+
+      &.wa {
+        background: #ffeef0;
+        color: #ed4014;
+      }
+    }
+
+    .test-result-content {
+      flex: 1;
+    }
+
+    .test-result-label {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .test-result-diff {
+      .diff-item {
+        margin-bottom: 4px;
+
+        .diff-label {
+          font-size: 12px;
+          color: #808695;
+        }
+
+        .diff-value {
+          margin-top: 2px;
+          padding: 6px 8px;
+          border-radius: 3px;
+          font-size: 12px;
+          overflow-x: auto;
+
+          &.expected {
+            background: #edfff3;
+            color: #19be6b;
+          }
+
+          &.actual {
+            background: #ffeef0;
+            color: #ed4014;
+          }
+        }
+      }
+    }
   }
 
   #pieChart {

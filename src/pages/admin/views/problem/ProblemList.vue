@@ -12,6 +12,15 @@
             <el-switch v-model="showTags" active-text="Show Tags"></el-switch>
             <el-switch v-model="showSource" active-text="Show Source"></el-switch>
           </div>
+          <div class="toolbar-toggles">
+            <el-switch
+              v-model="disableTemplateCompletion"
+              active-text="禁用模板补全"
+              inactive-text="启用模板补全"
+              active-color="#ff4949"
+              @change="onTemplateToggle">
+            </el-switch>
+          </div>
         </div>
       </div>
       <el-table
@@ -238,6 +247,7 @@
         syncingRouteState: false,
         showTags: false,
         showSource: false,
+        disableTemplateCompletion: localStorage.getItem('xmuoj_disable_template_completion') === '1',
         selectedProblemIds: [],
         availableTags: [],
         batchTagsDialogVisible: false,
@@ -273,6 +283,15 @@
       this.getProblemList(this.currentPage, false)
     },
     methods: {
+      onTemplateToggle (value) {
+        if (value) {
+          localStorage.setItem('xmuoj_disable_template_completion', '1')
+          this.$message.warning('全站模板补全已关闭')
+        } else {
+          localStorage.removeItem('xmuoj_disable_template_completion')
+          this.$message.success('全站模板补全已开启')
+        }
+      },
       applyRouteState (route) {
         const query = route.query || {}
         const parsedPage = parseInt(query.page)

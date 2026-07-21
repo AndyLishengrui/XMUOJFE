@@ -4,11 +4,12 @@
 
 const path = require('path')
 const staticCdnHost = (process.env.STATIC_CDN_HOST || '').replace(/\/$/, '')
+const backendTarget = process.env.TARGET || 'http://localhost'
 const commonProxy = {
   onProxyReq: (proxyReq, req, res) => {
-    proxyReq.setHeader('Referer', process.env.TARGET)
+    proxyReq.setHeader('Referer', backendTarget)
   },
-  target: process.env.TARGET,
+  target: backendTarget,
   changeOrigin: true
 }
 

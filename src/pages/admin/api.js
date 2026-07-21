@@ -371,6 +371,60 @@ export default {
     return ajax('export_problem', 'post', {
       data
     })
+  },
+  // ========== 教材管理 ==========
+  getCourses () {
+    return ajax('admin/groups/courses', 'get')
+  },
+  getCourse (id) {
+    return ajax('admin/groups/courses', 'get', { params: { id } })
+  },
+  createCourse (data) {
+    return ajax('admin/groups/courses', 'post', { data })
+  },
+  updateCourse (data) {
+    return ajax('admin/groups/courses', 'put', { data })
+  },
+  deleteCourse (id, confirm = false) {
+    return ajax('admin/groups/courses', 'delete', { params: { id, confirm: confirm ? 'true' : undefined } })
+  },
+  deleteCoursePreview (id) {
+    return this.deleteCourse(id, false)
+  },
+  deleteCourseConfirm (id) {
+    return this.deleteCourse(id, true)
+  },
+  getChapters (courseId) {
+    return ajax('admin/groups/chapters', 'get', { params: { course_id: courseId } })
+  },
+  createChapter (data) {
+    return ajax('admin/groups/chapters', 'post', { data })
+  },
+  updateChapter (data) {
+    return ajax('admin/groups/chapters', 'put', { data })
+  },
+  deleteChapter (courseId, chapterId) {
+    return ajax('admin/groups/chapters', 'delete', { params: { course_id: courseId, id: chapterId } })
+  },
+  getChapterProblems (courseId, chapterId) {
+    return ajax('admin/groups/problems', 'get', { params: { course_id: courseId, chapter_id: chapterId } })
+  },
+  addProblemToChapter (data) {
+    return ajax('admin/groups/problems', 'post', { data })
+  },
+  updateChapterProblem (data) {
+    return ajax('admin/groups/problems', 'put', { data })
+  },
+  removeProblemFromChapter (courseId, chapterId, displayId) {
+    return ajax('admin/groups/problems', 'delete', {
+      params: { course_id: courseId, chapter_id: chapterId, display_id: displayId }
+    })
+  },
+  moveProblemToChapter (data) {
+    return ajax('admin/groups/problems/move', 'post', { data })
+  },
+  getProblemTitles (ids) {
+    return ajax('admin/groups/problem_titles', 'post', { data: { ids } })
   }
 }
 

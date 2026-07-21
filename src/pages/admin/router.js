@@ -2,7 +2,8 @@ import Vue from 'vue'
 import VueRouter from 'vue-router'
 // 引入 view 组件
 import { Announcement, Conf, Contest, ContestList, Home, JudgeServer, Login,
-  Problem, ProblemList, User, PruneTestCase, Dashboard, ProblemImportOrExport, ProblemTagGovernance } from './views'
+  Problem, ProblemList, User, PruneTestCase, Dashboard, ProblemImportOrExport, ProblemTagGovernance,
+  CourseList, CourseChapters } from './views'
 Vue.use(VueRouter)
 
 export default new VueRouter({
@@ -108,6 +109,16 @@ export default new VueRouter({
           path: '/contest/:contestId/problem/:problemId/edit',
           name: 'edit-contest-problem',
           component: Problem
+        },
+        {
+          path: '/courses',
+          name: 'course-list',
+          component: CourseList
+        },
+        {
+          path: '/courses/:courseId/chapters',
+          name: 'course-chapters',
+          component: CourseChapters
         }
       ]
     },
