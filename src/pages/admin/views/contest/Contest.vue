@@ -110,7 +110,7 @@
           description: '',
           start_time: '',
           end_time: '',
-          rule_type: 'ACM',
+          rule_type: 'OI',
           password: '',
           real_time_rank: true,
           visible: true,
