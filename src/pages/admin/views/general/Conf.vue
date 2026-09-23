@@ -80,6 +80,16 @@
                 </el-switch>
               </el-form-item>
             </el-col>
+            <el-col :span="24">
+              <el-form-item :label="$t('m.Public_Bank_Show_Links')" label-width="200px">
+                <el-switch
+                  v-model="websiteConfig.show_problem_links"
+                  active-color="#13ce66"
+                  inactive-color="#ff4949">
+                </el-switch>
+                <span style="font-size:12px;color:#999;margin-left:8px">{{ $t('m.Public_Bank_Show_Links_Desc') }}</span>
+              </el-form-item>
+            </el-col>
           </el-col>
         </el-row>
       </el-form>

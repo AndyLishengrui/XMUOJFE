@@ -76,6 +76,15 @@
             </el-form-item>
           </el-col>
           <el-col :span="8">
+            <el-form-item :label="$t('m.Problem_Links_Setting')">
+              <el-radio-group v-model="linksMode" size="small">
+                <el-radio-button label="inherit">{{ $t('m.Problem_Links_Inherit') }}</el-radio-button>
+                <el-radio-button label="show">{{ $t('m.Problem_Links_Show') }}</el-radio-button>
+                <el-radio-button label="hide">{{ $t('m.Problem_Links_Hide') }}</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
             <el-form-item :label="$t('m.Tag')" :error="error.tags">
               <span class="tags">
                 <el-tag
@@ -301,13 +310,17 @@
         problem: {
           languages: [],
           allow_public_test_case_download: false,
+          show_links: null,
           io_mode: {'io_mode': 'Standard IO', 'input': 'input.txt', 'output': 'output.txt'}
         },
         reProblem: {
           languages: [],
           allow_public_test_case_download: false,
+          show_links: null,
           io_mode: {'io_mode': 'Standard IO', 'input': 'input.txt', 'output': 'output.txt'}
         },
+        // 三态：inherit=跟随实验设置 / show=显示 / hide=隐藏
+        linksMode: 'inherit',
         testCaseUploaded: false,
         allLanguage: {},
         inputVisible: false,
@@ -359,8 +372,10 @@
           hint: '',
           source: '',
           allow_public_test_case_download: false,
+          show_links: null,
           io_mode: {'io_mode': 'Standard IO', 'input': 'input.txt', 'output': 'output.txt'}
         }
+        this.linksMode = 'inherit'
         let contestID = this.$route.params.contestId
         if (contestID) {
           this.problem.contest_id = this.reProblem.contest_id = contestID
@@ -387,6 +402,9 @@
             }
             data.spj_language = data.spj_language || 'C'
             this.problem = data
+            // 三态回填（老后端没有该字段时按「跟随」处理）
+            this.linksMode = (data.show_links === null || data.show_links === undefined)
+              ? 'inherit' : (data.show_links ? 'show' : 'hide')
             this.testCaseUploaded = true
           })
         } else {
@@ -608,6 +626,8 @@
         if (funcName === 'editContestProblem') {
           this.problem.contest_id = this.contest.id
         }
+        // 三态 → 存库值：跟随=null / 显示=true / 隐藏=false
+        this.problem.show_links = {'inherit': null, 'show': true, 'hide': false}[this.linksMode]
         api[funcName](this.problem).then(res => {
           if (this.routeName === 'create-contest-problem' || this.routeName === 'edit-contest-problem') {
             this.$router.push({name: 'contest-problem-list', params: {contestId: this.$route.params.contestId}})

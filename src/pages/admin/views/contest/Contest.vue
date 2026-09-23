@@ -70,6 +70,16 @@
               <span style="font-size:12px;color:#999;margin-left:8px">{{ $t('m.Exam_Mode_Desc') }}</span>
             </el-form-item>
           </el-col>
+          <el-col :span="8">
+            <el-form-item :label="$t('m.Show_Problem_Links')">
+              <el-switch
+                v-model="contest.show_problem_links"
+                active-color="#13ce66"
+                inactive-color="#ff4949">
+              </el-switch>
+              <span style="font-size:12px;color:#999;margin-left:8px">{{ $t('m.Show_Problem_Links_Desc') }}</span>
+            </el-form-item>
+          </el-col>
           <el-col :span="24">
             <el-form-item :label="$t('m.Allowed_IP_Ranges')">
               <div v-for="(range, index) in contest.allowed_ip_ranges" :key="index">
@@ -115,6 +125,7 @@
           real_time_rank: true,
           visible: true,
           is_exam: false,
+          show_problem_links: false,
           allowed_ip_ranges: [{
             value: ''
           }]
@@ -161,6 +172,8 @@
             ranges.push({value: ''})
           }
           data.allowed_ip_ranges = ranges
+          // 老后端可能还没这个字段，缺省按「隐藏」处理
+          data.show_problem_links = !!data.show_problem_links
           this.contest = data
         }).catch(() => {
         })
