@@ -19,6 +19,10 @@
               </Dropdown>
             </li>
 
+            <li v-if="rejudgeColumnVisible">
+              <span style="margin-right:8px">{{$t('m.RealName')}}</span>
+              <i-switch size="large" v-model="showRealName"></i-switch>
+            </li>
 
             <li>
               <i-switch size="large" v-model="formFilter.myself" @on-change="handleQueryChange">
@@ -36,7 +40,7 @@
           </ul>
         </div>
         <Table stripe :disabled-hover="true" :columns="columns" :data="submissions" :loading="loadingTable"></Table>
-        <Pagination :total="total" :page-size="limit" @on-change="changeRoute" :current.sync="page"></Pagination>
+        <Pagination :total="total" :page-size.sync="limit" @on-change="changeRoute" @on-page-size-change="changeRoute(1)" :current.sync="page" show-sizer></Pagination>
       </Panel>
     </div>
   </div>
@@ -179,7 +183,8 @@
         problemID: '',
         routeName: '',
         JUDGE_STATUS: '',
-        rejudge_column: false
+        rejudge_column: false,
+        _showRealName: false
       }
     },
     mounted () {
@@ -239,7 +244,8 @@
         })
       },
       // 改变route， 通过监听route变化请求数据，这样可以产生route history， 用户返回时就会保存之前的状态
-      changeRoute () {
+      changeRoute (page = this.page) {
+        this.page = page
         let query = utils.filterEmptyValue(this.buildQuery())
         query.contestID = this.contestID
         query.problemID = this.problemID
@@ -315,6 +321,27 @@
       },
       rejudgeColumnVisible () {
         return this.user.admin_type === USER_TYPE.SUPER_ADMIN || (this.contestID && this.isContestAdmin)
+      },
+      showRealName: {
+        get () {
+          return this._showRealName
+        },
+        set (value) {
+          this._showRealName = value
+          if (value) {
+            // Insert RealName column after Author column (currently at index 7)
+            this.columns.splice(8, 0, {
+              title: this.$t('m.RealName'),
+              align: 'center',
+              width: 120,
+              render: (h, {row}) => {
+                return h('span', row.real_name || '')
+              }
+            })
+          } else {
+            this.columns.splice(8, 1)
+          }
+        }
       }
     },
     watch: {

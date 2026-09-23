@@ -36,5 +36,16 @@ rm(path.join(config.build.assetsRoot, config.build.assetsSubDirectory), err => {
     console.log(chalk.yellow(
       ' You can now check the onlinejudge in http://YouIP/'
     ))
+
+    // Copy Monaco Editor to dist/static/monaco (loaded via script tag, not webpack)
+    const { execSync } = require('child_process')
+    const monacoSrc = path.resolve(__dirname, '../node_modules/monaco-editor/min')
+    const monacoDest = path.join(config.build.assetsRoot, config.build.assetsSubDirectory, 'monaco')
+    try {
+      execSync(`cp -r "${monacoSrc}" "${monacoDest}"`)
+      console.log(chalk.green('  Monaco Editor copied to dist/static/monaco\n'))
+    } catch (e) {
+      console.log(chalk.yellow('  Warning: monaco-editor/min not found, skipping copy\n'))
+    }
   })
 })

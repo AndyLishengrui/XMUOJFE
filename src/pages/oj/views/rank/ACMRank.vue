@@ -2,7 +2,18 @@
   <Row type="flex" justify="space-around">
     <Col :span="22">
     <Panel :padding="10">
-      <div slot="title">{{$t('m.ACM_Ranklist')}}</div>
+      <div slot="title">
+        {{$t('m.ACM_Ranklist')}}
+        <Poptip placement="left-start" v-if="isSuperAdmin" style="float:right;margin-right:10px">
+          <Icon type="ios-settings" :size="18" style="cursor:pointer" />
+          <template slot="content">
+            <p>
+              <span style="margin-right:8px">{{$t('m.RealName')}}</span>
+              <i-switch v-model="showRealName"></i-switch>
+            </p>
+          </template>
+        </Poptip>
+      </div>
       <div class="echarts">
         <ECharts :options="options" ref="chart" auto-resize></ECharts>
       </div>
@@ -20,12 +31,14 @@
   import Pagination from '@oj/components/Pagination'
   import utils from '@/utils/utils'
   import { RULE_TYPE } from '@/utils/constants'
+  import rankMixin from './rankMixin'
 
   export default {
     name: 'acm-rank',
     components: {
       Pagination
     },
+    mixins: [rankMixin],
     data () {
       return {
         page: 1,

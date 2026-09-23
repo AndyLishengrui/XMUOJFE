@@ -42,6 +42,7 @@
         <div style="font-size: 18px; font-weight: 700; margin-bottom: 16px; color: #1a1a2e; border-bottom: 2px solid #e8f0fe; padding-bottom: 10px;">
           💡 算法助教分析
           <span v-if="coachReport.status === 'done'" style="background: #e8f8e8; color: #2e7d32; font-size: 12px; margin-left: 10px; padding: 2px 10px; border-radius: 10px;">已确认</span>
+          <span v-if="coachReport.ac_after" style="background: #fff3e0; color: #e65100; font-size: 12px; margin-left: 10px; padding: 2px 10px; border-radius: 10px;">🎉 已AC</span>
         </div>
         <div v-if="coachReport.code_analysis" style="margin-bottom: 14px; background: #fafbfc; border-radius: 4px; padding: 14px 16px;">
           <div style="font-weight: 700; color: #333; margin-bottom: 8px; font-size: 15px;">📋 代码分析</div>
@@ -54,6 +55,17 @@
         <div v-if="coachReport.common_pitfall" style="margin-bottom: 14px; background: #fafbfc; border-radius: 4px; padding: 14px 16px;">
           <div style="font-weight: 700; color: #333; margin-bottom: 8px; font-size: 15px;">⚠️ 常见陷阱</div>
           <div style="white-space: pre-wrap; color: #444; line-height: 1.8; font-size: 15px;">{{coachReport.common_pitfall}}</div>
+        </div>
+        <!-- Feedback buttons -->
+        <div v-if="!fbSubmitted" style="margin-top: 18px; padding-top: 16px; border-top: 2px solid #e8eaec;">
+          <div style="font-size: 15px; color: #555; margin-bottom: 10px; font-weight: 500;">💬 这个分析对你有帮助吗？</div>
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <Button type="success" ghost @click="submitCoachFeedback('like')" :loading="fbLoading" style="border-width: 2px;">👍 有帮助</Button>
+            <Button type="error" ghost @click="submitCoachFeedback('dislike')" :loading="fbLoading" style="border-width: 2px;">👎 有错误</Button>
+          </div>
+        </div>
+        <div v-else style="margin-top: 18px; padding-top: 16px; border-top: 2px solid #e8eaec; color: #19be6b; font-size: 14px; font-weight: 500;">
+          {{ fbMsg }}
         </div>
       </div>
     </Col>
@@ -90,6 +102,9 @@
       return {
         isCn: true,
         coachReport: null,
+        fbSubmitted: false,
+        fbLoading: false,
+        fbMsg: '',
         columns: [
           {
             title: this.$i18n.t('m.ID'),
@@ -193,11 +208,36 @@
             if (res.data && res.data.code_analysis) {
               this.coachReport = res.data
               console.log('Coach report set to component data')
+              // Mark as viewed (non-blocking, fire-and-forget)
+              axios.post('/coach/reports/' + username + '/' + problemId + '/viewed', {}, {baseURL: '', timeout: 3000})
+                .then(() => console.log('Coach report view tracked'))
+                .catch(() => {})
             }
           })
           .catch(() => {
             // 无报告或请求失败 → 不显示，零影响
             this.coachReport = null
+          })
+      },
+      submitCoachFeedback (type) {
+        if (this.fbSubmitted) return
+        this.fbLoading = true
+        const username = this.submission.username
+        const problemId = this.submission.problem
+        axios.post('/coach/reports/' + username + '/' + problemId + '/feedback',
+          { feedback: type },
+          { baseURL: '', timeout: 5000, headers: { 'Content-Type': 'application/json' } }
+        )
+          .then(res => {
+            this.fbLoading = false
+            if (res.data && res.data.ok) {
+              this.fbSubmitted = true
+              this.fbMsg = type === 'like' ? '✓ 感谢反馈！' : '✓ 感谢反馈，我们会改进！'
+            }
+          })
+          .catch(() => {
+            this.fbLoading = false
+            this.$Message.warning('反馈提交失败，请重试')
           })
       },
       shareSubmission (shared) {

@@ -9,19 +9,23 @@
   <link rel="shortcut icon" href="/public/website/favicon.ico">
 
   <link href="/static/css/loader.css" rel="stylesheet">
-  <script src="/static/monaco/vs/loader.js"></script>
-  <script>
-    require.config({ paths: { vs: '/static/monaco/vs' } });
-    require(['vs/editor/editor.main'], function () {
-      window.monacoReady = true;
-    });
-  </script>
   <script>
     // IE 10 and earlier
     if (window.navigator.userAgent.indexOf('MSIE ') > 0 &&
       window.confirm('Your browser is not supported, click \'OK\' to update')) {
       window.location = 'http://outdatedbrowser.com'
     }
+  </script>
+
+  <!-- Monaco Editor via CDN — sets window.monaco globally -->
+  <script>
+    var require = { paths: { vs: '/static/monaco/vs' } }
+  </script>
+  <script src="/static/monaco/vs/loader.js"></script>
+  <script>
+    require(['vs/editor/editor.main'], function() {
+      console.log('Monaco Editor ready')
+    })
   </script>
 </head>
 <body>
