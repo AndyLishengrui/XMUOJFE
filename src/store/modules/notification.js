@@ -21,8 +21,10 @@ const mutations = {
 }
 
 // Use $http (axios) directly to avoid webpack lazy-chunk issues
+// NOTE: axios.defaults.baseURL is already '/api' (see pages/oj/api.js), so the
+// url below must be relative — prefixing '/api/' here produced /api/api/... (404).
 function notifAjax (url, method, paramsOrData) {
-  const options = { url: '/api/' + url, method }
+  const options = { url, method }
   if (method === 'get' || method === 'delete') {
     options.params = paramsOrData || {}
   } else {
