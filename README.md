@@ -64,7 +64,7 @@
 ## 安装
 
 ```bash
-code --install-extension xmuoj-vscode-0.0.90.vsix
+code --install-extension xmuoj-vscode-0.0.95.vsix
 ```
 
 ## 补充说明

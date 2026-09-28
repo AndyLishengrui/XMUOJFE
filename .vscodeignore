@@ -13,3 +13,4 @@ test/**
 .claude/**
 main
 temp-old-vsix/**
+scripts/**
