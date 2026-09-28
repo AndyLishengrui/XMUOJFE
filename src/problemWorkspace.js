@@ -18,6 +18,174 @@ const METADATA_FILE_NAME = ".xmuoj.json";
 
 const PROBLEMSET_DIR_NAME = "problemsets";
 
+// 生成文件的排除规则：批量下载题库后，VS Code 若持续 watch/search 这些文件会卡死。
+// 只做“排除监视与搜索”，不写 files.exclude，资源管理器里仍然可见。
+const EXCLUDED_WATCH_PATTERNS = [
+  "**/problem.md",
+  "**/samples/**",
+  "**/testcases/**",
+  "**/.xmuoj-build/**"
+];
+const GITIGNORE_MARKER = "# XMUOJ generated";
+const GITIGNORE_BLOCK = [
+  GITIGNORE_MARKER,
+  "samples/",
+  "testcases/",
+  ".xmuoj-build/",
+  ""
+].join("\n");
+
+let ignoreSettingsNoticeShown = false;
+let workspaceFolderWarningShown = false;
+
+/**
+ * 向 <rootPath>/.vscode/settings.json 合并写入 files.watcherExclude / search.exclude。
+ * 规则：只增不删、保留未知 key；文件不存在则创建；
+ * 文件存在但无法按纯 JSON 解析（如带注释的 JSONC）时不动它，交由调用方提示。
+ */
+async function ensureWorkspaceIgnoreSettings(rootPath) {
+  if (!rootPath) {
+    return { changed: false };
+  }
+  const vscodeDir = path.join(rootPath, ".vscode");
+  const settingsPath = path.join(vscodeDir, "settings.json");
+  let settings = {};
+  let fileExisted = false;
+  try {
+    const raw = await fs.readFile(settingsPath, "utf8");
+    fileExisted = true;
+    settings = JSON.parse(raw);
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      settings = {};
+    }
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      settings = {};
+    } else {
+      // 存在但解析失败（JSONC 注释 / 损坏）：不改动用户的文件
+      return { changed: false, skipped: true };
+    }
+  }
+
+  let changed = false;
+  for (const key of ["files.watcherExclude", "search.exclude"]) {
+    const existing = settings[key];
+    let target;
+    if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+      target = existing;
+    } else if (existing === undefined) {
+      target = {};
+      settings[key] = target;
+    } else {
+      // 类型异常（如字符串），跳过该 key，避免破坏用户配置
+      continue;
+    }
+    for (const pattern of EXCLUDED_WATCH_PATTERNS) {
+      if (!(pattern in target)) {
+        target[pattern] = true;
+        changed = true;
+      }
+    }
+  }
+
+  if (!changed) {
+    return { changed: false, fileExisted };
+  }
+  await fs.mkdir(vscodeDir, { recursive: true });
+  await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
+  return { changed: true, fileExisted };
+}
+
+/**
+ * 若 rootPath 位于某个 git 仓库内，向 <rootPath>/.gitignore 幂等追加生成文件规则，
+ * 避免批量生成的样例/测试数据污染 git status。
+ */
+async function ensureGeneratedFilesGitignore(rootPath) {
+  if (!rootPath) {
+    return { changed: false };
+  }
+  // 向上查找 .git，确认处于仓库内（只读检查，绝不改父仓库的文件）
+  let probe = path.resolve(rootPath);
+  let inRepo = false;
+  const seen = new Set();
+  while (probe && !seen.has(probe)) {
+    seen.add(probe);
+    try {
+      await fs.access(path.join(probe, ".git"));
+      inRepo = true;
+      break;
+    } catch (_error) {
+      /* keep walking */
+    }
+    const parent = path.dirname(probe);
+    if (parent === probe) {
+      break;
+    }
+    probe = parent;
+  }
+  if (!inRepo) {
+    return { changed: false };
+  }
+
+  const gitignorePath = path.join(rootPath, ".gitignore");
+  let content = "";
+  try {
+    content = await fs.readFile(gitignorePath, "utf8");
+  } catch (error) {
+    if (!error || error.code !== "ENOENT") {
+      throw error;
+    }
+  }
+  if (content.includes(GITIGNORE_MARKER)) {
+    return { changed: false };
+  }
+  const base = content.replace(/\s*$/, "");
+  const next = base ? `${base}\n\n${GITIGNORE_BLOCK}` : GITIGNORE_BLOCK;
+  await fs.writeFile(gitignorePath, next, "utf8");
+  return { changed: true };
+}
+
+/**
+ * 拿到有效 rootPath 后的统一收尾：写索引排除、写 gitignore、防呆提示。
+ * 任何一步失败都不阻断主流程。
+ */
+async function finalizeWorkspaceRoot(rootPath) {
+  if (!rootPath) {
+    return rootPath;
+  }
+  try {
+    const result = await ensureWorkspaceIgnoreSettings(rootPath);
+    if (result.changed && !ignoreSettingsNoticeShown) {
+      ignoreSettingsNoticeShown = true;
+      vscode.window.showInformationMessage(
+        `已为「${rootPath}」配置 VS Code 索引排除：problem.md、样例与测试数据不再被监视和搜索（若仍在索引，重载窗口一次即可）。`
+      );
+    }
+  } catch (error) {
+    console.warn("XMUOJ: 写入索引排除配置失败:", error.message);
+  }
+  try {
+    await ensureGeneratedFilesGitignore(rootPath);
+  } catch (error) {
+    console.warn("XMUOJ: 写入 .gitignore 失败:", error.message);
+  }
+  try {
+    const folders = vscode.workspace.workspaceFolders || [];
+    const pickedInsideOpenWorkspace = folders.some(
+      (folder) => folder && folder.uri && folder.uri.fsPath && path.resolve(folder.uri.fsPath) === path.resolve(rootPath)
+    );
+    if (pickedInsideOpenWorkspace && !workspaceFolderWarningShown) {
+      workspaceFolderWarningShown = true;
+      vscode.window.showWarningMessage(
+        "生成的题目与测试数据会写入当前打开的工程目录。建议以后为 XMUOJ 选择独立目录，减少对工程的干扰（本次可继续使用）。"
+      );
+    }
+  } catch (_error) {
+    /* ignore */
+  }
+  return rootPath;
+}
+
 function normalizeWorkspaceRootPath(inputPath) {
   const value = String(inputPath || "").trim();
   if (!value) {
@@ -227,7 +395,7 @@ async function chooseWorkspaceRoot(options = {}) {
   if (configured && !forcePick) {
     try {
       await fs.access(configured);
-      return configured;
+      return await finalizeWorkspaceRoot(configured);
     } catch (_error) {
       /* stale path, ask user again */
     }
@@ -279,7 +447,7 @@ async function chooseWorkspaceRoot(options = {}) {
       }
     }
   }
-  return newPath;
+  return await finalizeWorkspaceRoot(newPath);
 }
 
 function buildProblemDirectory(rootPath, problem, contest) {
@@ -426,7 +594,7 @@ function buildShellCommands({ sourceFileName, language, extractedCaseDir, sample
   };
 }
 
-async function createWorkspaceTasks(workspaceRoot, problemDir, metadata) {
+async function readWorkspaceTasksFile(workspaceRoot) {
   const vscodeDir = path.join(workspaceRoot, ".vscode");
   const tasksPath = path.join(vscodeDir, "tasks.json");
   await fs.mkdir(vscodeDir, { recursive: true });
@@ -441,7 +609,10 @@ async function createWorkspaceTasks(workspaceRoot, problemDir, metadata) {
       throw error;
     }
   }
+  return { tasksPath, tasksJson };
+}
 
+function applyProblemTasks(tasksJson, workspaceRoot, problemDir, metadata) {
   const relativeProblemDir = path.relative(workspaceRoot, problemDir).split(path.sep).join("/");
   const commands = buildShellCommands({
     sourceFileName: `${relativeProblemDir}/${metadata.sourceFile}`,
@@ -474,6 +645,30 @@ async function createWorkspaceTasks(workspaceRoot, problemDir, metadata) {
       problemMatcher: []
     }
   );
+  return tasksJson;
+}
+
+async function createWorkspaceTasks(workspaceRoot, problemDir, metadata) {
+  const { tasksPath, tasksJson } = await readWorkspaceTasksFile(workspaceRoot);
+  applyProblemTasks(tasksJson, workspaceRoot, problemDir, metadata);
+  await fs.writeFile(tasksPath, JSON.stringify(tasksJson, null, 2), "utf8");
+  return tasksPath;
+}
+
+/**
+ * 批量版本：一次读、一次写 tasks.json，避免批量生成时逐题重写触发 VS Code 反复监视。
+ * entries: [{ problemDir, metadata }]
+ */
+async function createWorkspaceTasksBatch(workspaceRoot, entries) {
+  if (!entries || !entries.length) {
+    return null;
+  }
+  const { tasksPath, tasksJson } = await readWorkspaceTasksFile(workspaceRoot);
+  for (const entry of entries) {
+    if (entry && entry.problemDir && entry.metadata) {
+      applyProblemTasks(tasksJson, workspaceRoot, entry.problemDir, entry.metadata);
+    }
+  }
   await fs.writeFile(tasksPath, JSON.stringify(tasksJson, null, 2), "utf8");
   return tasksPath;
 }
@@ -517,6 +712,9 @@ module.exports = {
   buildProblemDirectory,
   buildProblemMarkdown,
   createWorkspaceTasks,
+  createWorkspaceTasksBatch,
+  ensureWorkspaceIgnoreSettings,
+  ensureGeneratedFilesGitignore,
   chooseWorkspaceRoot,
   ensureProblemWorkspace,
   findExistingProblemWorkspace,

@@ -11,6 +11,7 @@ const {
   buildProblemMarkdown,
   chooseWorkspaceRoot,
   createWorkspaceTasks,
+  createWorkspaceTasksBatch,
   ensureProblemWorkspace,
   findExistingProblemWorkspace,
   findProblemMetadata,
@@ -38,8 +39,31 @@ const RECENT_SUBMISSION_RESULT_FILTER_KEY = "xmuoj.recentSubmissionResultFilter"
 const RECENT_SUBMISSION_LANGUAGE_FILTER_KEY = "xmuoj.recentSubmissionLanguageFilter";
 const PROBLEMSET_SELECTIONS_KEY = "xmuoj.problemsetSelections";
 const WORKBENCH_LAYOUT_KEY = "xmuoj.workbenchLayout";
+const LAST_USERNAME_KEY = "xmuoj.lastUsername";
+const LAST_LANGUAGE_KEY = "xmuoj.lastUsedLanguage";
+/**
+ * activate 时注入的扩展上下文，供模块级函数读写 globalState。
+ * 用于语言记忆（LAST_LANGUAGE_KEY）等不经过 state 的持久化。
+ */
+let extensionContext = null;
+
+function getLastUsedLanguage() {
+  if (!extensionContext) {
+    return "";
+  }
+  return String(extensionContext.globalState.get(LAST_LANGUAGE_KEY, "") || "");
+}
+
+function setLastUsedLanguage(language) {
+  if (!extensionContext || !language) {
+    return;
+  }
+  extensionContext.globalState.update(LAST_LANGUAGE_KEY, language).catch(() => null);
+}
 const LANGUAGE_PRIORITY = ["C++", "Python3", "Java", "C"];
 const ACCEPTED_RESULTS = new Set(["Accepted", "AC"]);
+const VERSION_CHECK_INTERVAL = 24 * 60 * 60 * 1000;
+const LAST_VERSION_CHECK_KEY = "xmuoj.lastVersionCheck";
 const LOCAL_LANGUAGE_FILE_CANDIDATES = {
   C: ["main.c"],
   "C++": ["main.cpp"],
@@ -57,16 +81,31 @@ function isSideModeEnabled() {
   return Boolean(vscode.workspace.getConfiguration("xmuoj").get("enableSideMode", true));
 }
 
+/**
+ * 题面面板的目标列。side mode 开启时题面固定在旁边列（Two），
+ * 让学生的主列（One）始终留给代码，读题与编码可并排进行；
+ * 关闭 side mode 则不干预布局，跟随当前活动列。
+ */
 function getProblemViewColumn() {
-  return vscode.ViewColumn.One;
+  if (!isSideModeEnabled()) {
+    return vscode.ViewColumn.Active;
+  }
+  return vscode.ViewColumn.Two;
 }
 
 function getWorkspaceViewColumn() {
   return vscode.ViewColumn.Active;
 }
 
+/**
+ * 结果报表面板的目标列。side mode 下放入第二组（与题面同组、以标签切换），
+ * 优先复用已有组而不强制新建第三列；关闭 side mode 则跟随活动列。
+ */
 function getResultViewColumn() {
-  return vscode.ViewColumn.Active;
+  if (!isSideModeEnabled()) {
+    return vscode.ViewColumn.Active;
+  }
+  return vscode.ViewColumn.Two;
 }
 
 function inferLanguage(document) {
@@ -212,20 +251,23 @@ function localizeServerErrorMessage(rawMessage) {
   if (/contest.*(not started|has not started|preparing|pending)|实验.*(准备中|未开始)/i.test(message)) {
     return "该实验处于准备中，暂时不能远程提交。";
   }
-  if (/contest[_\s-]*password.*(wrong|invalid|incorrect)|密码.*(错误|不正确)|wrong password/i.test(message)) {
+  if (/contest[_\s-]*password.*(wrong|invalid|incorrect)|(比赛|实验)密码.*(错误|不正确)|wrong password/i.test(message)) {
     return "实验密码错误，请重新输入。";
   }
   if (/401|403|forbidden|permission denied|无权限/i.test(message)) {
     return "提交失败：没有权限访问该实验或实验密码不正确。";
   }
-  if (/unauthorized|not logged in|authentication|please login|login first|login required|请先登录|登录/i.test(message)) {
+  // 注意：这里刻意不匹配裸「登录」，否则「登录失败：密码错误」会被误译成“请先登录”
+  if (/unauthorized|not logged in|authentication (failed|required)|please login|login first|login required|请先登录|尚未登录/i.test(message)) {
     return "提交失败：请先登录 XMUOJ。";
   }
   return message;
 }
 
 function isAuthErrorMessage(message) {
-  return /please login|login first|login required|unauthorized|not logged in|authentication|请先登录|登录|401|403/i.test(
+  // 收紧判定：裸「登录」和 HTTP 状态数字都可能出现在“密码错误”等非登录失效场景，
+  // 误判会清掉用户凭证；宁可保守（走普通错误提示），由 handleXmuojError 的登录按钮兜底。
+  return /please login|login first|login required|unauthorized|not logged in|authentication (failed|required)|请先登录|尚未登录|未登录/i.test(
     String(message || "")
   );
 }
@@ -238,7 +280,8 @@ function isAuthErrorMessage(message) {
  */
 async function handleXmuojError(error, state, client, treeProvider, { offerLogin = true } = {}) {
   const raw = String(error && error.message ? error.message : error);
-  if (isAuthErrorMessage(raw)) {
+  const isAuthKind = Boolean(error && error.kind === "auth");
+  if (isAuthKind || isAuthErrorMessage(raw)) {
     state.user = null;
     try {
       await client.setToken("");
@@ -792,6 +835,7 @@ async function switchProblemLanguageLocally(context, state, client, treeProvider
   if (treeProvider) {
     treeProvider.refresh();
   }
+  setLastUsedLanguage(targetLanguage);
   await refreshProblemPanel(state, client, request.problem || state.activeProblem, request.contest || state.activeContest);
   vscode.window.showInformationMessage(created ? `已创建并切换到 ${targetLanguage} 模板` : `已切换到 ${targetLanguage}`);
 }
@@ -872,7 +916,7 @@ function renderProblemHtml(problem, baseUrl, workspaceState = {}, _user = null) 
       <div class="actions">
         ${renderActionButton("startWork", workspaceState.hasWorkspace ? "continueWork" : "startWork", actionLabel, "primary")}
         ${workspaceState.hasWorkspace ? renderActionButton("switchLanguage", "language", "切换代码语言") : ""}
-        ${renderActionButton("downloadTests", "downloadTests", "下载数据")}
+        ${problem.can_download_test_case !== false ? renderActionButton("downloadTests", "downloadTests", "下载数据") : ""}
       </div>
       <div class="meta">
         ${progressBadge}
@@ -1506,7 +1550,7 @@ async function openProblemsetWorkbench(context, client, state, treeProvider) {
         }
       } catch (error) {
         await refreshProblemsetWorkbenchPanel(state, client);
-        vscode.window.showErrorMessage(error.message || String(error));
+        await handleXmuojError(error, state, client, treeProvider);
       }
     });
   } else {
@@ -2296,15 +2340,79 @@ function updateStatusBars(state, userStatusBar, contestStatusBar, client) {
   }
 }
 
+// 服务端可能出现的“非终态” result_label 白名单：
+// 只要 label 非空且不在该集合里，才视为终态（相比旧实现的硬编码 Pending/Judging 更保守，
+// 避免 Queued/Running 等新状态被误判为已出结果）。
+const PENDING_SUBMISSION_STATES = new Set([
+  "Pending",
+  "Judging",
+  "Queued",
+  "Waiting",
+  "Running",
+  "Compiling",
+  "Pending Judging"
+]);
+const SUBMISSION_WAIT_TIMEOUT_MS = 120 * 1000;
+
+/**
+ * 轮询等待判题结果。带通知进度、可取消、有超时。
+ * 返回终态结果对象；用户取消或超时返回 null（由调用方给出温和提示，不抛错）。
+ */
 async function waitForSubmission(client, submissionId) {
-  const terminalStates = new Set(["Pending", "Judging"]);
-  while (true) {
-    const result = await client.getSubmission(submissionId);
-    if (!terminalStates.has(result.result_label)) {
-      return result;
+  const started = Date.now();
+  return vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "XMUOJ 判题中",
+      cancellable: true
+    },
+    async (progress, token) => {
+      let cancelled = false;
+      const cancelSubscription = token.onCancellationRequested(() => {
+        cancelled = true;
+      });
+      try {
+        while (Date.now() - started < SUBMISSION_WAIT_TIMEOUT_MS) {
+          if (cancelled) {
+            return null;
+          }
+          const result = await client.getSubmission(submissionId);
+          const label = String((result && result.result_label) || "").trim();
+          if (label && !PENDING_SUBMISSION_STATES.has(label)) {
+            return result;
+          }
+          const waitedSeconds = Math.round((Date.now() - started) / 1000);
+          progress.report({ message: `已等待 ${waitedSeconds}s${label ? ` · ${label}` : ""}` });
+          await new Promise((resolve) => {
+            const timer = setTimeout(resolve, 1500);
+            const sub = token.onCancellationRequested(() => {
+              clearTimeout(timer);
+              resolve();
+            });
+            if (sub && typeof sub.dispose === "function") {
+              // 单次轮询结束后释放监听，避免长轮询累积订阅
+              setTimeout(() => sub.dispose(), 1600);
+            }
+          });
+        }
+        return null;
+      } finally {
+        cancelSubscription.dispose();
+      }
     }
-    await new Promise(resolve => setTimeout(resolve, 1500));
+  );
+}
+
+/**
+ * 在输出频道开启一个新的记录段（替代 clear()，保留历史日志）。
+ */
+function beginOutputSection(outputChannel, title) {
+  if (!outputChannel) {
+    return;
   }
+  const stamp = new Date().toLocaleString("zh-CN");
+  outputChannel.appendLine("");
+  outputChannel.appendLine(`━━ ${title} · ${stamp} ━━`);
 }
 
 async function focusExplorerView() {
@@ -2643,8 +2751,16 @@ async function refreshProblemPanel(state, client, problem, contest) {
 async function openWorkspaceSourceFile(sourceFilePath) {
   try {
     const document = await vscode.workspace.openTextDocument(sourceFilePath);
-    // 使用Active视图列，避免创建新视图
-    await vscode.window.showTextDocument(document, { preview: false, viewColumn: vscode.ViewColumn.Active });
+    // 列感知：跟随当前活动编辑器所在列；没有活动编辑器时，
+    // side mode 下把代码放进主列（One），与旁边列的题面并排，不挤占其标签。
+    let viewColumn = vscode.ViewColumn.Active;
+    const activeEditor = vscode.window.activeTextEditor;
+    if (activeEditor && activeEditor.viewColumn) {
+      viewColumn = activeEditor.viewColumn;
+    } else if (isSideModeEnabled()) {
+      viewColumn = vscode.ViewColumn.One;
+    }
+    await vscode.window.showTextDocument(document, { preview: false, viewColumn });
   } catch (error) {
     vscode.window.showErrorMessage(`无法打开源代码文件：${sourceFilePath}。错误：${error.message}`);
   }
@@ -2658,8 +2774,20 @@ async function startWorkingOnProblem(context, client, state, outputChannel, prob
   // 更新当前活动题目状态
   state.activeProblem = problem;
   state.activeContest = contest;
-  
+
+  // side mode 下若题面面板尚未打开，先自动打开题面，
+  // 形成「代码在一列、题面在旁边列」的沉浸布局；打开失败不阻断编码。
+  if (isSideModeEnabled() && !state.problemPanel) {
+    try {
+      const contestPassword = contest ? resolveContestPassword(state, contest.id) : undefined;
+      await openProblemDetail(client, state, problem, contest, contestPassword);
+    } catch (error) {
+      outputChannel.appendLine(`自动打开题面失败：${error.message}`);
+    }
+  }
+
   let workspace = await findExistingProblemWorkspaceForOpenPanels(problem, contest);
+  let workspaceJustCreated = false;
   if (!workspace) {
     try {
       const createdWorkspace = await ensureLocalProblemWorkspace(client, state, problem, outputChannel);
@@ -2667,20 +2795,7 @@ async function startWorkingOnProblem(context, client, state, outputChannel, prob
         return null;
       }
       workspace = createdWorkspace;
-      const downloadChoice = problem.can_download_test_case
-        ? await vscode.window.showInformationMessage(
-          "题目工作区已创建，是否顺便下载公开测试数据？",
-          "下载",
-          "暂不下载"
-        )
-        : null;
-      if (downloadChoice === "下载") {
-        try {
-          await ensureTestCasesAvailable(client, state, outputChannel, workspace.problemDir, problem);
-        } catch (error) {
-          vscode.window.showWarningMessage(`下载测试数据失败：${error.message}，但本地工作区已创建成功`);
-        }
-      }
+      workspaceJustCreated = true;
     } catch (error) {
       vscode.window.showErrorMessage(`创建本地工作区失败：${error.message}`);
       return null;
@@ -2705,6 +2820,29 @@ async function startWorkingOnProblem(context, client, state, outputChannel, prob
   // 刷新树形菜单，确保状态更新
   if (state.treeDataProvider) {
     state.treeDataProvider.refresh();
+  }
+  // 询问下载测试数据：放在源码打开之后、且不阻塞学生的编码流程，
+  // 学生可以直接无视这条通知继续写代码，点了「下载」才真正开始下载。
+  if (workspaceJustCreated && problem.can_download_test_case) {
+    void vscode.window
+      .showInformationMessage(
+        "题目工作区已创建，是否顺便下载公开测试数据？",
+        "下载",
+        "暂不下载"
+      )
+      .then(async (downloadChoice) => {
+        if (downloadChoice !== "下载") {
+          return;
+        }
+        try {
+          await ensureTestCasesAvailable(client, state, outputChannel, workspace.problemDir, problem);
+        } catch (error) {
+          vscode.window.showWarningMessage(`下载测试数据失败：${error.message}，但本地工作区已创建成功`);
+        }
+      })
+      .catch(() => {
+        // 通知被忽略或下载异常均已单独处理，不打断主流程
+      });
   }
   return workspace;
 }
@@ -2754,7 +2892,7 @@ async function openProblemDetail(client, state, problem, contest, contestPasswor
           await vscode.commands.executeCommand("xmuoj.switchProblemLanguage");
         }
       } catch (error) {
-        vscode.window.showErrorMessage(error.message);
+        await handleXmuojError(error, state, client);
       }
     });
     state.problemPanel = panel;
@@ -2816,7 +2954,7 @@ async function showResultPanel(state, client, options = {}) {
           await vscode.commands.executeCommand("xmuoj.pickProblemHistorySubmission");
         }
       } catch (error) {
-        vscode.window.showErrorMessage(error.message);
+        await handleXmuojError(error, state, client);
       }
     });
     panel.onDidDispose(() => {
@@ -2875,15 +3013,25 @@ async function chooseLanguage(problem, suggestedLanguage, options = {}) {
     throw new Error("这道题当前没有可用语言");
   }
   if (!options.forcePick && suggestedLanguage && languages.includes(suggestedLanguage)) {
+    setLastUsedLanguage(suggestedLanguage);
     return suggestedLanguage;
   }
   if (languages.length === 1) {
+    setLastUsedLanguage(languages[0]);
     return languages[0];
   }
+  // 上次使用的语言排在最前，回车即可确认
+  const lastUsed = getLastUsedLanguage();
+  const orderedLanguages = lastUsed && languages.includes(lastUsed)
+    ? [lastUsed, ...languages.filter(language => language !== lastUsed)]
+    : languages;
   const pick = await vscode.window.showQuickPick(
-    languages.map(language => ({ label: language })),
+    orderedLanguages.map(language => ({ label: language })),
     { title: "选择本地题目工作区使用的语言", ignoreFocusOut: true }
   );
+  if (pick) {
+    setLastUsedLanguage(pick.label);
+  }
   return pick ? pick.label : null;
 }
 
@@ -3031,49 +3179,71 @@ async function initContestProblemFolders(context, client, state, outputChannel, 
     return;
   }
 
-  outputChannel.clear();
+  beginOutputSection(outputChannel, `批量创建题目目录 · ${targetWorkspace.contest.title}`);
   outputChannel.show(true);
   outputChannel.appendLine(`目标实验：${targetWorkspace.contest.title} (#${targetWorkspace.contest.id})`);
   outputChannel.appendLine(`工作区根目录：${rootPath}`);
+  const problems = targetWorkspace.problems || [];
   const created = [];
-  for (const problem of targetWorkspace.problems || []) {
-    try {
-      const detail = await client.getProblemWorkspace(problem.id, targetWorkspace.contest.id, targetContestPassword || undefined);
-      const problemDir = buildProblemDirectory(rootPath, detail, targetWorkspace.contest);
-      const samplesDir = path.join(problemDir, "samples");
-      await fs.mkdir(samplesDir, { recursive: true });
+  let cancelled = false;
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `批量创建题目目录（${problems.length} 题）`,
+      cancellable: true
+    },
+    async (progress, token) => {
+      for (let index = 0; index < problems.length; index += 1) {
+        if (token.isCancellationRequested) {
+          cancelled = true;
+          break;
+        }
+        const problem = problems[index];
+        progress.report({ message: `${index + 1}/${problems.length} ${problem.display_id || problem.id}` });
+        try {
+          const detail = await client.getProblemWorkspace(problem.id, targetWorkspace.contest.id, targetContestPassword || undefined);
+          const problemDir = buildProblemDirectory(rootPath, detail, targetWorkspace.contest);
+          const samplesDir = path.join(problemDir, "samples");
+          await fs.mkdir(samplesDir, { recursive: true });
 
-      const markdownPath = path.join(problemDir, "problem.md");
-      await fs.writeFile(markdownPath, buildProblemMarkdown(detail, targetWorkspace.contest), "utf8");
+          const markdownPath = path.join(problemDir, "problem.md");
+          await fs.writeFile(markdownPath, buildProblemMarkdown(detail, targetWorkspace.contest), "utf8");
 
-      for (let index = 0; index < (detail.samples || []).length; index += 1) {
-        const sample = detail.samples[index];
-        const sampleNumber = index + 1;
-        await fs.writeFile(path.join(samplesDir, `${sampleNumber}.in`), sample.input || "", "utf8");
-        await fs.writeFile(path.join(samplesDir, `${sampleNumber}.out`), sample.output || "", "utf8");
+          for (let sampleIndex = 0; sampleIndex < (detail.samples || []).length; sampleIndex += 1) {
+            const sample = detail.samples[sampleIndex];
+            const sampleNumber = sampleIndex + 1;
+            await fs.writeFile(path.join(samplesDir, `${sampleNumber}.in`), sample.input || "", "utf8");
+            await fs.writeFile(path.join(samplesDir, `${sampleNumber}.out`), sample.output || "", "utf8");
+          }
+
+          const metadata = {
+            version: 1,
+            baseUrl: client.baseUrl,
+            problemId: detail.id,
+            contestId: targetWorkspace.contest.id,
+            contestTitle: targetWorkspace.contest.title,
+            displayId: detail.display_id,
+            title: detail.title,
+            language: null,
+            sourceFile: null,
+            sourceFiles: {},
+            createdAt: new Date().toISOString()
+          };
+          const metadataPath = path.join(problemDir, METADATA_FILE_NAME);
+          await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), "utf8");
+
+          created.push(problemDir);
+          outputChannel.appendLine(`已创建 ${detail.display_id} → ${problemDir}`);
+        } catch (error) {
+          outputChannel.appendLine(`${problem.display_id} 创建失败：${error.message}`);
+        }
       }
-
-      const metadata = {
-        version: 1,
-        baseUrl: client.baseUrl,
-        problemId: detail.id,
-        contestId: targetWorkspace.contest.id,
-        contestTitle: targetWorkspace.contest.title,
-        displayId: detail.display_id,
-        title: detail.title,
-        language: null,
-        sourceFile: null,
-        sourceFiles: {},
-        createdAt: new Date().toISOString()
-      };
-      const metadataPath = path.join(problemDir, METADATA_FILE_NAME);
-      await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), "utf8");
-
-      created.push(problemDir);
-      outputChannel.appendLine(`已创建 ${detail.display_id} → ${problemDir}`);
-    } catch (error) {
-      outputChannel.appendLine(`${problem.display_id} 创建失败：${error.message}`);
     }
+  );
+  if (cancelled) {
+    outputChannel.appendLine(`已取消：完成 ${created.length}/${problems.length}`);
+    vscode.window.showInformationMessage(`批量创建已取消，已完成 ${created.length}/${problems.length} 个题目目录`);
+    return;
   }
   if (created.length) {
     vscode.window.showInformationMessage(`已为实验「${targetWorkspace.contest.title}」批量创建 ${created.length} 个题目的本地目录`);
@@ -3090,8 +3260,13 @@ async function materializeContestWorkspace(context, client, state, outputChannel
   if (!rootPath) {
     return;
   }
+  // 上次使用的语言排在最前，回车即可确认
+  const lastUsedLanguageForBatch = getLastUsedLanguage();
+  const batchLanguageOrder = lastUsedLanguageForBatch && LANGUAGE_PRIORITY.includes(lastUsedLanguageForBatch)
+    ? [lastUsedLanguageForBatch, ...LANGUAGE_PRIORITY.filter(language => language !== lastUsedLanguageForBatch)]
+    : LANGUAGE_PRIORITY;
   const preferredLanguagePick = await vscode.window.showQuickPick(
-    LANGUAGE_PRIORITY.map(language => ({ label: language })),
+    batchLanguageOrder.map(language => ({ label: language })),
     {
       title: "选择批量生成时优先使用的语言",
       ignoreFocusOut: true
@@ -3100,6 +3275,7 @@ async function materializeContestWorkspace(context, client, state, outputChannel
   if (!preferredLanguagePick) {
     return;
   }
+  setLastUsedLanguage(preferredLanguagePick.label);
   const downloadChoice = await vscode.window.showQuickPick([
     { label: "只创建工作区", download: false },
     { label: "创建工作区并下载公开测试数据", download: true }
@@ -3111,38 +3287,74 @@ async function materializeContestWorkspace(context, client, state, outputChannel
     return;
   }
 
-  outputChannel.clear();
+  beginOutputSection(outputChannel, `批量生成实验工作区 · ${state.contestWorkspace.contest.title}`);
   outputChannel.show(true);
+  const problems = state.contestWorkspace.problems || [];
   const created = [];
-  for (const problem of state.contestWorkspace.problems || []) {
-    const detail = await client.getProblemWorkspace(problem.id, state.contestWorkspace.contest.id, state.contestPassword || undefined);
-    const language = pickProblemLanguage(detail, preferredLanguagePick.label);
-    if (!language) {
-      outputChannel.appendLine(`跳过 ${problem.display_id}：没有可用语言`);
-      continue;
-    }
-    const workspace = await ensureProblemWorkspace({
-      rootPath,
-      problem: detail,
-      contest: state.contestWorkspace.contest,
-      language,
-      baseUrl: client.baseUrl
-    });
-    await createWorkspaceTasks(rootPath, workspace.problemDir, workspace.metadata);
-    await updateProblemProgress(context, state, buildProblemProgressRef(client.baseUrl, detail, state.contestWorkspace.contest), {
-      workspaceCreated: true,
-      language,
-      sourceFile: workspace.metadata.sourceFile
-    });
-    if (downloadChoice.download && detail.can_download_test_case) {
-      try {
-        await ensureTestCasesAvailable(client, state, outputChannel, workspace.problemDir, detail);
-      } catch (error) {
-        outputChannel.appendLine(`${detail.display_id} 下载测试数据失败：${error.message}`);
+  const taskEntries = [];
+  let cancelled = false;
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `批量生成实验工作区（${problems.length} 题）`,
+      cancellable: true
+    },
+    async (progress, token) => {
+      for (let index = 0; index < problems.length; index += 1) {
+        if (token.isCancellationRequested) {
+          cancelled = true;
+          break;
+        }
+        const problem = problems[index];
+        progress.report({ message: `${index + 1}/${problems.length} ${problem.display_id || problem.id}` });
+        try {
+          const detail = await client.getProblemWorkspace(problem.id, state.contestWorkspace.contest.id, state.contestPassword || undefined);
+          const language = pickProblemLanguage(detail, preferredLanguagePick.label);
+          if (!language) {
+            outputChannel.appendLine(`跳过 ${problem.display_id}：没有可用语言`);
+            continue;
+          }
+          const workspace = await ensureProblemWorkspace({
+            rootPath,
+            problem: detail,
+            contest: state.contestWorkspace.contest,
+            language,
+            baseUrl: client.baseUrl
+          });
+          taskEntries.push({ problemDir: workspace.problemDir, metadata: workspace.metadata });
+          await updateProblemProgress(context, state, buildProblemProgressRef(client.baseUrl, detail, state.contestWorkspace.contest), {
+            workspaceCreated: true,
+            language,
+            sourceFile: workspace.metadata.sourceFile
+          });
+          if (downloadChoice.download && detail.can_download_test_case) {
+            try {
+              await ensureTestCasesAvailable(client, state, outputChannel, workspace.problemDir, detail);
+            } catch (error) {
+              outputChannel.appendLine(`${detail.display_id} 下载测试数据失败：${error.message}`);
+            }
+          }
+          created.push(workspace);
+          outputChannel.appendLine(`已生成 ${detail.display_id}，目录：${workspace.problemDir}`);
+        } catch (error) {
+          // 单题失败（网络抖动等）不中断整批
+          outputChannel.appendLine(`${problem.display_id} 生成失败：${error.message}`);
+        }
       }
     }
-    created.push(workspace);
-    outputChannel.appendLine(`已生成 ${detail.display_id}，目录：${workspace.problemDir}`);
+  );
+  // tasks.json 只在循环结束后写一次，避免批量过程中反复触发文件监视
+  if (taskEntries.length) {
+    try {
+      await createWorkspaceTasksBatch(rootPath, taskEntries);
+    } catch (error) {
+      outputChannel.appendLine(`写入 tasks.json 失败：${error.message}`);
+    }
+  }
+  if (cancelled) {
+    outputChannel.appendLine(`已取消：完成 ${created.length}/${problems.length}`);
+    vscode.window.showInformationMessage(`批量生成已取消，已完成 ${created.length}/${problems.length} 个题目`);
+    return;
   }
   if (!created.length) {
     vscode.window.showWarningMessage("没有生成任何本地比赛工作区");
@@ -3157,7 +3369,9 @@ async function ensureLocalProblemWorkspace(client, state, problem, outputChannel
     vscode.window.showErrorMessage("未选择本地工作区根目录，无法创建题目工作区。");
     return null;
   }
-  const suggestedLanguage = options.suggestedLanguage || (vscode.window.activeTextEditor ? inferLanguage(vscode.window.activeTextEditor.document) : null);
+  // 语言建议链：显式指定 > 当前打开文件推断 > 上次使用的语言（刷题一般固定一门语言）
+  const inferredLanguage = vscode.window.activeTextEditor ? inferLanguage(vscode.window.activeTextEditor.document) : null;
+  const suggestedLanguage = options.suggestedLanguage || inferredLanguage || getLastUsedLanguage() || null;
   const language = await chooseLanguage(problem, suggestedLanguage);
   if (!language) {
     vscode.window.showErrorMessage("未选择编程语言，无法创建题目工作区。");
@@ -3185,8 +3399,7 @@ async function ensureTestCasesAvailable(client, state, outputChannel, explicitPr
     problem = {
       id: metadataContext.metadata.problemId,
       display_id: metadataContext.metadata.displayId,
-      title: metadataContext.metadata.title,
-      can_download_test_case: true
+      title: metadataContext.metadata.title
     };
   }
 
@@ -3218,17 +3431,111 @@ async function ensureTestCasesAvailable(client, state, outputChannel, explicitPr
     }
   }
 
-  const archive = await client.downloadTestCases(problem.id || metadataContext.metadata.problemId, contestPassword || undefined);
-  if (contestId && contestPassword) {
-    cacheContestPassword(state, contestId, contestPassword);
+  // 检查当前题目是否允许下载测试数据（客户端防线）
+  if (problem && problem.can_download_test_case === false) {
+    vscode.window.showWarningMessage(
+      problem.is_exam
+        ? "本场考试不提供测试数据下载"
+        : "当前题目不支持下载测试数据"
+    );
+    return null;
   }
-  const saved = await saveTestCaseArchive(problemDir, archive.buffer, archive.fileName || `${problem.display_id || metadataContext.metadata.displayId}-testcases.zip`);
+
+  const saved = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Window, title: "XMUOJ 下载测试数据" },
+    async () => {
+      const archive = await client.downloadTestCases(problem.id || metadataContext.metadata.problemId, contestPassword || undefined);
+      if (contestId && contestPassword) {
+        cacheContestPassword(state, contestId, contestPassword);
+      }
+      return saveTestCaseArchive(problemDir, archive.buffer, archive.fileName || `${problem.display_id || metadataContext.metadata.displayId}-testcases.zip`);
+    }
+  );
   outputChannel.appendLine(`测试数据压缩包已保存到：${saved.archivePath}`);
   outputChannel.appendLine(`测试数据已解压到：${saved.extractedDir}`);
   return saved;
 }
 
+function compareVersions(a, b) {
+  const pa = String(a || "").split(".").map(Number);
+  const pb = String(b || "").split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+async function downloadAndInstallUpdate(url, version) {
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: "XMUOJ 更新" },
+    async (progress) => {
+      progress.report({ message: "下载中..." });
+      const https = require("https");
+      const http = require("http");
+      const fs = require("fs");
+      const os = require("os");
+      const path = require("path");
+      const tmpPath = path.join(os.tmpdir(), `xmuoj-vscode-${version}.vsix`);
+      await new Promise((resolve, reject) => {
+        const proto = url.startsWith("https") ? https : http;
+        proto.get(url, (res) => {
+          let stream = res;
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            const redirectProto = res.headers.location.startsWith("https") ? https : http;
+            redirectProto.get(res.headers.location, (r2) => { stream = r2; }).on("error", reject);
+          }
+          const file = fs.createWriteStream(tmpPath);
+          stream.pipe(file);
+          file.on("finish", () => { file.close(); resolve(); });
+          file.on("error", reject);
+        }).on("error", reject);
+      });
+      progress.report({ message: "安装中..." });
+      const uri = vscode.Uri.file(tmpPath);
+      await vscode.commands.executeCommand("workbench.extensions.installExtension", uri);
+    }
+  );
+  const reload = await vscode.window.showInformationMessage(
+    `XMUOJ ${version} 安装完成，重载窗口后生效`,
+    "立即重载"
+  );
+  if (reload === "立即重载") {
+    await vscode.commands.executeCommand("workbench.action.reloadWindow");
+  }
+}
+
+async function checkForUpdates(context, client, showUpToDateMessage = false) {
+  const lastCheck = context.globalState.get(LAST_VERSION_CHECK_KEY, 0);
+  const now = Date.now();
+  if (!showUpToDateMessage && (now - lastCheck) < VERSION_CHECK_INTERVAL) {
+    return;
+  }
+  try {
+    const data = await client.request("/api/plugin/version");
+    const currentVersion = context.extension.packageJSON.version;
+    if (compareVersions(data.version, currentVersion) > 0) {
+      const action = await vscode.window.showInformationMessage(
+        `XMUOJ 新版本 ${data.version} 可用！${data.release_notes ? "\n" + data.release_notes : ""}`,
+        "立即更新",
+        "稍后提醒"
+      );
+      if (action === "立即更新") {
+        await downloadAndInstallUpdate(data.download_url, data.version);
+      }
+    } else if (showUpToDateMessage) {
+      vscode.window.showInformationMessage(`XMUOJ ${currentVersion} 已是最新版本`);
+    }
+    await context.globalState.update(LAST_VERSION_CHECK_KEY, now);
+  } catch (error) {
+    if (showUpToDateMessage) {
+      vscode.window.showErrorMessage(`检查更新失败：${error.message || error}`);
+    }
+  }
+}
+
 function activate(context) {
+  extensionContext = context;
   const client = new XmuojClient(context);
   const outputChannel = vscode.window.createOutputChannel("XMUOJ");
   const userStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -3309,40 +3616,111 @@ function activate(context) {
 
   refreshCurrentTreeFile(vscode.window.activeTextEditor).catch(() => null);
 
-  client.getBootstrap().then(async (bootstrap) => {
-    state.user = bootstrap.user;
-    state.bootstrapReady = true;
-    // Bootstrap 成功但 user 为空 → 清理残留认证态，避免后续请求携带失效凭证
-    if (!state.user) {
-      const staleToken = await client.getToken().catch(() => null);
-      if (staleToken) {
-        await client.setToken("").catch(() => null);
-      }
-      await client.setSessionCookies("").catch(() => null);
-    }
-    codeLensProvider.setUser(state.user);
-    updateStatusBars(state, userStatusBar, contestStatusBar, client);
-    treeProvider.refresh();
-    refreshProblemPanel(state, client).catch(() => null);
-    restoreWorkbenchLayout(context, client, state).then(() => treeProvider.refresh()).catch(() => null);
-  }).catch(async () => {
-    // Bootstrap 失败（网络错误等）→ 标记 ready 以便后续 pre-flight 检查正常工作
-    state.bootstrapReady = true;
-    state.user = null;
+  // Bootstrap：启动时确认登录态。关键原则——
+  // 1) 网络类失败绝不清除本地凭证（否则断网/抖动会把用户“登出”）；
+  // 2) 只有服务端明确返回未登录（user 为空）或 HTTP 401 才清理残留凭证；
+  // 3) 网络失败且存有凭证时有限次重试，覆盖启动时的短暂断网。
+  let bootstrapRetryAttempts = 0;
+  const BOOTSTRAP_MAX_RETRIES = 3;
+  async function clearStaleAuth() {
     const staleToken = await client.getToken().catch(() => null);
     if (staleToken) {
       await client.setToken("").catch(() => null);
     }
     await client.setSessionCookies("").catch(() => null);
-    codeLensProvider.setUser(null);
-    updateStatusBars(state, userStatusBar, contestStatusBar, client);
-    treeProvider.refresh();
-  });
+  }
+  async function syncBootstrap(isRetry = false) {
+    try {
+      const bootstrap = await client.getBootstrap();
+      state.user = bootstrap.user;
+      state.bootstrapReady = true;
+      bootstrapRetryAttempts = 0;
+      // Bootstrap 成功但 user 为空 → 服务端明确未登录，清理残留认证态
+      if (!state.user) {
+        await clearStaleAuth();
+      }
+      codeLensProvider.setUser(state.user);
+      updateStatusBars(state, userStatusBar, contestStatusBar, client);
+      treeProvider.refresh();
+      if (!isRetry) {
+        refreshProblemPanel(state, client).catch(() => null);
+        restoreWorkbenchLayout(context, client, state).then(() => treeProvider.refresh()).catch(() => null);
+      }
+    } catch (error) {
+      // 标记 ready 以便后续 pre-flight 检查正常工作
+      state.bootstrapReady = true;
+      state.user = null;
+      const isNetwork = Boolean(
+        error
+        && (error.kind === "network"
+          || /^(连接失败|请求超时|aborted|fetch failed)/i.test(String((error && error.message) || error)))
+      );
+      if (error && error.kind === "auth") {
+        await clearStaleAuth();
+      } else if (isNetwork && bootstrapRetryAttempts < BOOTSTRAP_MAX_RETRIES) {
+        bootstrapRetryAttempts += 1;
+        setTimeout(() => {
+          syncBootstrap(true).catch(() => null);
+        }, 5000);
+      }
+      codeLensProvider.setUser(null);
+      updateStatusBars(state, userStatusBar, contestStatusBar, client);
+      treeProvider.refresh();
+    }
+  }
+  syncBootstrap().catch(() => null);
 
 
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.quickStart", async () => {
+    try {
+      // 1) 确保本地工作区目录已配置（未配置才弹目录选择）
+      const rootPath = await chooseWorkspaceRoot();
+      // 2) 等待 bootstrap（最多 5 秒），避免竞态把已登录用户当成未登录
+      if (!state.bootstrapReady) {
+        await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: "正在检查登录状态…" }, async () => {
+          const deadline = Date.now() + 5000;
+          while (!state.bootstrapReady && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
+        });
+      }
+      // 3) 引导登录
+      if (!state.user) {
+        const action = await vscode.window.showInformationMessage(
+          rootPath
+            ? "快速开始：本地工作区已就绪，登录后即可开始刷题。"
+            : "快速开始：登录 XMUOJ，并可随后在工具栏选择本地工作区目录。",
+          "立即登录"
+        );
+        if (action === "立即登录") {
+          await vscode.commands.executeCommand("xmuoj.login");
+        }
+        return;
+      }
+      // 4) 已登录 → 引导进入刷题入口
+      const action = await vscode.window.showInformationMessage(
+        `XMUOJ 已就绪${rootPath ? `（工作区：${rootPath}）` : "（尚未选择工作区目录）"}，要从哪里开始？`,
+        "浏览实验",
+        "公共题库"
+      );
+      if (action === "浏览实验") {
+        await vscode.commands.executeCommand("xmuoj.browseContests");
+      } else if (action === "公共题库") {
+        await vscode.commands.executeCommand("xmuoj.browseProblemset");
+      }
+    } catch (error) {
+      await handleXmuojError(error, state, client, treeProvider);
+    }
+  }));
 
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.login", async () => {
-    const username = await vscode.window.showInputBox({ prompt: "请输入 XMUOJ 用户名", ignoreFocusOut: true });
+    const rememberedUsername = String(context.globalState.get(LAST_USERNAME_KEY, "") || "");
+    const username = await vscode.window.showInputBox({
+      prompt: "请输入 XMUOJ 用户名",
+      value: rememberedUsername,
+      ignoreFocusOut: true
+    });
     if (!username) {
       return;
     }
@@ -3350,30 +3728,34 @@ function activate(context) {
     if (!password) {
       return;
     }
-    try {
-      const result = await client.login(username, password);
+    const finishLogin = async (result) => {
       state.user = result.user;
+      await context.globalState.update(LAST_USERNAME_KEY, username).catch(() => null);
       codeLensProvider.setUser(state.user);
       updateStatusBars(state, userStatusBar, contestStatusBar, client);
       treeProvider.refresh();
       await refreshProblemPanel(state, client);
       vscode.window.showInformationMessage(`已登录：${result.user.username}`);
+    };
+    try {
+      const result = await client.login(username, password);
+      await finishLogin(result);
     } catch (error) {
-      if (String(error.message) === "tfa_required") {
+      // 两步验证：服务端可能返回 "tfa_required" 或带说明的变体
+      if (/tfa_required|两步验证|two.?factor|2fa/i.test(String(error && error.message ? error.message : error))) {
         const tfaCode = await vscode.window.showInputBox({ prompt: "请输入两步验证码", ignoreFocusOut: true });
         if (!tfaCode) {
           return;
         }
-        const result = await client.login(username, password, tfaCode);
-        state.user = result.user;
-        codeLensProvider.setUser(state.user);
-        updateStatusBars(state, userStatusBar, contestStatusBar, client);
-        treeProvider.refresh();
-        await refreshProblemPanel(state, client);
-        vscode.window.showInformationMessage(`已登录：${result.user.username}`);
+        try {
+          const result = await client.login(username, password, tfaCode);
+          await finishLogin(result);
+        } catch (tfaError) {
+          vscode.window.showErrorMessage(localizeServerErrorMessage(tfaError && tfaError.message ? tfaError.message : tfaError));
+        }
         return;
       }
-      vscode.window.showErrorMessage(error.message);
+      vscode.window.showErrorMessage(localizeServerErrorMessage(error && error.message ? error.message : error));
     }
   }));
 
@@ -3429,7 +3811,7 @@ function activate(context) {
       treeProvider.refresh();
       await openProblemsetWorkbench(context, client, state, treeProvider);
     } catch (error) {
-      vscode.window.showErrorMessage(error.message);
+      await handleXmuojError(error, state, client, treeProvider);
     }
   }));
 
@@ -3551,7 +3933,7 @@ function activate(context) {
       );
       treeProvider.refresh();
     } catch (error) {
-      vscode.window.showErrorMessage(error.message);
+      await handleXmuojError(error, state, client, treeProvider);
     }
   }));
 
@@ -3567,7 +3949,7 @@ function activate(context) {
       await persistProblemsetSelections(context, state);
       treeProvider.refresh();
     } catch (error) {
-      vscode.window.showErrorMessage(error.message);
+      await handleXmuojError(error, state, client, treeProvider);
     }
   }));
 
@@ -3632,7 +4014,7 @@ function activate(context) {
       updateStatusBars(state, userStatusBar, contestStatusBar, client);
       treeProvider.refresh();
     } catch (error) {
-      vscode.window.showErrorMessage(error.message);
+      await handleXmuojError(error, state, client, treeProvider);
     }
   }));
 
@@ -3713,10 +4095,31 @@ function activate(context) {
 
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.startWorkingOnProblem", async (problem, contest) => {
     try {
+      // When called from CodeLens (no args), find problem from current file metadata
+      if (!problem) {
+        const editor = vscode.window.activeTextEditor;
+        if (editor) {
+          const metaCtx = await getEditorProblemContext(client, editor.document);
+          if (metaCtx && metaCtx.metadata && metaCtx.metadata.problemId) {
+            const m = metaCtx.metadata;
+            const cid = m.contestId || undefined;
+            const cpw = resolveContestPassword(state, cid);
+            try {
+              const detail = await client.getProblemWorkspace(m.problemId, cid, cpw || undefined);
+              if (detail) {
+                problem = detail;
+                contest = cid ? (getContestById(state, cid) || { id: cid, title: m.contestTitle }) : null;
+                state.activeProblem = detail;
+                if (contest) state.activeContest = contest;
+              }
+            } catch (e) { /* fall through to normal error */ }
+          }
+        }
+      }
       await startWorkingOnProblem(context, client, state, outputChannel, problem, contest);
       treeProvider.refresh();
     } catch (error) {
-      vscode.window.showErrorMessage(error.message);
+      await handleXmuojError(error, state, client, treeProvider);
     }
   }));
 
@@ -3728,7 +4131,7 @@ function activate(context) {
       }
       treeProvider.refresh();
     } catch (error) {
-      vscode.window.showErrorMessage(error.message);
+      await handleXmuojError(error, state, client, treeProvider);
     }
   }));
 
@@ -3752,7 +4155,7 @@ function activate(context) {
       treeProvider.refresh();
       vscode.window.showInformationMessage(`已重新绑定题目：${detail.display_id} ${detail.title}`);
     } catch (error) {
-      vscode.window.showErrorMessage(error.message);
+      await handleXmuojError(error, state, client, treeProvider);
     }
   }));
 
@@ -3820,7 +4223,7 @@ function activate(context) {
       const tasksPath = await createWorkspaceTasks(workspaceRoot, metadataContext.problemDir, metadataContext.metadata);
       vscode.window.showInformationMessage(`本地任务已生成到 ${tasksPath}`);
     } catch (error) {
-      vscode.window.showErrorMessage(error.message);
+      await handleXmuojError(error, state, client, treeProvider);
     }
   }));
 
@@ -3855,12 +4258,31 @@ function activate(context) {
       }
       outputChannel.clear();
       outputChannel.show(true);
-      const summary = await runLocalCases({
-        sourcePath,
-        language,
-        caseDir,
-        outputChannel
-      });
+      // Check if test data directory has files before running
+      try {
+        const testEntries = await fs.readdir(caseDir);
+        const hasCases = testEntries.some(e => e.endsWith(".in"));
+        if (!hasCases) {
+          outputChannel.appendLine(`在 ${caseDir} 下没有找到测试数据文件。`);
+          outputChannel.appendLine("请先点击「下载数据」按钮下载公开测试数据。");
+          outputChannel.appendLine("如果题目不支持下载，请使用「提交评测」进行在线测评。");
+          vscode.window.showWarningMessage("未找到本地测试数据，请先下载测试数据或使用在线提交");
+          return;
+        }
+      } catch (e) {
+        outputChannel.appendLine(`无法访问测试目录 ${caseDir}：${e.message}`);
+        vscode.window.showWarningMessage("未找到本地测试数据，请先下载测试数据或使用在线提交");
+        return;
+      }
+      const summary = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Window, title: "XMUOJ 本地测试" },
+        () => runLocalCases({
+          sourcePath,
+          language,
+          caseDir,
+          outputChannel
+        })
+      );
       const report = Object.assign({}, summary, {
         displayId: metadataContext.metadata.displayId,
         title: metadataContext.metadata.title,
@@ -3905,7 +4327,7 @@ function activate(context) {
     } catch (error) {
       outputChannel.appendLine(error.stack || error.message);
       outputChannel.show(true);
-      vscode.window.showErrorMessage(error.message);
+      await handleXmuojError(error, state, client, treeProvider);
     }
   }));
 
@@ -3952,11 +4374,9 @@ function activate(context) {
           );
           return;
         }
-        // 语言受支持，当题目限制了语言范围时，提示用户将以哪种语言提交
+        // 语言受支持，当题目限制了语言范围时，仅在输出面板提示，不打断刷题
         if (supportedLanguages.length > 1) {
-          vscode.window.showInformationMessage(
-            `将以 ${language} 提交（该题支持：${supportedLanguages.join(" / ")}）`
-          );
+          outputChannel.appendLine(`将以 ${language} 提交（该题支持：${supportedLanguages.join(" / ")}）`);
         }
       }
       try {
@@ -3995,8 +4415,20 @@ function activate(context) {
         if (!usedActiveEditor) {
           outputChannel.appendLine(`提交时自动使用当前题目工作区源码：${sourcePath}`);
         }
-        vscode.window.showInformationMessage(`已创建提交 ${submission.submission_id}，正在等待判题结果...`);
-        const result = await waitForSubmission(client, submission.submission_id);
+        outputChannel.appendLine(`已创建提交 ${submission.submission_id}，等待判题结果…`);
+        const judgingStatus = vscode.window.setStatusBarMessage(`$(sync~spin) XMUOJ 判题中 #${submission.submission_id}`);
+        let result = null;
+        try {
+          result = await waitForSubmission(client, submission.submission_id);
+        } finally {
+          judgingStatus.dispose();
+        }
+        if (!result) {
+          vscode.window.showInformationMessage(
+            `判题等待已取消或超时（提交 #${submission.submission_id} 已在服务端排队）。可稍后通过「查看最近提交结果」获取结果。`
+          );
+          return;
+        }
         const submissionResult = Object.assign({}, result, {
           title: metadataContext.metadata ? metadataContext.metadata.title : (state.activeProblem ? state.activeProblem.title : ""),
           displayId: result.display_id || (metadataContext.metadata ? metadataContext.metadata.displayId : ""),
@@ -4038,7 +4470,8 @@ function activate(context) {
         treeProvider.refresh();
         await refreshProblemPanel(state, client);
         await persistWorkbenchLayout(context, state);
-        vscode.window.showInformationMessage(`判题结果：${result.result_label}`);
+        // 结果面板已静默打开（preserveFocus），此处仅记日志，不再弹通知打断编码
+        outputChannel.appendLine(`提交 #${result.id} 判题结果：${result.result_label}`);
       } catch (error) {
         const rawMessage = String(error && error.message ? error.message : error);
         if (/Problem does not exist/i.test(rawMessage)) {
@@ -4048,7 +4481,7 @@ function activate(context) {
         vscode.window.showErrorMessage(localizeServerErrorMessage(rawMessage));
       }
     } catch (error) {
-      vscode.window.showErrorMessage(error.message);
+      await handleXmuojError(error, state, client, treeProvider);
     }
   }));
 
@@ -4249,7 +4682,7 @@ function activate(context) {
       }, contest, state.contestPassword || undefined);
       treeProvider.refresh();
     } catch (error) {
-      vscode.window.showErrorMessage(error.message);
+      await handleXmuojError(error, state, client, treeProvider);
     }
   }));
 
@@ -4260,7 +4693,7 @@ function activate(context) {
     } catch (error) {
       outputChannel.appendLine(error.stack || error.message);
       outputChannel.show(true);
-      vscode.window.showErrorMessage(error.message);
+      await handleXmuojError(error, state, client, treeProvider);
     }
   }));
 
@@ -4289,7 +4722,7 @@ function activate(context) {
     } catch (error) {
       outputChannel.appendLine(error.stack || error.message);
       outputChannel.show(true);
-      vscode.window.showErrorMessage(error.message);
+      await handleXmuojError(error, state, client, treeProvider);
     }
   }));
 
@@ -4324,6 +4757,16 @@ function activate(context) {
   }));
 
   context.subscriptions.push(outputChannel, userStatusBar, contestStatusBar);
+
+  // 启动后延迟检查插件更新
+  setTimeout(() => checkForUpdates(context, client), 8000);
+
+  // 注册手动检查更新命令
+  context.subscriptions.push(
+    vscode.commands.registerCommand("xmuoj.checkForUpdates", () =>
+      checkForUpdates(context, client, true)
+    )
+  );
 }
 
 function deactivate() {}

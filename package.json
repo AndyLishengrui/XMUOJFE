@@ -2,10 +2,11 @@
   "name": "xmuoj-vscode",
   "displayName": "XMUOJ",
   "description": "在VSCode/Trae中提供XMUOJ的沉浸式刷题体验。",
-  "version": "0.0.92",
+  "version": "0.0.95",
   "publisher": "xmuoj",
   "scripts": {
     "package": "vsce package --allow-missing-repository --skip-license",
+    "check": "node --check src/aiProvider.js && node --check src/client.js && node --check src/codeLens.js && node --check src/extension.js && node --check src/problemWorkspace.js && node --check src/runner.js && node --check src/treeData.js && node scripts/smoke.js",
     "lint": "echo 'Lint rules are not configured yet'"
   },
   "engines": {
@@ -58,7 +59,7 @@
         "xmuoj.enableSideMode": {
           "type": "boolean",
           "default": true,
-          "description": "启用刷题 side mode 布局：题面固定在主列，代码与结果尽量在旁边列打开。"
+          "description": "启用刷题 side mode 布局：代码固定在主列，题面与提交结果在旁边列打开，读题与编码可并排进行；关闭后所有面板跟随当前活动列。"
         },
         "xmuoj.colorizeProblems": {
           "type": "boolean",
@@ -175,6 +176,10 @@
       {
         "command": "xmuoj.downloadTestCases",
         "title": "XMUOJ：下载测试数据"
+      },
+      {
+        "command": "xmuoj.checkForUpdates",
+        "title": "XMUOJ：检查更新"
       },
       {
         "command": "xmuoj.generateLocalTasks",

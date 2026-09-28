@@ -251,6 +251,24 @@ class XmuojClient {
     return fallbackText || `请求失败，状态码 ${response.status}`;
   }
 
+  /**
+   * 构造带 kind 标签的错误。kind: network（网络/连接层）| auth（HTTP 401/403）| server（服务端返回的业务错误）。
+   * 调用方按 kind 分支处理，避免把网络抖动误判为登录失效。
+   */
+  makeTaggedError(message, kind) {
+    const error = new Error(message);
+    error.kind = kind;
+    return error;
+  }
+
+  classifyHttpStatus(status) {
+    // 401 明确表示未认证；403 可能是比赛密码/权限问题，不当作登录失效处理
+    if (status === 401) {
+      return "auth";
+    }
+    return "server";
+  }
+
   async request(path, options = {}) {
     const url = `${this.baseUrl}${path}`;
     const isPost = String(options.method || "").toUpperCase() === "POST";
@@ -273,7 +291,7 @@ class XmuojClient {
     try {
       response = await this.pluginFetch(url, Object.assign({}, options, { headers }));
     } catch (error) {
-      throw new Error(this.buildFetchErrorMessage(error));
+      throw this.makeTaggedError(this.buildFetchErrorMessage(error), "network");
     }
     // 从响应中提取并持久化 session cookie（Django session 认证）
     const newCookies = this.parseCookiesFromResponse(response);
@@ -291,13 +309,19 @@ class XmuojClient {
       data = null;
     }
     if (!response.ok) {
-      throw new Error(this.buildHttpErrorMessage(response, data, `请求失败，状态码 ${response.status}`));
+      throw this.makeTaggedError(
+        this.buildHttpErrorMessage(response, data, `请求失败，状态码 ${response.status}`),
+        this.classifyHttpStatus(response.status)
+      );
     }
     if (!data) {
-      throw new Error(`请求地址 ${response.url} 返回了非 JSON 响应。请确认当前站点已经部署 XMUOJ 插件 API。`);
+      throw this.makeTaggedError(
+        `请求地址 ${response.url} 返回了非 JSON 响应。请确认当前站点已经部署 XMUOJ 插件 API。`,
+        "server"
+      );
     }
     if (data.error) {
-      throw new Error(data.data || data.error);
+      throw this.makeTaggedError(data.data || data.error, "server");
     }
     return data.data;
   }
@@ -316,7 +340,7 @@ class XmuojClient {
     try {
       response = await this.pluginFetch(url, Object.assign({}, options, { headers }));
     } catch (error) {
-      throw new Error(this.buildFetchErrorMessage(error));
+      throw this.makeTaggedError(this.buildFetchErrorMessage(error), "network");
     }
     // 从响应中提取并持久化 session cookie
     const newCookies = this.parseCookiesFromResponse(response);
@@ -326,13 +350,14 @@ class XmuojClient {
       await this.setSessionCookies(this.serializeCookieJar(merged));
     }
     if (!response.ok) {
+      const kind = this.classifyHttpStatus(response.status);
       const contentType = response.headers.get("content-type") || "";
       if (contentType.includes("application/json")) {
         const data = await response.json();
-        throw new Error(this.buildHttpErrorMessage(response, data, `请求失败，状态码 ${response.status}`));
+        throw this.makeTaggedError(this.buildHttpErrorMessage(response, data, `请求失败，状态码 ${response.status}`), kind);
       }
       const text = await response.text();
-      throw new Error(this.buildHttpErrorMessage(response, null, text || `请求失败，状态码 ${response.status}`));
+      throw this.makeTaggedError(this.buildHttpErrorMessage(response, null, text || `请求失败，状态码 ${response.status}`), kind);
     }
     // XMUOJ 服务端的 self.error() 以 HTTP 200 返回 JSON 错误体（含 "error" 字段），
     // 必须在读取 binary 前检查，否则 JSON 文本会被当作 zip 处理导致解压失败。
@@ -346,9 +371,9 @@ class XmuojClient {
         /* ignore parse failure */
       }
       if (payload && payload.error) {
-        throw new Error(payload.data || payload.error);
+        throw this.makeTaggedError(payload.data || payload.error, "server");
       }
-      throw new Error("服务器返回了 JSON 而非二进制数据，请确认题目支持下载测试数据。");
+      throw this.makeTaggedError("服务器返回了 JSON 而非二进制数据，请确认题目支持下载测试数据。", "server");
     }
     const buffer = Buffer.from(await response.arrayBuffer());
     const disposition = response.headers.get("content-disposition") || "";
