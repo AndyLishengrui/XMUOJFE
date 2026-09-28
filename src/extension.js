@@ -858,13 +858,6 @@ function renderProblemHtml(problem, baseUrl, workspaceState = {}, _user = null) 
       </div>
     </section>
   `).join("");
-  const testCases = problem.test_case_manifest
-    ? problem.test_case_manifest.test_cases.map((item, index) => `<li>测试点 ${index + 1}：${escapeHtml(item.input_name || "")}${item.output_name ? ` / ${escapeHtml(item.output_name)}` : ""}</li>`).join("")
-    : "";
-
-  const downloadLink = problem.test_case_manifest
-    ? `${baseUrl}${problem.test_case_manifest.download_url}`
-    : "";
   // 题面 HTML 里的 <img src="/public/..."> 是相对路径，webview 解析不到；
   // 统一转成绝对 URL（已是 http(s):/data: 等协议的保持不变）。
   const description = resolveRelativeUrls(problem.description || "", baseUrl);
@@ -920,7 +913,6 @@ function renderProblemHtml(problem, baseUrl, workspaceState = {}, _user = null) 
       </div>
       <div class="meta">
         ${progressBadge}
-        <span class="pill">${escapeHtml(problem.rule_type)}</span>
         <span class="pill">${escapeHtml(problem.difficulty || "未知")}</span>
       </div>
       <section class="panel">${description}</section>
@@ -932,7 +924,6 @@ function renderProblemHtml(problem, baseUrl, workspaceState = {}, _user = null) 
       </section>
       ${samples ? `<section class="panel"><h2>样例</h2>${samples}</section>` : ""}
       ${hint ? `<section class="panel"><h2>提示</h2>${hint}</section>` : ""}
-      ${problem.test_case_manifest ? `<section class="panel"><h2>公开测试数据</h2><ul>${testCases}</ul><p><a href="${downloadLink}">下载测试数据压缩包</a></p></section>` : ""}
       <script>
         const vscode = acquireVsCodeApi();
         document.querySelectorAll('[data-command]').forEach((button) => {
@@ -1857,29 +1848,20 @@ function renderSubmissionResultSection(result, baseUrl) {
   return `
       <section class="panel">
         <h2>在线评测详情</h2>
-        <div class="detail-banner ${status.tone}">
-          <strong>${escapeHtml(status.title)}</strong>
-          <span>${escapeHtml(status.explanation)}</span>
-        </div>
         <div class="pill-row">
-          <span class="pill ${status.tone === "success" ? "pill-success" : status.tone === "danger" ? "pill-danger" : "pill-warning"}">${escapeHtml(result.result_label || "未知")}</span>
           <span class="pill">${escapeHtml(result.language)}</span>
-          <span class="pill">${escapeHtml(result.displayId || result.display_id || "")}</span>
           <span class="pill">提交 #${escapeHtml(String(result.id))}</span>
         </div>
         <div class="facts">
           <div class="fact"><span class="fact-label">运行时间</span><strong>${escapeHtml(String(stats.time_cost || "无"))}</strong></div>
           <div class="fact"><span class="fact-label">内存占用</span><strong>${escapeHtml(String(stats.memory_cost || "无"))}</strong></div>
           <div class="fact"><span class="fact-label">得分</span><strong>${escapeHtml(String(stats.score || "无"))}</strong></div>
-          <div class="fact"><span class="fact-label">提交时间</span><strong>${escapeHtml(String(result.submittedAt || "无"))}</strong></div>
         </div>
-        ${accepted ? '<div class="callout success">这次在线提交已经 AC，在线评测部分没有遗留问题。</div>' : ""}
         ${!accepted && diagnostics.errorSummary ? `<div class="callout danger"><strong>错误摘要</strong><pre>${escapeHtml(diagnostics.errorSummary)}</pre></div>` : ""}
         ${status.title === "编译失败" ? renderDiagnosticBlock("编译输出", diagnostics.compileOutput || diagnostics.errorSummary, "danger", shouldExpandCompileOutput) : ""}
         ${status.title !== "编译失败" && diagnostics.runtimeOutput ? renderDiagnosticBlock("错误输出", diagnostics.runtimeOutput, "warning", shouldExpandRuntimeOutput) : ""}
         ${diagnostics.systemDetails ? renderDiagnosticBlock("系统返回详情", diagnostics.systemDetails, "neutral", shouldExpandSystemDetails) : ""}
         ${!accepted && !diagnostics.errorSummary && !diagnostics.compileOutput && !diagnostics.runtimeOutput && !diagnostics.systemDetails ? '<div class="callout warning">站点没有返回更具体的失败原因。可以结合本地测试和原始判题详情继续排查。</div>' : ""}
-        <p><a href="${baseUrl}">打开 XMUOJ 站点</a></p>
         ${rawDetails}
       </section>`;
 }
@@ -1910,22 +1892,10 @@ function renderLocalReportSection(report, baseUrl) {
   return `
       <section class="panel">
         <h2>本地测试详情</h2>
-        <div class="detail-banner ${report.failed === 0 ? "success" : "danger"}">
-          <strong>${report.failed === 0 ? "全部通过" : `有 ${escapeHtml(String(report.failed))} 个测试点失败`}</strong>
-          <span>${report.failed === 0 ? "本地测试数据已经全部通过。" : "请先处理失败测试点并重新运行本地测试。"}</span>
-        </div>
         <div class="pill-row">
-          <span class="pill">${escapeHtml(report.displayId || "未知题号")}</span>
           <span class="pill">${escapeHtml(report.language || "未知语言")}</span>
           <span class="pill ${report.failed === 0 ? "pill-success" : "pill-danger"}">${escapeHtml(String(report.passed || 0))}/${escapeHtml(String(report.total || 0))} 通过</span>
         </div>
-        <div class="facts">
-          <div class="fact"><span class="fact-label">通过</span><strong>${escapeHtml(String(report.passed || 0))}</strong></div>
-          <div class="fact"><span class="fact-label">失败</span><strong>${escapeHtml(String(report.failed || 0))}</strong></div>
-          <div class="fact"><span class="fact-label">测试目录</span><strong>${escapeHtml(report.caseDir || "无")}</strong></div>
-          <div class="fact"><span class="fact-label">判题站点</span><strong><a href="${baseUrl}">${escapeHtml(baseUrl)}</a></strong></div>
-        </div>
-        ${report.failed === 0 ? '<div class="callout success">本地样例或测试数据已经全部通过。</div>' : ""}
         ${report.failed > 0 ? `<h3>失败测试点</h3>${failedBlocks}` : ""}
         <details class="all-cases-toggle" ${report.failed === 0 ? "open" : ""}>
           <summary>${report.failed > 0 ? `显示全部测试点（${escapeHtml(String(report.total || 0))}）` : `查看全部测试点（${escapeHtml(String(report.total || 0))}）`}</summary>
@@ -1983,9 +1953,6 @@ function renderResultSpotlight(viewModel) {
         </div>
       </section>`;
   }
-  const titleLine = problemRef
-    ? `${escapeHtml(problemRef.displayId || "")} ${escapeHtml(problemRef.title || "")}`.trim()
-    : "当前题目";
   const accent = primary.tone === "success"
     ? "spotlight-success"
     : primary.variant
@@ -2003,42 +1970,14 @@ function renderResultSpotlight(viewModel) {
         <h2>${primary.headline}</h2>
         <p>${primary.message}</p>
         <div class="spotlight-meta">
-          <span class="pill ${primary.tone === "success" ? "pill-success" : primary.tone === "danger" ? "pill-danger" : "pill-warning"}">${primary.eyebrow}</span>
           ${localReport ? `<span class="pill ${localReport.failed === 0 ? "pill-success" : "pill-danger"}">本地 ${escapeHtml(String(localReport.passed || 0))}/${escapeHtml(String(localReport.total || 0))}</span>` : ""}
           ${submissionResult ? `<span class="pill ${ACCEPTED_RESULTS.has(submissionResult.result_label) ? "pill-success" : "pill-danger"}">在线 ${escapeHtml(submissionResult.result_label || "未知")}</span>` : ""}
-          <span class="pill">${titleLine || "当前题目"}</span>
         </div>
       </div>
       <div class="spotlight-art" aria-hidden="true">
         ${celebration}
       </div>
     </section>`;
-}
-
-function renderResultOverviewCards(localReport, submissionResult) {
-  const cards = [];
-  if (localReport) {
-    cards.push(`
-      <div class="overview-card ${localReport.failed === 0 ? "success" : "danger"}">
-        <div class="overview-label">本地测试</div>
-        <strong>${localReport.failed === 0 ? "已通过" : "需修复"}</strong>
-        <span>${escapeHtml(String(localReport.passed || 0))}/${escapeHtml(String(localReport.total || 0))} 通过</span>
-      </div>`);
-  }
-  if (submissionResult) {
-    const accepted = ACCEPTED_RESULTS.has(submissionResult.result_label);
-    const variant = getSubmissionVisualVariant(submissionResult);
-    cards.push(`
-      <div class="overview-card ${accepted ? "success" : `danger ${variant}`} ">
-        <div class="overview-label">在线评测</div>
-        <strong>${escapeHtml(submissionResult.result_label || "未知")}</strong>
-        <span>${escapeHtml(submissionResult.language || "未知语言")}</span>
-      </div>`);
-  }
-  if (!cards.length) {
-    return '<div class="callout warning">这道题还没有结果记录。</div>';
-  }
-  return `<div class="overview-grid">${cards.join("")}</div>`;
 }
 
 function renderResultPanelHistoryTools(problemRef, focusMode, historyCount, historyNavigation) {
@@ -2198,7 +2137,7 @@ function renderResultPanelHtml(viewModel) {
     ? `${escapeHtml(problemRef.displayId || "")} ${escapeHtml(problemRef.title || "")}`.trim()
     : "当前题目";
   const modeBanner = focusMode === "history-submission"
-    ? '<div class="callout warning"><strong>历史提交结果</strong><div>你当前查看的是一条历史提交记录，但仍然使用同一套当前题结果报表展示。</div></div>'
+    ? '<div class="callout warning">正在查看历史提交记录（非最新结果）</div>'
     : "";
   return `<!DOCTYPE html>
   <html>
@@ -2306,10 +2245,6 @@ function renderResultPanelHtml(viewModel) {
       <p class="subtitle">${titleLine || "当前题目"}</p>
       ${modeBanner}
       ${renderResultSpotlight(viewModel)}
-      <section class="panel">
-        <h2>结果概览</h2>
-        ${renderResultOverviewCards(localReport, submissionResult)}
-      </section>
       ${localReport ? renderLocalReportSection(localReport, localReport.baseUrl || (problemRef ? problemRef.baseUrl : "") || "") : ""}
       ${submissionResult ? renderSubmissionResultSection(submissionResult, submissionResult.baseUrl || (problemRef ? problemRef.baseUrl : "") || "") : ""}
       ${renderResultPanelHistoryTools(problemRef, focusMode, historyCount, historyNavigation)}
