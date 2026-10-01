@@ -8,6 +8,8 @@
     "dev": "node build/dev-server.js",
     "start": "npm run dev",
     "build": "node build/build.js",
+    "postbuild": "node build/patch-theme-index.js",
+    "build:themes": "bash build/collect-themes.sh",
     "build:dll": "webpack --config=build/webpack.dll.conf.js",
     "lint": "eslint --ext .js,.vue src"
   },
