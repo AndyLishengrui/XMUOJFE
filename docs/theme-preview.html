@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XMUOJ 主题预览 · 三套配色对比</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+    background: #2a2d34;
+    color: #e8e8e8;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── 页面外框 ───────────────────────────────────────── */
+  .page-head { padding: 28px 32px 6px; }
+  .page-head h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; letter-spacing: .3px; }
+  .page-head p { margin: 0; font-size: 13px; color: #9aa0aa; line-height: 1.7; }
+  .page-head code { background: #3a3e47; padding: 1px 6px; border-radius: 3px; font-size: 12px; }
+
+  .cols { display: flex; gap: 20px; padding: 20px 32px 48px; align-items: flex-start; }
+  .col { flex: 1 1 0; min-width: 0; }
+  .col-head {
+    display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; padding: 0 2px;
+  }
+  .col-head .name { font-size: 16px; font-weight: 600; }
+  .col-head .desc { font-size: 12px; color: #9aa0aa; }
+  .swatches { display: flex; gap: 4px; margin-bottom: 12px; padding: 0 2px; }
+  .swatches i { width: 22px; height: 22px; border-radius: 4px; display: block; border: 1px solid rgba(255,255,255,.14); }
+
+  /* ── 每套主题在各自的 .t 容器内定义 token ─────────────── */
+  .t {
+    --c-brand: #0095ff; --c-brand-hover: #0080e6; --c-brand-tint: #e6f4ff; --c-on-brand: #fff;
+    --c-bg-page: #f7f9fb; --c-bg-card: #fff; --c-bg-soft: #f0f4f8; --c-bg-hover: #eef3f8;
+    --c-text-1: #1a2233; --c-text-2: #5a6b82; --c-text-3: #94a3b8;
+    --c-border: rgba(15,23,42,.10); --c-border-strong: rgba(15,23,42,.18);
+    --c-success: #16a34a; --c-warning: #d97706; --c-error: #dc2626;
+    --c-code-bg: #f6f8fa; --c-code-text: #3d4d5c; --c-code-gutter: #b9c3cf;
+    --c-shadow: 0 1px 3px rgba(15,23,42,.08);
+    --c-editor-bg: #fff; --c-editor-ln: #c8d1db;
+  }
+  /* 方案二 · 深靛 */
+  .t.deep {
+    --c-brand: #4d6bfe; --c-brand-hover: #6b85ff; --c-brand-tint: rgba(77,107,254,.16); --c-on-brand: #fff;
+    --c-bg-page: #15171c; --c-bg-card: #1d2027; --c-bg-soft: #23272f; --c-bg-hover: #252932;
+    --c-text-1: #e6e9ef; --c-text-2: #9aa4b8; --c-text-3: #6b7280;
+    --c-border: hsla(0,0%,100%,.08); --c-border-strong: hsla(0,0%,100%,.16);
+    --c-success: #3ecf8e; --c-warning: #f0b429; --c-error: #f2555a;
+    --c-code-bg: #12141a; --c-code-text: #c9d3e0; --c-code-gutter: #4a5262;
+    --c-shadow: 0 1px 3px rgba(0,0,0,.4);
+    --c-editor-bg: #12141a; --c-editor-ln: #3d4553;
+  }
+  /* 方案三 · 暖砂 */
+  .t.sand {
+    --c-brand: #c2410c; --c-brand-hover: #a83a0a; --c-brand-tint: #fdf0e9; --c-on-brand: #fff;
+    --c-bg-page: #faf8f4; --c-bg-card: #fff; --c-bg-soft: #f5f0e8; --c-bg-hover: #f2ece2;
+    --c-text-1: #2b2622; --c-text-2: #6b6259; --c-text-3: #9c9188;
+    --c-border: rgba(43,38,34,.12); --c-border-strong: rgba(43,38,34,.22);
+    --c-success: #15803d; --c-warning: #b45309; --c-error: #b91c1c;
+    --c-code-bg: #f5f1ea; --c-code-text: #4a4038; --c-code-gutter: #c3b8ab;
+    --c-shadow: 0 1px 3px rgba(43,38,34,.10);
+    --c-editor-bg: #fffdfa; --c-editor-ln: #d5c9ba;
+  }
+
+  /* ── 模拟界面外壳 ───────────────────────────────────── */
+  .frame {
+    background: var(--c-bg-page); border-radius: 10px; overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.06);
+  }
+  .nav {
+    background: var(--c-bg-card); border-bottom: 1px solid var(--c-border);
+    display: flex; align-items: center; gap: 18px; padding: 0 14px; height: 50px;
+  }
+  .nav .logo { font-size: 15px; font-weight: 700; color: var(--c-brand); letter-spacing: .5px; }
+  .nav .item { font-size: 13px; color: var(--c-text-2); padding: 4px 0; }
+  .nav .item.on { color: var(--c-brand); font-weight: 600; border-bottom: 2px solid var(--c-brand); }
+  .nav .spacer { flex: 1; }
+  .nav .bell { position: relative; font-size: 15px; color: var(--c-text-2); }
+  .nav .bell b {
+    position: absolute; top: -5px; right: -7px; background: var(--c-error); color: #fff;
+    font-size: 9px; font-weight: 600; border-radius: 8px; padding: 1px 5px;
+  }
+
+  .body { padding: 14px; }
+
+  .card {
+    background: var(--c-bg-card); border: 1px solid var(--c-border); border-radius: 8px;
+    box-shadow: var(--c-shadow); margin-bottom: 12px; overflow: hidden;
+  }
+  .card .hd {
+    padding: 10px 14px; border-bottom: 1px solid var(--c-border);
+    font-size: 14px; font-weight: 600; color: var(--c-text-1);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card .bd { padding: 12px 14px; font-size: 13px; line-height: 1.85; color: var(--c-text-2); }
+  .card .bd strong { color: var(--c-text-1); font-weight: 600; }
+
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag {
+    font-size: 11px; padding: 2px 9px; border-radius: 10px;
+    background: var(--c-bg-soft); color: var(--c-text-2); border: 1px solid var(--c-border);
+  }
+  .tag.brand { background: var(--c-brand-tint); color: var(--c-brand); border-color: transparent; font-weight: 600; }
+  .tag.ok { background: color-mix(in srgb, var(--c-success) 14%, transparent); color: var(--c-success); border-color: transparent; }
+  .tag.warn { background: color-mix(in srgb, var(--c-warning) 16%, transparent); color: var(--c-warning); border-color: transparent; }
+  .tag.bad { background: color-mix(in srgb, var(--c-error) 14%, transparent); color: var(--c-error); border-color: transparent; }
+
+  /* 样例输入输出 */
+  .samples { display: flex; gap: 12px; margin-top: 10px; }
+  .samples > div { flex: 1 1 0; min-width: 0; }
+  .samples .lb { font-size: 11px; color: var(--c-text-3); margin-bottom: 5px; }
+  pre.box {
+    margin: 0; background: var(--c-code-bg); border: 1px solid var(--c-border);
+    border-radius: 6px; padding: 9px 11px; font-size: 12px; line-height: 1.65;
+    font-family: Consolas, Menlo, Courier, monospace; color: var(--c-code-text);
+    overflow-x: auto; white-space: pre;
+  }
+
+  /* 表格 */
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  thead th {
+    text-align: left; padding: 8px 12px; font-weight: 600; color: var(--c-text-1);
+    background: var(--c-bg-soft); border-bottom: 1px solid var(--c-border);
+  }
+  tbody td { padding: 8px 12px; color: var(--c-text-2); border-bottom: 1px solid var(--c-border); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--c-bg-hover); }
+  .rank { font-weight: 700; color: var(--c-brand); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* 代码编辑器 */
+  .editor { border: 1px solid var(--c-border); border-radius: 8px; overflow: hidden; background: var(--c-editor-bg); }
+  .editor .bar {
+    display: flex; align-items: center; gap: 8px; padding: 7px 11px;
+    background: var(--c-bg-soft); border-bottom: 1px solid var(--c-border); font-size: 12px; color: var(--c-text-2);
+  }
+  .editor .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c-border-strong); }
+  .code { display: flex; font-family: Consolas, Menlo, Courier, monospace; font-size: 12px; line-height: 1.75; }
+  .code .ln { padding: 9px 8px 9px 11px; color: var(--c-editor-ln); text-align: right; user-select: none; }
+  .code .src { padding: 9px 11px 9px 0; color: var(--c-code-text); white-space: pre; overflow-x: auto; }
+  .k { color: var(--c-brand); }              /* keyword */
+  .s { color: var(--c-success); }            /* string  */
+  .c { color: var(--c-text-3); font-style: italic; }   /* comment */
+
+  /* 按钮 */
+  .btns { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .btn {
+    font-size: 12.5px; padding: 6px 16px; border-radius: 6px; cursor: default;
+    border: 1px solid var(--c-border-strong); background: var(--c-bg-card); color: var(--c-text-1);
+  }
+  .btn.primary { background: var(--c-brand); border-color: var(--c-brand); color: var(--c-on-brand); font-weight: 600; }
+  .btn.primary:hover { background: var(--c-brand-hover); }
+  .btn.ghost { border-color: var(--c-brand); color: var(--c-brand); background: transparent; }
+
+  /* 分页 */
+  .pager { display: flex; gap: 5px; justify-content: center; margin-top: 12px; }
+  .pager span {
+    min-width: 28px; height: 28px; line-height: 26px; text-align: center; font-size: 12px;
+    border: 1px solid var(--c-border); border-radius: 5px; color: var(--c-text-2); background: var(--c-bg-card);
+  }
+  .pager span.on { background: var(--c-brand); border-color: var(--c-brand); color: var(--c-on-brand); font-weight: 600; }
+
+  .note { font-size: 11.5px; color: #8d939d; padding: 0 2px 14px; line-height: 1.7; }
+  .note b { color: #c3c8d0; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>XMUOJ 主题预览 · 三套配色对比</h1>
+  <p>
+    同一套模拟界面（导航栏 / 题目卡片 / 评测表格 / 代码框 / 按钮分页）分别用三套 token 渲染。<br>
+    <b>请重点看</b>：品牌色是否舒服、正文可读性、卡片与底色的层次、边框是否够清楚。
+    这几套都是按参考站的做法 —— <b>品牌色一档到底、中性色用 alpha、文字分三级</b>。
+  </p>
+</div>
+
+<div class="cols" id="cols"></div>
+
+<script>
+const THEMES = [
+  { cls: '',      name: '① 晴空',  desc: '清爽亮色 · 参考 MiMo',     sw: ['#0095ff','#f7f9fb','#ffffff','#1a2233','#5a6b82'] },
+  { cls: 'deep',  name: '② 深靛',  desc: '沉浸暗色 · 参考 DeepSeek', sw: ['#4d6bfe','#15171c','#1d2027','#e6e9ef','#9aa4b8'] },
+  { cls: 'sand',  name: '③ 暖砂',  desc: '文学艺术风 · 纸质感',       sw: ['#c2410c','#faf8f4','#ffffff','#2b2622','#6b6259'] },
+];
+
+const MOCK = `
+  <div class="frame">
+    <div class="nav">
+      <span class="logo">XMUOJ</span>
+      <span class="item on">题目</span>
+      <span class="item">比赛</span>
+      <span class="item">评测</span>
+      <span class="item">排行榜</span>
+      <span class="spacer"></span>
+      <span class="bell">🔔<b>3</b></span>
+      <span class="item">小鲁</span>
+    </div>
+    <div class="body">
+
+      <div class="card">
+        <div class="hd">
+          钞票和硬币
+          <span class="tag brand">T07</span>
+          <span class="tag ok">已通过</span>
+        </div>
+        <div class="bd">
+          读取一个带有两位小数的浮点数代表货币价值，将该值分解为多种钞票和硬币的和，
+          要求钞票和硬币的数量尽可能少。考虑的钞票面值：<strong>100, 50, 20, 10, 5, 2</strong>。
+          <div class="samples">
+            <div>
+              <div class="lb">样例输入</div>
+              <pre class="box">576.73</pre>
+            </div>
+            <div>
+              <div class="lb">样例输出</div>
+              <pre class="box">NOTAS:
+5 nota(s) de R$ 100.00
+1 nota(s) de R$ 50.00</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="hd">最近评测</div>
+        <table>
+          <thead><tr><th style="width:52px">名次</th><th>用户</th><th>题目</th><th style="width:74px">结果</th><th style="width:64px">用时</th></tr></thead>
+          <tbody>
+            <tr><td class="rank num">1</td><td>小华</td><td>T07 钞票和硬币</td><td><span class="tag ok">AC</span></td><td class="num">12ms</td></tr>
+            <tr><td class="rank num">2</td><td>小嘉</td><td>T07 钞票和硬币</td><td><span class="tag warn">部分正确</span></td><td class="num">15ms</td></tr>
+            <tr><td class="rank num">3</td><td>小栋</td><td>T01 简单计算</td><td><span class="tag bad">WA</span></td><td class="num">9ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="editor">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          <span style="margin-left:6px">Python 3</span></div>
+        <div class="code">
+          <div class="ln">1<br>2<br>3<br>4<br>5</div>
+          <div class="src"><span class="c"># 读取金额并分解</span>
+n = <span class="k">float</span>(<span class="k">input</span>())
+<span class="k">for</span> v <span class="k">in</span> [100, 50, 20, 10, 5, 2]:
+    <span class="k">print</span>(<span class="s">f"{n // v:.0f} nota(s)"</span>)</div>
+        </div>
+      </div>
+
+      <div class="btns">
+        <span class="btn primary">提交代码</span>
+        <span class="btn">运行</span>
+        <span class="btn ghost">查看题解</span>
+      </div>
+
+      <div class="pager">
+        <span>‹</span><span class="on">1</span><span>2</span><span>3</span><span>…</span><span>›</span>
+      </div>
+
+    </div>
+  </div>`;
+
+document.getElementById('cols').innerHTML = THEMES.map(t => `
+  <div class="col">
+    <div class="col-head">
+      <span class="name">${t.name}</span>
+      <span class="desc">${t.desc}</span>
+    </div>
+    <div class="swatches">${t.sw.map(c => `<i style="background:${c}"></i>`).join('')}</div>
+    <div class="t ${t.cls}">${MOCK}</div>
+    <div class="note" style="margin-top:12px">
+      品牌色 <b>${t.sw[0]}</b> ｜ 页面底 <b>${t.sw[1]}</b> ｜ 卡片 <b>${t.sw[2]}</b>
+    </div>
+  </div>`).join('');
+</script>
+
+<div class="page-head" style="padding-top:0">
+  <p class="note" style="padding-left:0">
+    ⚠️ 本页只演示 <b>UI 配色</b>。还有四块<b>不属于这套 token 体系</b>、需要单独配色的东西没在这里演示：
+    <code>ECharts 图表</code>、<code>KaTeX 数学公式</code>、<code>代码高亮</code>、<code>Monaco 编辑器主题</code>
+    —— 它们是暗色主题最容易"露白底"的地方，等配色方向定了再逐个处理。
+  </p>
+</div>
+
+</body>
+</html>
