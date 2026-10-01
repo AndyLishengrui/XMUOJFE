@@ -77,7 +77,9 @@
         font-size: 30px;
         font-weight: 500;
         letter-spacing: 12px;
-        color: var(--c-border);
+        // 原值 #dddde2（浅灰文字）。抽 token 时误用了「边框色」rgba(…,.10) → 几乎看不见。
+        // 文字就该用文字 token，这里是「最弱一级」。
+        color: var(--c-text-3);
       }
     }
     &-btn-con {

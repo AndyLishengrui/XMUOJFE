@@ -176,7 +176,7 @@ export default {
 .cp-stats span { font-size: 12px; color: var(--c-text-3); }
 .cp-submit-wrap { margin-top: 16px; }
 .cp-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.cp-editor { width: 100%; min-height: 350px; padding: 14px; font-family: Monaco,Menlo,Consolas,monospace; font-size: 13px; line-height: 1.6; border: 1px solid var(--c-border); border-radius: 4px; resize: vertical; outline: none; background: var(--c-text-1); color: var(--c-border); tab-size: 4; }
+.cp-editor { width: 100%; min-height: 350px; padding: 14px; font-family: Monaco,Menlo,Consolas,monospace; font-size: 13px; line-height: 1.6; border: 1px solid var(--c-border); border-radius: 4px; resize: vertical; outline: none; background: var(--c-code-bg); color: var(--c-code-text); tab-size: 4; }
 .cp-editor::placeholder { color: var(--c-text-3); }
 
 @media (max-width: 768px) {

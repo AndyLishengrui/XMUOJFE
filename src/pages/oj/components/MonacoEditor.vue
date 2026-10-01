@@ -690,8 +690,10 @@
     }
 
     .debug-output {
-      background: var(--c-text-1);
-      color: var(--c-border);
+      // 同 Problem.vue 的 .debug-io：抽 token 时把背景/文字的角色翻译反了，
+      // 文字变成近乎全透明。代码输出框一律用代码 token。
+      background: var(--c-code-bg);
+      color: var(--c-code-text);
       padding: 12px;
       border-radius: 4px;
       font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;

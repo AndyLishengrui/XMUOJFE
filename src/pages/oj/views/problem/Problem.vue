@@ -839,8 +839,11 @@
       .debug-io {
         margin: 0;
         padding: 10px 12px;
-        background: var(--c-text-1);
-        color: var(--c-border);
+        // ⚠️ 原来抽 token 时翻译错了角色：把「文字色」当成了背景、把「边框色」当成了文字。
+        //    --c-border 是 rgba(…,.10) —— 近乎全透明的字压在深底上 = **什么都看不见**
+        //    （学生报的"调试看不到运行结果"就是这里）。代码框就该用代码的 token。
+        background: var(--c-code-bg);
+        color: var(--c-code-text);
         font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
         font-size: 13px;
         max-height: 200px;
