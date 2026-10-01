@@ -79,7 +79,8 @@
             <span>{{total}}</span>
             <span>{{$t('m.Problem_Search_Summary')}}</span>
           </div>
-          <Table style="width: 100%; font-size: 15px;"
+          <Table class="pl-table"
+                 style="width: 100%;"
                  :columns="tableColumns"
                  :data="problemList"
                  :loading="loadings.table"
@@ -637,8 +638,29 @@
     align-items: center;
   }
 
+  /* ── 表格：原来是 15px，偏大；顺带把行高收紧 ───────────── */
+  .pl-table {
+    font-size: 13px;
+
+    /deep/ .ivu-table {
+      font-size: 13px;
+    }
+
+    /deep/ .ivu-table th {
+      height: 40px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    /deep/ .ivu-table td {
+      height: 44px;
+      padding: 0 12px;
+      font-size: 13px;
+    }
+  }
+
   .list-summary span:first-child {
-    font-size: 20px;
+    font-size: 16px;
     color: var(--c-text-1);
     font-weight: 600;
   }
@@ -646,7 +668,9 @@
   .table-source-pill {
     display: inline-block;
     max-width: 100%;
-    padding: 3px 10px;
+    padding: 2px 8px;
+    font-size: 12px;
+    line-height: 18px;
     border: 1px solid var(--c-border);
     border-radius: 4px;
     background: var(--c-bg-hover);
@@ -655,6 +679,18 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     vertical-align: middle;
+  }
+
+  /* 面板标题条：iView 默认 padding 14/16 + 16px 字，整条偏高，压一压 */
+  .problem-list-page /deep/ .ivu-card-head {
+    padding: 10px 14px;
+    min-height: auto;
+  }
+
+  .problem-list-page /deep/ .ivu-card-head p {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
   }
 
   .tag-sidebar-wrapper {
@@ -671,15 +707,15 @@
   }
 
   .tag-panel-section + .tag-panel-section {
-    margin-top: 18px;
-    padding-top: 18px;
+    margin-top: 14px;
+    padding-top: 14px;
     border-top: 1px solid var(--c-border);
   }
 
   .section-title {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--c-text-3);
-    margin-bottom: 10px;
+    margin-bottom: 8px;
   }
 
   .current-tag-row {
@@ -694,9 +730,14 @@
     flex-wrap: wrap;
   }
 
+  /* 侧栏标签：原来是 iView 默认的 32px 高 / 14px 字，偏大，压到 26/12 */
   .tag-btn {
-    margin-right: 8px;
-    margin-bottom: 10px;
+    margin-right: 6px;
+    margin-bottom: 8px;
+    height: 26px;
+    line-height: 24px;
+    padding: 0 10px;
+    font-size: 12px;
   }
 
   .empty-tag-tip {
