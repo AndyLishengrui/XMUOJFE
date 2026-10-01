@@ -131,10 +131,10 @@
           text-align: left;
           padding-left: 10px;
           a.entry {
-            color: #495060;
+            color: var(--c-text-2);
             &:hover {
-              color: #2d8cf0;
-              border-bottom: 1px solid #2d8cf0;
+              color: var(--c-brand);
+              border-bottom: 1px solid var(--c-brand);
             }
           }
         }

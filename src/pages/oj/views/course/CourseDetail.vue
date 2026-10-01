@@ -48,7 +48,7 @@
 
           <!-- 空章节提示 -->
           <div v-if="!chapter.examples.length && !chapter.exercises.length"
-               style="text-align:center;color:#999;padding:20px">
+               style="text-align:center;color:var(--c-text-3);padding:20px">
             暂无题目
           </div>
         </div>
@@ -56,7 +56,7 @@
     </div>
 
     <!-- 无章节 -->
-    <div v-else style="text-align:center;color:#999;padding:40px">
+    <div v-else style="text-align:center;color:var(--c-text-3);padding:40px">
       <p>暂无章节内容</p>
     </div>
   </div>
@@ -188,10 +188,10 @@ export default {
   gap: 8px;
   padding: 4px 0;
   .course-title { font-size: 18px; font-weight: 700; word-break: break-word; }
-  .course-meta { color: #999; font-size: 13px; white-space: nowrap; }
+  .course-meta { color: var(--c-text-3); font-size: 13px; white-space: nowrap; }
 }
 .course-desc {
-  color: #666;
+  color: var(--c-text-2);
   margin-top: 8px;
   padding-left: 4px;
   word-break: break-word;
@@ -203,16 +203,16 @@ export default {
   width: 100%;
   cursor: pointer;
   user-select: none;
-  &:hover { color: #2d8cf0; }
+  &:hover { color: var(--c-brand); }
   .chapter-title-text { margin-left: 8px; font-weight: bold; font-size: 15px; flex: 1; }
-  .chapter-problem-count { margin-left: 12px; color: #999; font-size: 12px; white-space: nowrap; }
-  .chapter-ac-progress { margin-left: 8px; color: #19be6b; font-size: 12px; white-space: nowrap; }
+  .chapter-problem-count { margin-left: 12px; color: var(--c-text-3); font-size: 12px; white-space: nowrap; }
+  .chapter-ac-progress { margin-left: 8px; color: var(--c-success); font-size: 12px; white-space: nowrap; }
 }
 .problem-section { margin: 8px 16px 16px; }
 .section-label {
   margin: 8px 0;
   font-size: 14px;
-  &.example-label { color: #2d8cf0; }
-  &.exercise-label { color: #19be6b; }
+  &.example-label { color: var(--c-brand); }
+  &.exercise-label { color: var(--c-success); }
 }
 </style>

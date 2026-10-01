@@ -31,28 +31,28 @@
 
 <style scoped lang="less">
   .disabled {
-    /*background-color: #ccc;*/
+    /*background-color: var(--c-text-3);*/
     opacity: 1;
     /*cursor: not-allowed;*/
     pointer-events: none;
-    color: #ccc;
+    color: var(--c-text-3);
     &:hover {
       border-left: none;
-      color: #ccc;
-      background: #fff;
+      color: var(--c-text-3);
+      background: var(--c-bg-card);
     }
   }
 
   li {
-    border-bottom: 1px dashed #e9eaec;
-    color: #495060;
+    border-bottom: 1px dashed var(--c-border);
+    color: var(--c-text-2);
     display: block;
     text-align: left;
     padding: 15px 20px;
     &:hover {
-      background: #f8f8f9;
-      border-left: 2px solid #5cadff;
-      color: #2d8cf0;
+      background: var(--c-bg-soft);
+      border-left: 2px solid var(--c-brand-hover);
+      color: var(--c-brand);
     }
     & > .ivu-icon {
       font-size: 16px;

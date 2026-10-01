@@ -64,7 +64,7 @@
           <div class="cp-stats">
             <div><b>{{ problem.submission_number || 0 }}</b><span>提交</span></div>
             <div><b>{{ problem.accepted_number || 0 }}</b><span>通过</span></div>
-            <div v-if="problem.my_status === 0" style="color:#19be6b"><b>✓</b><span>已AC</span></div>
+            <div v-if="problem.my_status === 0" style="color:var(--c-success)"><b>✓</b><span>已AC</span></div>
           </div>
         </Panel>
       </div>
@@ -152,32 +152,32 @@ export default {
 
 <style scoped>
 .cp-wrap { max-width: 1200px; margin: 0 auto; padding: 0 4px; }
-.cp-topbar { padding: 8px 0 10px; margin-bottom: 10px; border-bottom: 1px solid #e8eaec; display: flex; align-items: center; }
-.cp-back { cursor: pointer; color: #2d8cf0; font-size: 14px; font-weight: 500; }
-.cp-back:hover { color: #2b85e4; }
-.cp-divider { margin: 0 12px; color: #dcdee2; }
-.cp-course-name { color: #808695; font-size: 13px; }
-.cp-loading,.cp-empty { text-align: center; padding: 60px 0; color: #999; }
+.cp-topbar { padding: 8px 0 10px; margin-bottom: 10px; border-bottom: 1px solid var(--c-border); display: flex; align-items: center; }
+.cp-back { cursor: pointer; color: var(--c-brand); font-size: 14px; font-weight: 500; }
+.cp-back:hover { color: var(--c-brand-hover); }
+.cp-divider { margin: 0 12px; color: var(--c-border); }
+.cp-course-name { color: var(--c-text-3); font-size: 13px; }
+.cp-loading,.cp-empty { text-align: center; padding: 60px 0; color: var(--c-text-3); }
 .cp-main { display: flex; gap: 16px; align-items: flex-start; }
 .cp-left { flex: 1; min-width: 0; }
 .cp-right { width: 240px; flex-shrink: 0; }
 .cp-content { font-size: 14px; line-height: 1.8; }
-.cp-content h4 { margin: 14px 0 4px; font-size: 14px; font-weight: 600; color: #17233d; }
-.cp-content > div > div { color: #515a6e; }
+.cp-content h4 { margin: 14px 0 4px; font-size: 14px; font-weight: 600; color: var(--c-text-1); }
+.cp-content > div > div { color: var(--c-text-2); }
 .cp-sample { display: flex; gap: 12px; margin: 6px 0 10px; }
 .cp-sample > div { flex: 1; min-width: 0; }
-.cp-sample span { font-size: 12px; color: #808695; }
-.cp-sample pre { background: #f8f8f9; border: 1px solid #e8eaec; border-radius: 4px; padding: 8px 12px; margin: 2px 0 0; font-size: 13px; overflow-x: auto; }
-.cp-info-item { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #f8f8f9; font-size: 13px; }
-.cp-info-item span:first-child { color: #808695; }
+.cp-sample span { font-size: 12px; color: var(--c-text-3); }
+.cp-sample pre { background: var(--c-bg-soft); border: 1px solid var(--c-border); border-radius: 4px; padding: 8px 12px; margin: 2px 0 0; font-size: 13px; overflow-x: auto; }
+.cp-info-item { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--c-bg-soft); font-size: 13px; }
+.cp-info-item span:first-child { color: var(--c-text-3); }
 .cp-stats { display: flex; justify-content: space-around; padding: 8px 0; }
 .cp-stats > div { text-align: center; }
-.cp-stats b { display: block; font-size: 18px; color: #17233d; }
-.cp-stats span { font-size: 12px; color: #808695; }
+.cp-stats b { display: block; font-size: 18px; color: var(--c-text-1); }
+.cp-stats span { font-size: 12px; color: var(--c-text-3); }
 .cp-submit-wrap { margin-top: 16px; }
 .cp-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.cp-editor { width: 100%; min-height: 350px; padding: 14px; font-family: Monaco,Menlo,Consolas,monospace; font-size: 13px; line-height: 1.6; border: 1px solid #dcdee2; border-radius: 4px; resize: vertical; outline: none; background: #1e1e1e; color: #d4d4d4; tab-size: 4; }
-.cp-editor::placeholder { color: #6a737d; }
+.cp-editor { width: 100%; min-height: 350px; padding: 14px; font-family: Monaco,Menlo,Consolas,monospace; font-size: 13px; line-height: 1.6; border: 1px solid var(--c-border); border-radius: 4px; resize: vertical; outline: none; background: var(--c-text-1); color: var(--c-border); tab-size: 4; }
+.cp-editor::placeholder { color: var(--c-text-3); }
 
 @media (max-width: 768px) {
   .cp-main { flex-direction: column; }

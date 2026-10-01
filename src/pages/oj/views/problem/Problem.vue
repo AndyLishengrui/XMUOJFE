@@ -713,7 +713,7 @@
       font-size: 20px;
       font-weight: 400;
       margin: 25px 0 8px 0;
-      color: #3091f2;
+      color: var(--c-brand);
       .copy {
         padding-left: 8px;
       }
@@ -767,7 +767,7 @@
     ul {
       list-style-type: none;
       li {
-        border-bottom: 1px dotted #e9eaec;
+        border-bottom: 1px dotted var(--c-border);
         margin-bottom: 10px;
         p {
           display: inline-block;
@@ -803,7 +803,7 @@
   }
 
   .debug-results-panel {
-    border: 1px solid #e8eaec;
+    border: 1px solid var(--c-border);
     border-radius: 4px;
     overflow: hidden;
 
@@ -812,8 +812,8 @@
       align-items: center;
       gap: 6px;
       padding: 6px 12px;
-      background: #f8f8f9;
-      border-bottom: 1px solid #e8eaec;
+      background: var(--c-bg-soft);
+      border-bottom: 1px solid var(--c-border);
       font-weight: 600;
       font-size: 13px;
     }
@@ -821,7 +821,7 @@
     .debug-meta-inline {
       margin-left: auto;
       font-weight: 400;
-      color: #808695;
+      color: var(--c-text-3);
       font-size: 12px;
     }
 
@@ -829,8 +829,8 @@
       .debug-io {
         margin: 0;
         padding: 10px 12px;
-        background: #1d1e1f;
-        color: #d4d4d4;
+        background: var(--c-text-1);
+        color: var(--c-border);
         font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
         font-size: 13px;
         max-height: 200px;
@@ -845,7 +845,7 @@
   // Test results panel
   .test-results-panel {
     margin-top: 15px;
-    border: 1px solid #e8eaec;
+    border: 1px solid var(--c-border);
     border-radius: 4px;
     overflow: hidden;
 
@@ -854,8 +854,8 @@
       align-items: center;
       gap: 6px;
       padding: 8px 12px;
-      background: #f8f8f9;
-      border-bottom: 1px solid #e8eaec;
+      background: var(--c-bg-soft);
+      border-bottom: 1px solid var(--c-border);
       font-weight: 600;
       font-size: 13px;
     }
@@ -870,7 +870,7 @@
       margin-bottom: 10px;
       padding: 8px;
       border-radius: 4px;
-      background: #fafafa;
+      background: var(--c-bg-soft);
 
       &:last-child {
         margin-bottom: 0;
@@ -889,13 +889,13 @@
       font-size: 12px;
 
       &.ac {
-        background: #edfff3;
-        color: #19be6b;
+        background: var(--c-success-tint);
+        color: var(--c-success);
       }
 
       &.wa {
-        background: #ffeef0;
-        color: #ed4014;
+        background: var(--c-error-tint);
+        color: var(--c-error);
       }
     }
 
@@ -915,7 +915,7 @@
 
         .diff-label {
           font-size: 12px;
-          color: #808695;
+          color: var(--c-text-3);
         }
 
         .diff-value {
@@ -926,13 +926,13 @@
           overflow-x: auto;
 
           &.expected {
-            background: #edfff3;
-            color: #19be6b;
+            background: var(--c-success-tint);
+            color: var(--c-success);
           }
 
           &.actual {
-            background: #ffeef0;
-            color: #ed4014;
+            background: var(--c-error-tint);
+            color: var(--c-error);
           }
         }
       }

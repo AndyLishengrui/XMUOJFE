@@ -60,13 +60,13 @@
         text-align: center;
         font-size: 240px;
         font-weight: 700;
-        color: #2d8cf0;
+        color: var(--c-brand);
         height: 260px;
         line-height: 260px;
         margin-top: 40px;
         span {
           display: inline-block;
-          color: #19be6b;
+          color: var(--c-success);
           font-size: 230px;
           animation: error404animation 3s ease 0s infinite alternate;
         }
@@ -77,7 +77,7 @@
         font-size: 30px;
         font-weight: 500;
         letter-spacing: 12px;
-        color: #dddde2;
+        color: var(--c-border);
       }
     }
     &-btn-con {

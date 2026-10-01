@@ -8,7 +8,7 @@
               action=""
               :before-upload="handleSelectFile">
         <div style="padding: 30px 0">
-          <Icon type="ios-cloud-upload" size="52" style="color: #3399ff"></Icon>
+          <Icon type="ios-cloud-upload" size="52" style="color: var(--c-brand)"></Icon>
           <p>{{$t('m.Drop_here_or_click_to_select_manually')}}</p>
         </div>
       </Upload>

@@ -10,7 +10,7 @@
       <div v-if="loading" style="text-align:center;padding:40px;">
         <Spin size="large"></Spin>
       </div>
-      <div v-else-if="notificationList.length === 0" style="text-align:center;padding:40px;color:#999;">
+      <div v-else-if="notificationList.length === 0" style="text-align:center;padding:40px;color:var(--c-text-3);">
         {{ $t('m.NoNotifications') }}
       </div>
       <div v-else>
@@ -120,16 +120,16 @@ export default {
   }
   .notif-row {
     display: flex; align-items: center; padding: 12px 8px;
-    border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background .2s;
-    &:hover { background: #fafafa; }
-    &.notif-unread { background: #f0f7ff; }
+    border-bottom: 1px solid var(--c-border); cursor: pointer; transition: background .2s;
+    &:hover { background: var(--c-bg-soft); }
+    &.notif-unread { background: var(--c-brand-tint); }
     .notif-dot { width: 24px; flex-shrink: 0;
-      .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #2d8cf0; }
+      .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c-brand); }
     }
     .notif-body { flex: 1; min-width: 0;
       .notif-title { font-weight: 500; font-size: 15px; }
-      .notif-content { color: #666; font-size: 13px; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .notif-meta { margin-top: 6px; font-size: 12px; color: #999;
+      .notif-content { color: var(--c-text-2); font-size: 13px; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .notif-meta { margin-top: 6px; font-size: 12px; color: var(--c-text-3);
         .notif-sender { margin-right: 12px; }
       }
     }

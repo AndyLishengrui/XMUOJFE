@@ -72,13 +72,13 @@ export default {
   .course-panel {
     border-radius: 18px;
     overflow: hidden;
-    background: linear-gradient(180deg, #f7fbff 0%, #ffffff 18%, #ffffff 100%);
+    background: linear-gradient(180deg, var(--c-brand-tint) 0%, var(--c-bg-card) 18%, var(--c-bg-card) 100%);
   }
 
   .course-panel-title {
     font-size: 18px;
     font-weight: 700;
-    color: #1f2d3d;
+    color: var(--c-text-1);
     letter-spacing: 1px;
   }
 
@@ -90,8 +90,8 @@ export default {
     margin-bottom: 20px;
     padding: 18px 22px;
     border-radius: 16px;
-    background: linear-gradient(135deg, #eef6ff 0%, #f7fbff 50%, #ffffff 100%);
-    border: 1px solid #e3eefc;
+    background: linear-gradient(135deg, var(--c-brand-tint) 0%, var(--c-brand-tint) 50%, var(--c-bg-card) 100%);
+    border: 1px solid var(--c-brand-tint);
   }
 
   .course-hero-kicker {
@@ -99,13 +99,13 @@ export default {
     font-size: 12px;
     letter-spacing: 2px;
     text-transform: uppercase;
-    color: #409eff;
+    color: var(--c-brand);
     font-weight: 700;
   }
 
   .course-hero-desc {
     margin: 0;
-    color: #6b778c;
+    color: var(--c-text-2);
     font-size: 14px;
     line-height: 1.8;
   }
@@ -116,9 +116,9 @@ export default {
     gap: 8px;
     padding: 10px 14px;
     border-radius: 999px;
-    background: #ffffff;
-    border: 1px solid #d9e8fb;
-    color: #2d8cf0;
+    background: var(--c-bg-card);
+    border: 1px solid var(--c-brand-tint);
+    color: var(--c-brand);
     font-size: 13px;
     font-weight: 600;
     white-space: nowrap;
@@ -130,12 +130,12 @@ export default {
   border-radius: 16px;
   overflow: hidden;
   transition: all 0.3s;
-  border: 1px solid #e8eef5;
+  border: 1px solid var(--c-border);
   box-shadow: 0 8px 22px rgba(31, 45, 61, 0.06);
   &:hover {
     box-shadow: 0 14px 28px rgba(45, 140, 240, 0.14);
     transform: translateY(-4px);
-    border-color: #cfe3fb;
+    border-color: var(--c-brand-tint);
   }
   &-head {
     display: flex;
@@ -150,18 +150,18 @@ export default {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: #1f2d3d;
+    color: var(--c-text-1);
     flex: 1;
   }
   &-arrow {
     font-size: 12px;
-    color: #409eff;
+    color: var(--c-brand);
     font-weight: 600;
     white-space: nowrap;
   }
   &-desc {
     margin: 0;
-    color: #5c6b7a;
+    color: var(--c-text-2);
     font-size: 13px;
     line-height: 1.9;
     min-height: 52px;
@@ -181,11 +181,11 @@ export default {
   &-footer {
     margin-top: 16px;
     padding-top: 12px;
-    border-top: 1px dashed #e6edf5;
+    border-top: 1px dashed var(--c-border);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    color: #8a97a6;
+    color: var(--c-text-3);
   }
   &-tip {
     font-size: 12px;
@@ -194,7 +194,7 @@ export default {
 
 .course-empty {
   text-align: center;
-  color: #999;
+  color: var(--c-text-3);
   padding: 48px 16px;
 }
 

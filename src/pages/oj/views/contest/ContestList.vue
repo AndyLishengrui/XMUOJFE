@@ -52,11 +52,11 @@
             </p>
             <ul class="detail">
               <li>
-                <Icon type="calendar" color="#3091f2"></Icon>
+                <Icon type="calendar" color="var(--c-brand)"></Icon>
                 {{contest.start_time | localtime('YYYY-M-D HH:mm') }}
               </li>
               <li>
-                <Icon type="android-time" color="#3091f2"></Icon>
+                <Icon type="android-time" color="var(--c-brand)"></Icon>
                 {{getDuration(contest.start_time, contest.end_time)}}
               </li>
               <li>
@@ -212,10 +212,10 @@
           .title {
             font-size: 18px;
             a.entry {
-              color: #495060;
+              color: var(--c-text-2);
               &:hover {
-                color: #2d8cf0;
-                border-bottom: 1px solid #2d8cf0;
+                color: var(--c-brand);
+                border-bottom: 1px solid var(--c-brand);
               }
             }
           }

@@ -587,7 +587,7 @@
   .monaco-container {
     width: 100%;
     min-height: 300px;
-    border: 1px solid #e8e8e8;
+    border: 1px solid var(--c-border);
     border-radius: 4px;
     overflow: hidden;
   }
@@ -598,8 +598,8 @@
     align-items: center;
     margin-top: 10px;
     padding: 8px 12px;
-    background: #f8f8f9;
-    border: 1px solid #e8eaec;
+    background: var(--c-bg-soft);
+    border: 1px solid var(--c-border);
     border-radius: 4px;
 
     .action-left {
@@ -640,10 +640,10 @@
 
     .test-result {
       .result-output {
-        background: #f8f8f9;
+        background: var(--c-bg-soft);
         padding: 12px;
         border-radius: 4px;
-        border: 1px solid #e8eaec;
+        border: 1px solid var(--c-border);
         font-size: 13px;
         overflow-x: auto;
       }
@@ -652,7 +652,7 @@
 
   .debug-panel {
     margin-top: 10px;
-    border: 1px solid #e8eaec;
+    border: 1px solid var(--c-border);
     border-radius: 4px;
     overflow: hidden;
 
@@ -661,8 +661,8 @@
       justify-content: space-between;
       align-items: center;
       padding: 8px 12px;
-      background: #f8f8f9;
-      border-bottom: 1px solid #e8eaec;
+      background: var(--c-bg-soft);
+      border-bottom: 1px solid var(--c-border);
       font-weight: 600;
       font-size: 14px;
     }
@@ -686,8 +686,8 @@
     }
 
     .debug-output {
-      background: #1d1e1f;
-      color: #e8eaec;
+      background: var(--c-text-1);
+      color: var(--c-border);
       padding: 12px;
       border-radius: 4px;
       font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
@@ -707,7 +707,7 @@
     .debug-meta {
       margin-top: 8px;
       font-size: 12px;
-      color: #808695;
+      color: var(--c-text-3);
     }
   }
 </style>

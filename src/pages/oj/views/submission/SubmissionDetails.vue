@@ -38,33 +38,33 @@
 
     <!-- 算法助教分析：WA 或 Partial 时显示，无报告则零影响 -->
     <Col v-if="coachReport" :span="20" style="margin-top: 18px;">
-      <div style="background: #fff; border: 1px solid #d9d9d9; border-radius: 6px; padding: 20px 24px;">
-        <div style="font-size: 18px; font-weight: 700; margin-bottom: 16px; color: #1a1a2e; border-bottom: 2px solid #e8f0fe; padding-bottom: 10px;">
+      <div style="background: var(--c-bg-card); border: 1px solid var(--c-border-strong); border-radius: 6px; padding: 20px 24px;">
+        <div style="font-size: 18px; font-weight: 700; margin-bottom: 16px; color: var(--c-text-1); border-bottom: 2px solid var(--c-brand-tint); padding-bottom: 10px;">
           💡 算法助教分析
-          <span v-if="coachReport.status === 'done'" style="background: #e8f8e8; color: #2e7d32; font-size: 12px; margin-left: 10px; padding: 2px 10px; border-radius: 10px;">已确认</span>
-          <span v-if="coachReport.ac_after" style="background: #fff3e0; color: #e65100; font-size: 12px; margin-left: 10px; padding: 2px 10px; border-radius: 10px;">🎉 已AC</span>
+          <span v-if="coachReport.status === 'done'" style="background: var(--c-success-tint); color: var(--c-success); font-size: 12px; margin-left: 10px; padding: 2px 10px; border-radius: 10px;">已确认</span>
+          <span v-if="coachReport.ac_after" style="background: var(--c-warning-tint); color: var(--c-warning); font-size: 12px; margin-left: 10px; padding: 2px 10px; border-radius: 10px;">🎉 已AC</span>
         </div>
-        <div v-if="coachReport.code_analysis" style="margin-bottom: 14px; background: #fafbfc; border-radius: 4px; padding: 14px 16px;">
-          <div style="font-weight: 700; color: #333; margin-bottom: 8px; font-size: 15px;">📋 代码分析</div>
-          <div style="white-space: pre-wrap; color: #444; line-height: 1.8; font-size: 15px;">{{coachReport.code_analysis}}</div>
+        <div v-if="coachReport.code_analysis" style="margin-bottom: 14px; background: var(--c-bg-soft); border-radius: 4px; padding: 14px 16px;">
+          <div style="font-weight: 700; color: var(--c-text-1); margin-bottom: 8px; font-size: 15px;">📋 代码分析</div>
+          <div style="white-space: pre-wrap; color: var(--c-text-1); line-height: 1.8; font-size: 15px;">{{coachReport.code_analysis}}</div>
         </div>
-        <div v-if="coachReport.hints" style="margin-bottom: 14px; background: #fafbfc; border-radius: 4px; padding: 14px 16px;">
-          <div style="font-weight: 700; color: #333; margin-bottom: 8px; font-size: 15px;">💡 改进提示</div>
-          <div style="white-space: pre-wrap; color: #444; line-height: 1.8; font-size: 15px;">{{coachReport.hints}}</div>
+        <div v-if="coachReport.hints" style="margin-bottom: 14px; background: var(--c-bg-soft); border-radius: 4px; padding: 14px 16px;">
+          <div style="font-weight: 700; color: var(--c-text-1); margin-bottom: 8px; font-size: 15px;">💡 改进提示</div>
+          <div style="white-space: pre-wrap; color: var(--c-text-1); line-height: 1.8; font-size: 15px;">{{coachReport.hints}}</div>
         </div>
-        <div v-if="coachReport.common_pitfall" style="margin-bottom: 14px; background: #fafbfc; border-radius: 4px; padding: 14px 16px;">
-          <div style="font-weight: 700; color: #333; margin-bottom: 8px; font-size: 15px;">⚠️ 常见陷阱</div>
-          <div style="white-space: pre-wrap; color: #444; line-height: 1.8; font-size: 15px;">{{coachReport.common_pitfall}}</div>
+        <div v-if="coachReport.common_pitfall" style="margin-bottom: 14px; background: var(--c-bg-soft); border-radius: 4px; padding: 14px 16px;">
+          <div style="font-weight: 700; color: var(--c-text-1); margin-bottom: 8px; font-size: 15px;">⚠️ 常见陷阱</div>
+          <div style="white-space: pre-wrap; color: var(--c-text-1); line-height: 1.8; font-size: 15px;">{{coachReport.common_pitfall}}</div>
         </div>
         <!-- Feedback buttons -->
-        <div v-if="!fbSubmitted" style="margin-top: 18px; padding-top: 16px; border-top: 2px solid #e8eaec;">
-          <div style="font-size: 15px; color: #555; margin-bottom: 10px; font-weight: 500;">💬 这个分析对你有帮助吗？</div>
+        <div v-if="!fbSubmitted" style="margin-top: 18px; padding-top: 16px; border-top: 2px solid var(--c-border);">
+          <div style="font-size: 15px; color: var(--c-text-2); margin-bottom: 10px; font-weight: 500;">💬 这个分析对你有帮助吗？</div>
           <div style="display: flex; gap: 10px; flex-wrap: wrap;">
             <Button type="success" ghost @click="submitCoachFeedback('like')" :loading="fbLoading" style="border-width: 2px;">👍 有帮助</Button>
             <Button type="error" ghost @click="submitCoachFeedback('dislike')" :loading="fbLoading" style="border-width: 2px;">👎 有错误</Button>
           </div>
         </div>
-        <div v-else style="margin-top: 18px; padding-top: 16px; border-top: 2px solid #e8eaec; color: #19be6b; font-size: 14px; font-weight: 500;">
+        <div v-else style="margin-top: 18px; padding-top: 16px; border-top: 2px solid var(--c-border); color: var(--c-success); font-size: 14px; font-weight: 500;">
           {{ fbMsg }}
         </div>
       </div>

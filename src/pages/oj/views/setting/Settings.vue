@@ -98,7 +98,7 @@
               top: 50%;
               left: 50%;
               z-index: 3;
-              color: #fff;
+              color: var(--c-text-inverse);
               font-size: 16px;
               text-align: center;
               transform: translate(-50%, -50%);
@@ -119,7 +119,7 @@
         display: block;
         width: 1px;
         height: 100%;
-        background: #dddee1;
+        background: var(--c-border);
         position: absolute;
         top: 0;
         bottom: 0;
@@ -135,7 +135,7 @@
   }
 </style>
 
-<style lang="less">
+<style lang
   .setting-main {
     position: relative;
     margin: 10px 40px;
@@ -146,5 +146,7 @@
     .mini-container {
       width: 500px;
     }
+  }
+  }
   }
 </style>

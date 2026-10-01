@@ -160,7 +160,7 @@
               if (status === null || status === undefined) return undefined
               return h('Icon', {
                 props: { type: status === 0 ? 'checkmark-round' : 'minus-round', size: '16' },
-                style: { color: status === 0 ? '#19be6b' : '#ed3f14' }
+                style: { color: status === 0 ? 'var(--c-success)' : 'var(--c-error)' }
               })
             }
           })
@@ -247,7 +247,7 @@
     gap: 8px;
     .progress-stats {
       font-size: 14px;
-      color: #808695;
+      color: var(--c-text-3);
       margin-left: 12px;
       font-weight: normal;
     }
@@ -267,7 +267,7 @@
     }
     .view-mode-label {
       font-size: 13px;
-      color: #808695;
+      color: var(--c-text-3);
       white-space: nowrap;
     }
   }
@@ -275,10 +275,10 @@
     display: inline-block;
     max-width: 100%;
     padding: 3px 10px;
-    border: 1px solid #e3e8ee;
+    border: 1px solid var(--c-border);
     border-radius: 4px;
-    background: #f7f9fc;
-    color: #495060;
+    background: var(--c-bg-hover);
+    color: var(--c-text-2);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -304,18 +304,18 @@
     white-space: nowrap;
   }
   .table-tag-chip-primary {
-    color: #2d8cf0;
-    background: #eef6ff;
+    color: var(--c-brand);
+    background: var(--c-brand-tint);
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .table-tag-chip-more {
-    color: #657180;
-    background: #f3f5f7;
+    color: var(--c-text-2);
+    background: var(--c-bg-hover);
     flex-shrink: 0;
   }
   .table-tag-empty {
-    color: #9ea7b4;
+    color: var(--c-text-3);
     font-size: 12px;
   }
 </style>

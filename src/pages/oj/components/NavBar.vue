@@ -159,10 +159,10 @@
     height: auto;
     width: 100%;
     z-index: 1000;
-    background-color: #fff;
+    background-color: var(--c-bg-card);
     box-shadow: 0 1px 5px 0 rgba(0, 0, 0, 0.1);
     .oj-menu {
-      background: #fdfdfd;
+      background: var(--c-bg-soft);
     }
 
     .logo {
@@ -190,8 +190,8 @@
     .notif-bell {
       cursor: pointer;
       padding: 6px;
-      color: #666;
-      &:hover { color: #2d8cf0; }
+      color: var(--c-text-2);
+      &:hover { color: var(--c-brand); }
     }
     .btn-menu {
       font-size: 16px;

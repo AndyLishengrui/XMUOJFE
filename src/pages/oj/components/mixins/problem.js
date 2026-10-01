@@ -36,7 +36,7 @@ export default {
               size: '16'
             },
             style: {
-              color: status === 0 ? '#19be6b' : '#ed3f14'
+              color: status === 0 ? 'var(--c-success)' : 'var(--c-error)'
             }
           })
         }

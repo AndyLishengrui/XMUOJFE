@@ -58,7 +58,7 @@
           <TabPane label="公共题库" name="problems">
             <div class="uh-tab-body" v-if="profile.user">
               <div v-if="problems.length === 0" class="uh-empty">
-                <Icon type="ios-checkmark-circle-outline" size="40" color="#ccc"></Icon>
+                <Icon type="ios-checkmark-circle-outline" size="40" color="var(--c-text-3)"></Icon>
                 <p>暂无已解决的题目</p>
               </div>
               <div v-else>
@@ -88,7 +88,7 @@
                 <Spin></Spin>
               </div>
               <div v-else-if="contestSummary.total === 0" class="uh-empty">
-                <Icon type="ios-trophy-outline" size="40" color="#ccc"></Icon>
+                <Icon type="ios-trophy-outline" size="40" color="var(--c-text-3)"></Icon>
                 <p>暂无参与实验记录</p>
               </div>
               <div v-else class="uh-contest-list">
@@ -215,7 +215,7 @@
             title: 'AC',
             width: 80,
             render: (h, params) => {
-              const color = params.row.is_ac ? '#19be6b' : '#ed4014'
+              const color = params.row.is_ac ? 'var(--c-success)' : 'var(--c-error)'
               const text = params.row.is_ac ? '✓' : '✗'
               return h('span', { style: { color, fontWeight: 'bold' } }, text)
             }
@@ -232,7 +232,7 @@
               if (params.row.best_score !== null && params.row.best_score !== undefined) {
                 return h('span', {}, String(params.row.best_score))
               }
-              return h('span', { style: { color: '#999' } }, '-')
+              return h('span', { style: { color: 'var(--c-text-3)' } }, '-')
             }
           },
           {
@@ -240,7 +240,7 @@
             width: 100,
             render: (h, params) => {
               const n = params.row.error_number || 0
-              return h('span', { style: { color: n > 0 ? '#ed4014' : '#999' } }, n > 0 ? `+${n}` : '-')
+              return h('span', { style: { color: n > 0 ? 'var(--c-error)' : 'var(--c-text-3)' } }, n > 0 ? `+${n}` : '-')
             }
           }
         ]
@@ -375,7 +375,7 @@
 
 <style lang="less" scoped>
   .uh-page {
-    background: #f4f5f7;
+    background: var(--c-bg-soft);
     min-height: calc(100vh - 60px);
     padding: 32px 0 60px;
   }
@@ -392,7 +392,7 @@
   /* ── 左侧栏 ── */
   .uh-sidebar {
     flex: 0 0 240px;
-    background: #fff;
+    background: var(--c-bg-card);
     border-radius: 8px;
     box-shadow: 0 1px 4px rgba(0,0,0,.08);
     padding: 32px 20px 24px;
@@ -414,19 +414,19 @@
   .uh-username {
     font-size: 18px;
     font-weight: 700;
-    color: #1a1a1a;
+    color: var(--c-text-1);
     margin: 0 0 4px;
   }
 
   .uh-school {
     font-size: 13px;
-    color: #666;
+    color: var(--c-text-2);
     margin: 0 0 4px;
   }
 
   .uh-mood {
     font-size: 12px;
-    color: #999;
+    color: var(--c-text-3);
     margin: 0 0 16px;
     font-style: italic;
   }
@@ -435,8 +435,8 @@
     display: flex;
     justify-content: center;
     align-items: stretch;
-    border-top: 1px solid #f0f0f0;
-    border-bottom: 1px solid #f0f0f0;
+    border-top: 1px solid var(--c-border);
+    border-bottom: 1px solid var(--c-border);
     padding: 14px 0;
     margin: 16px 0;
     gap: 0;
@@ -448,20 +448,20 @@
 
   .uh-stat-divider {
     width: 1px;
-    background: #e8e8e8;
+    background: var(--c-border);
     margin: 4px 0;
   }
 
   .uh-stat-num {
     font-size: 20px;
     font-weight: 700;
-    color: #262626;
+    color: var(--c-text-1);
     line-height: 1.3;
   }
 
   .uh-stat-label {
     font-size: 11px;
-    color: #999;
+    color: var(--c-text-3);
     margin-top: 2px;
   }
 
@@ -473,18 +473,18 @@
   }
 
   .uh-social-link {
-    color: #666;
+    color: var(--c-text-2);
     transition: color .2s;
-    &:hover { color: #2d8cf0; }
+    &:hover { color: var(--c-brand); }
   }
 
   .uh-refresh-wrap {
     margin-top: 14px;
     font-size: 12px;
     .uh-refresh-link {
-      color: #999;
+      color: var(--c-text-3);
       cursor: pointer;
-      &:hover { color: #2d8cf0; }
+      &:hover { color: var(--c-brand); }
     }
   }
 
@@ -492,7 +492,7 @@
   .uh-main {
     flex: 1;
     min-width: 0;
-    background: #fff;
+    background: var(--c-bg-card);
     border-radius: 8px;
     box-shadow: 0 1px 4px rgba(0,0,0,.08);
   }
@@ -503,7 +503,7 @@
     }
     /deep/ .ivu-tabs-bar {
       margin-bottom: 0;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid var(--c-border);
     }
   }
 
@@ -516,16 +516,16 @@
   .uh-empty {
     text-align: center;
     padding: 60px 0;
-    color: #bbb;
+    color: var(--c-text-3);
     p { margin-top: 10px; font-size: 14px; }
   }
 
   /* ── 题目标签云 ── */
   .uh-problems-count {
     font-size: 13px;
-    color: #666;
+    color: var(--c-text-2);
     margin-bottom: 14px;
-    strong { color: #262626; }
+    strong { color: var(--c-text-1); }
   }
 
   .uh-problem-tags {
@@ -538,14 +538,14 @@
     display: inline-block;
     padding: 3px 10px;
     border-radius: 4px;
-    background: #e8f4ff;
-    color: #2d8cf0;
+    background: var(--c-brand-tint);
+    color: var(--c-brand);
     font-size: 12px;
     cursor: pointer;
     transition: background .15s, color .15s;
     &:hover {
-      background: #2d8cf0;
-      color: #fff;
+      background: var(--c-brand);
+      color: var(--c-text-inverse);
     }
   }
 
@@ -566,7 +566,7 @@
     justify-content: space-between;
     align-items: center;
     padding: 16px 0;
-    border-bottom: 1px solid #f5f5f5;
+    border-bottom: 1px solid var(--c-bg-soft);
     &:last-child { border-bottom: none; }
   }
 
@@ -578,7 +578,7 @@
   .uh-contest-title {
     font-size: 15px;
     font-weight: 500;
-    color: #2d8cf0;
+    color: var(--c-brand);
     cursor: pointer;
     display: block;
     margin-bottom: 6px;
@@ -601,18 +601,18 @@
     font-size: 11px;
     font-weight: 600;
     &.tag-acm {
-      background: #e8f4ff;
-      color: #2d8cf0;
+      background: var(--c-brand-tint);
+      color: var(--c-brand);
     }
     &.tag-oi {
-      background: #fff7e6;
-      color: #fa8c16;
+      background: var(--c-warning-tint);
+      color: var(--c-warning);
     }
   }
 
   .uh-meta-text {
     font-size: 12px;
-    color: #999;
+    color: var(--c-text-3);
   }
 
   .uh-contest-right {
@@ -623,22 +623,22 @@
 
   .uh-rank-badge {
     display: inline-block;
-    background: #19be6b;
-    color: #fff;
+    background: var(--c-success);
+    color: var(--c-text-inverse);
     padding: 2px 10px;
     border-radius: 3px;
     font-size: 12px;
     font-weight: 600;
     &.uh-rank-none {
-      background: #e8e8e8;
-      color: #aaa;
+      background: var(--c-border);
+      color: var(--c-text-3);
     }
   }
 
   .uh-contest-date {
     display: block;
     font-size: 11px;
-    color: #bbb;
+    color: var(--c-text-3);
     margin-top: 4px;
   }
 
@@ -654,13 +654,13 @@
   .uh-detail-title {
     font-size: 16px;
     font-weight: 600;
-    color: #262626;
+    color: var(--c-text-1);
   }
 
   .uh-detail-rank {
     margin-left: auto;
-    background: #19be6b;
-    color: #fff;
+    background: var(--c-success);
+    color: var(--c-text-inverse);
     padding: 2px 12px;
     border-radius: 3px;
     font-size: 13px;
@@ -669,7 +669,7 @@
 
   .uh-detail-stats {
     font-size: 13px;
-    color: #666;
+    color: var(--c-text-2);
     margin-bottom: 14px;
   }
 
@@ -686,11 +686,11 @@
     padding: 0 !important;
     height: auto !important;
     &:hover {
-      color: #2d8cf0 !important;
+      color: var(--c-brand) !important;
     }
   }
 
   .uh-detail-table {
-    /deep/ a { color: #2d8cf0; cursor: pointer; }
+    /deep/ a { color: var(--c-brand); cursor: pointer; }
   }
 </style>

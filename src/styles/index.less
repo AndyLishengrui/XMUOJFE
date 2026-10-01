@@ -1,2 +1,64 @@
+// ══════════════════════════════════════════════════════════════
+//  主题 token 输出
+//
+//  把 build/themes/*.js 里定义的 @c-* / @app-* 变量输出成 CSS 自定义属性，
+//  挂在 :root 上。这样它们就能被三处使用：
+//    · LESS 里        —— var(--c-brand) 或直接用 @c-brand
+//    · 组件的 <style> —— var(--c-brand)
+//    · JS / 内联样式  —— getComputedStyle(document.documentElement)
+//                        .getPropertyValue('--c-brand')
+//  最后一条很关键：ECharts 画在 canvas 上，读不到 CSS 变量，
+//  必须靠 getComputedStyle 取值（见 pages/oj/views/problem/chartData.js）。
+//
+//  ⚠️ 变量值来自 less-loader 的 modifyVars（见 build/utils.js），
+//     换主题 = 换 build/themes 下的那个文件，这里不用动。
+// ══════════════════════════════════════════════════════════════
+:root {
+  // 品牌
+  --c-brand: @c-brand;
+  --c-brand-hover: @c-brand-hover;
+  --c-brand-tint: @c-brand-tint;
+
+  // 文字三级 + 反白
+  --c-text-1: @c-text-1;
+  --c-text-2: @c-text-2;
+  --c-text-3: @c-text-3;
+  --c-text-inverse: @c-text-inverse;
+
+  // 背景
+  --c-bg-page: @c-bg-page;
+  --c-bg-card: @c-bg-card;
+  --c-bg-soft: @c-bg-soft;
+  --c-bg-hover: @c-bg-hover;
+
+  // 边框
+  --c-border: @c-border;
+  --c-border-strong: @c-border-strong;
+
+  // 语义
+  --c-success: @c-success;
+  --c-warning: @c-warning;
+  --c-error: @c-error;
+  --c-info: @c-info;
+
+  // 提交结果的独立状态色（ECharts 饼图用）
+  --c-st-mle: @c-st-mle;
+  --c-st-re: @c-st-re;
+  --c-st-ce: @c-st-ce;
+
+  // 语义色的极浅底（状态徽章/提示条背景）——暗色主题下必须跟着变暗
+  --c-success-tint: @c-success-tint;
+  --c-warning-tint: @c-warning-tint;
+  --c-error-tint: @c-error-tint;
+
+  // 代码
+  --c-code-bg: @c-code-bg;
+  --c-code-text: @c-code-text;
+
+  // 布局
+  --app-page-bg: @app-page-bg;
+  --app-card-bg: @app-card-bg;
+}
+
 @import './common.less';
 @import './iview-custom.less';
