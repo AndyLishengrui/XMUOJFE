@@ -84,12 +84,6 @@
         <Icon type="refresh"></Icon>
         {{$t('m.Reset')}}
       </Button>
-
-      <!-- 「随机一题」原来在侧栏底部，侧栏去掉后挪到这里 -->
-      <Button type="ghost" @click="pickone">
-        <Icon type="shuffle"></Icon>
-        {{$t('m.Pick_One')}}
-      </Button>
     </div>
 
     <div v-if="hasActiveFilters" class="active-filters-bar">
@@ -296,12 +290,6 @@
         this.showTagColumn = false
         this.query.view = ''
         this.$router.push({name: 'problem-list'})
-      },
-      pickone () {
-        api.pickone().then(res => {
-          this.$success('Good Luck')
-          this.$router.push({name: 'problem-details', params: {problemID: res.data.data}})
-        })
       },
       renderProblemLink (h, params) {
         return h('Button', {
@@ -779,9 +767,5 @@
 
   /deep/ .ivu-table-cell {
     overflow: hidden;
-  }
-
-  #pick-one {
-    margin-top: 18px;
   }
 </style>
