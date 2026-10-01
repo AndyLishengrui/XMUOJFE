@@ -162,6 +162,7 @@ export const m = {
   Palette_Sand: 'Sand',
   Title: 'Title',
   Start_Time: 'Start Time',
+  End_Time: 'End Time',
   Teacher: 'Teacher',
   NavStatus: 'Status',
   Rank: 'Rank',

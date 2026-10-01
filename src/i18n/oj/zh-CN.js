@@ -164,6 +164,7 @@ export const m = {
   Palette_Sand: '暖砂',
   Title: '标题',
   Start_Time: '开始时间',
+  End_Time: '截止时间',
   Teacher: '任课老师',
   NavCourses: '课程',
   Course_List: '课程列表',

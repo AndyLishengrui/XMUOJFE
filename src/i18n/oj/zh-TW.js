@@ -160,6 +160,7 @@ export const m = {
   Palette_Sand: '暖砂',
   Title: '標題',
   Start_Time: '開始時間',
+  End_Time: '截止時間',
   Teacher: '任課老師',
   NavStatus: '狀態',
   Rank: '排名',

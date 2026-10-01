@@ -42,6 +42,7 @@
         </ul>
       </div>
       <Table id="contest-table" :columns="columns" :data="contests" stripe
+             @on-sort-change="handleSortChange"
              :no-data-text="$t('m.No_contest')"></Table>
     </Panel>
     <Pagination :total="total" :page-size.sync="limit" @on-change="changeRoute" :current.sync="page" :show-sizer="true" @on-page-size-change="changeRoute"></Pagination>
@@ -71,6 +72,10 @@
     return Object.assign({}, c, {author: cb.real_name || cb.username || ''})
   }
 
+  // 走**服务端**排序的列（= 后端 CONTEST_ORDERING_FIELDS 的键）。
+  // 其余 sortable 列（「任课老师」）仍是前端当前页排序 —— 见 columns 里的注释。
+  const SERVER_SORT_KEYS = ['title', 'start_time', 'end_time']
+
   export default {
     name: 'contest-list',
     components: {
@@ -86,7 +91,10 @@
           // 作者筛选（后端 owner 参数：匹配创建者的用户名或中文姓名）
           owner: '',
           // 由路由 meta.category 决定（实验 / 题库）：交给后端过滤，不再在客户端筛
-          category: ''
+          category: '',
+          // 表头排序，形如 'start_time' / '-end_time'（空 = 后端默认序 -start_time）。
+          // 放在 query 里是为了跟着其它筛选条件一起进 URL：刷新/后退/分享链接都不丢。
+          ordering: ''
         },
         limit: limit,
         total: 0,
@@ -128,6 +136,7 @@
         this.query.rule_type = route.rule_type || ''
         this.query.keyword = route.keyword || ''
         this.query.owner = route.owner || ''
+        this.query.ordering = route.ordering || ''
         this.query.category = this.$route.meta.category || ''
         this.page = parseInt(route.page) || 1
         this.limit = parsePageSize(route.limit)
@@ -174,6 +183,17 @@
         this.page = 1
         this.changeRoute()
       },
+      // 表头点击排序：改写 ordering → 进 URL → $route 变化触发 init() 重新取数。
+      // iView 给的 order 是 'asc' | 'desc' | 'normal'（第三次点同一列 = normal = 取消，
+      // 回到后端默认序 -start_time）。
+      // ⚠️ iView 对**所有** sortable 列都发这个事件（table.vue 的 handleSort 无条件 emit），
+      //    包括前端排序的「任课老师」列 —— 那一列必须在这里直接放过去，否则会被清掉。
+      handleSortChange ({ key, order }) {
+        if (SERVER_SORT_KEYS.indexOf(key) === -1) return
+        this.query.ordering = order === 'normal' ? '' : (order === 'desc' ? '-' : '') + key
+        this.page = 1
+        this.changeRoute()
+      },
       goContest (contest) {
         this.cur_contest_id = contest.id
         if (contest.contest_type !== CONTEST_TYPE.PUBLIC && !this.isAuthenticated) {
@@ -202,6 +222,9 @@
             title: self.$i18n.t('m.Title'),
             key: 'title',
             minWidth: 280,
+            // 'custom' = 不做本地排序，只发 on-sort-change 让服务端重排（见 handleSortChange）。
+            // 用 'custom' 而不是 true 的原因：列表是**服务端分页**的，本地排序只作用于当前页。
+            sortable: 'custom',
             render (h, params) {
               let row = params.row
               let children = [
@@ -229,9 +252,13 @@
             title: self.$i18n.t('m.Teacher'),
             key: 'author',
             width: 150,
+            // ⚠️ 这一列**故意**保持前端排序（只作用于当前页）——和上面三列不一样。
+            //    原因：`localeCompare(..., 'zh-Hans-CN')` 按**拼音**排，而数据库
+            //    ORDER BY 是按 Unicode 码位排（曾 U+66FE < 李 U+674E，但拼音是 李 < 曾），
+            //    改成服务端排序会让老师看到"排错了"。列表一页放得下（实验 25 条），
+            //    所以当前页排序实际等于全量排序。要改需后端加拼音排序，另议。
             sortable: true,
             // a/b 是 row.author 的值（见文件顶部 withAuthor 的注释），不是整行
-            // ⚠️ 服务端分页，排序只作用于「当前页」
             sortMethod: (a, b) => String(a || '').localeCompare(String(b || ''), 'zh-Hans-CN'),
             render (h, params) {
               return h('span', params.row.author || '-')
@@ -244,8 +271,18 @@
             title: self.$i18n.t('m.Start_Time'),
             key: 'start_time',
             width: 170,
+            sortable: 'custom',
             render (h, params) {
               return h('span', time.utcToLocal(params.row.start_time, 'YYYY-M-D HH:mm'))
+            }
+          },
+          {
+            title: self.$i18n.t('m.End_Time'),
+            key: 'end_time',
+            width: 170,
+            sortable: 'custom',
+            render (h, params) {
+              return h('span', time.utcToLocal(params.row.end_time, 'YYYY-M-D HH:mm'))
             }
           },
           {
