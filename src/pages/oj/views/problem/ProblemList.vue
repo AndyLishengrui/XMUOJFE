@@ -24,6 +24,34 @@
         </Dropdown-menu>
       </Dropdown>
 
+      <!-- 标签筛选：全站有 327 个标签，侧栏永远列不完 → 改成「可搜索的下拉」 -->
+      <Poptip v-model="tagPickerVisible" placement="bottom-end" width="380" trigger="click">
+        <Button :type="query.tag ? 'primary' : 'default'">
+          <Icon type="pricetags"></Icon>
+          {{ query.tag || $t('m.Tags') }}
+          <Icon type="arrow-down-b"></Icon>
+        </Button>
+        <div slot="content" class="tag-picker">
+          <Input v-model="tagKeyword"
+                 :placeholder="$t('m.Tag_Search_Placeholder')"
+                 icon="ios-search-strong"/>
+          <div class="tag-picker-list">
+            <div v-if="query.tag" class="tag-picker-current">
+              <span class="tag-picker-label">{{$t('m.Current_Tag')}}</span>
+              <Tag color="blue" closable @on-close="clearTagFilter">{{query.tag}}</Tag>
+            </div>
+            <div class="tag-picker-cloud">
+              <span v-for="tag in filteredTagList"
+                    :key="tag.name"
+                    class="tag-pill"
+                    :class="{ 'is-active': query.tag === tag.name }"
+                    @click="pickTag(tag.name)">{{tag.name}}</span>
+            </div>
+            <div v-if="!filteredTagList.length" class="tag-picker-empty">{{$t('m.No_Tags_Found')}}</div>
+          </div>
+        </div>
+      </Poptip>
+
       <!-- 两个开关是「设置项」（设一次就不动），收进弹层，不再各占一个 210px 的盒子 -->
       <Poptip placement="bottom-end" width="300" trigger="click">
         <Button :type="showSourceColumn || showTagColumn ? 'primary' : 'default'"
@@ -56,6 +84,12 @@
         <Icon type="refresh"></Icon>
         {{$t('m.Reset')}}
       </Button>
+
+      <!-- 「随机一题」原来在侧栏底部，侧栏去掉后挪到这里 -->
+      <Button type="ghost" @click="pickone">
+        <Icon type="shuffle"></Icon>
+        {{$t('m.Pick_One')}}
+      </Button>
     </div>
 
     <div v-if="hasActiveFilters" class="active-filters-bar">
@@ -71,90 +105,27 @@
       </Tag>
     </div>
 
-    <Row type="flex" :gutter="18">
-      <Col :span="19">
-        <Panel shadow>
-          <div slot="title">{{$t('m.Problem_List')}}</div>
-          <div slot="extra" class="list-summary">
-            <span>{{total}}</span>
-            <span>{{$t('m.Problem_Search_Summary')}}</span>
-          </div>
-          <Table class="pl-table"
-                 style="width: 100%;"
-                 :columns="tableColumns"
-                 :data="problemList"
-                 :loading="loadings.table"
-                 disabled-hover></Table>
-        </Panel>
-        <Pagination
-          :total="total"
-          :page-size.sync="query.limit"
-          :current.sync="query.page"
-          :show-sizer="true"
-          @on-change="handlePageChange"
-          @on-page-size-change="handlePageSizeChange"></Pagination>
-      </Col>
-
-      <Col :span="5">
-        <div class="tag-sidebar-wrapper">
-          <Panel :padding="12">
-            <div slot="title" class="taglist-title">{{$t('m.Tags')}}</div>
-
-            <div class="tag-search-box">
-              <Input v-model="tagKeyword"
-                     :placeholder="$t('m.Tag_Search_Placeholder')"
-                     icon="ios-pricetags"/>
-            </div>
-
-            <div v-if="query.tag" class="tag-panel-section current-tag-section">
-              <div class="section-title">{{$t('m.Current_Tag')}}</div>
-              <div class="current-tag-row">
-                <Tag color="blue">{{query.tag}}</Tag>
-                <Button type="text" @click="clearTagFilter">{{$t('m.Clear_Filter')}}</Button>
-              </div>
-            </div>
-
-            <div v-if="featuredTagList.length && !tagKeyword" class="tag-panel-section">
-              <div class="section-title">{{$t('m.Popular_Tags')}}</div>
-              <div class="tag-button-group">
-                <Button v-for="tag in featuredTagList"
-                        :key="'featured-' + tag.name"
-                        @click="filterByTag(tag.name)"
-                        :type="query.tag === tag.name ? 'primary' : 'ghost'"
-                        shape="circle"
-                        class="tag-btn">
-                  {{tag.name}} ({{tag.problem_count}})
-                </Button>
-              </div>
-            </div>
-
-            <div class="tag-panel-section">
-              <div class="section-title">{{tagKeyword ? $t('m.Tag_Search_Result') : $t('m.More_Tags')}}</div>
-              <div v-if="visibleTagList.length" class="tag-button-group">
-                <Button v-for="tag in visibleTagList"
-                        :key="tag.name"
-                        @click="filterByTag(tag.name)"
-                        :type="query.tag === tag.name ? 'primary' : 'ghost'"
-                        shape="circle"
-                        class="tag-btn">
-                  {{tag.name}} ({{tag.problem_count}})
-                </Button>
-              </div>
-              <div v-else class="empty-tag-tip">{{$t('m.No_Tags_Found')}}</div>
-              <Button v-if="canToggleMoreTags" type="text" long @click="tagsExpanded = !tagsExpanded">
-                {{tagsExpanded ? $t('m.Collapse_Tags') : $t('m.Expand_Tags')}}
-              </Button>
-            </div>
-
-            <Button long id="pick-one" @click="pickone">
-              <Icon type="shuffle"></Icon>
-              {{$t('m.Pick_One')}}
-            </Button>
-          </Panel>
-          <Spin v-if="loadings.tag" fix size="large"></Spin>
-        </div>
-      </Col>
-    </Row>
+    <!-- 侧栏已去掉：标签筛选并进了工具栏，表格因此拿到全宽 -->
+    <Panel shadow class="pl-panel">
+      <div slot="title">{{$t('m.Problem_List')}}</div>
+      <div slot="extra" class="list-summary">
+        <span>{{total}}</span>
+        <span>{{$t('m.Problem_Search_Summary')}}</span>
+      </div>
+      <Table class="pl-table"
+             style="width: 100%;"
+             :columns="tableColumns"
+             :data="problemList"
+             :loading="loadings.table"
+             disabled-hover></Table>
+    </Panel>
+    <Pagination
+      :total="total"
+      :page-size.sync="query.limit"
+      :current.sync="query.page"
+      :show-sizer="true"
+      @on-change="handlePageChange"
+      @on-page-size-change="handlePageSizeChange"></Pagination>
   </div>
 </template>
 
@@ -177,6 +148,7 @@
         problemList: [],
         total: 0,
         tagKeyword: '',
+        tagPickerVisible: false,
         tagsExpanded: false,
         tagSearchTimer: null,
         showSourceColumn: false,
@@ -261,6 +233,12 @@
         this.query.tag = tagName
         this.query.page = 1
         this.pushRouter()
+      },
+      // 弹层里点标签：筛选 + 收起弹层（并清掉搜索词，下次打开是完整列表）
+      pickTag (tagName) {
+        this.filterByTag(tagName)
+        this.tagPickerVisible = false
+        this.tagKeyword = ''
       },
       clearTagFilter () {
         this.query.tag = ''
@@ -537,15 +515,6 @@
           this.init(true)
         }
       },
-      'tagKeyword' () {
-        this.tagsExpanded = false
-        if (this.tagSearchTimer) {
-          clearTimeout(this.tagSearchTimer)
-        }
-        this.tagSearchTimer = setTimeout(() => {
-          this.getTagList()
-        }, 180)
-      },
       'isAuthenticated' (newVal) {
         if (newVal === true) {
           this.init()
@@ -578,6 +547,70 @@
   .pl-search {
     flex: 1 1 260px;
     min-width: 200px;
+  }
+
+  /* ── 标签选择弹层 ──────────────────────────────────────
+     全站 327 个标签，靠「搜索 + 紧凑 pill 云」，而不是长列表按钮 */
+  .tag-picker .ivu-input-wrapper {
+    margin-bottom: 10px;
+  }
+
+  .tag-picker-list {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-right: -4px;
+    padding-right: 4px;
+  }
+
+  .tag-picker-current {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--c-border);
+  }
+
+  .tag-picker-label {
+    font-size: 12px;
+    color: var(--c-text-3);
+  }
+
+  .tag-picker-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .tag-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--c-text-2);
+    background: var(--c-bg-soft);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+
+  .tag-pill:hover {
+    color: var(--c-brand);
+    background: var(--c-brand-tint);
+  }
+
+  .tag-pill.is-active {
+    color: var(--c-text-inverse);
+    background: var(--c-brand);
+    border-color: var(--c-brand);
+  }
+
+  .tag-picker-empty {
+    padding: 24px 0;
+    text-align: center;
+    font-size: 12px;
+    color: var(--c-text-3);
   }
 
   /* 齿轮弹层里的两个开关 */
@@ -693,58 +726,14 @@
     line-height: 20px;
   }
 
-  .tag-sidebar-wrapper {
-    position: relative;
-  }
 
-  .tag-search-box {
-    margin-bottom: 14px;
-  }
 
-  .taglist-title {
-    margin-left: -10px;
-    margin-bottom: -10px;
-  }
 
-  .tag-panel-section + .tag-panel-section {
-    margin-top: 14px;
-    padding-top: 14px;
-    border-top: 1px solid var(--c-border);
-  }
 
-  .section-title {
-    font-size: 12px;
-    color: var(--c-text-3);
-    margin-bottom: 8px;
-  }
 
-  .current-tag-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
 
-  .tag-button-group {
-    display: flex;
-    flex-wrap: wrap;
-  }
 
-  /* 侧栏标签：原来是 iView 默认的 32px 高 / 14px 字，偏大，压到 26/12 */
-  .tag-btn {
-    margin-right: 6px;
-    margin-bottom: 8px;
-    height: 26px;
-    line-height: 24px;
-    padding: 0 10px;
-    font-size: 12px;
-  }
 
-  .empty-tag-tip {
-    color: var(--c-text-3);
-    font-size: 13px;
-    line-height: 1.6;
-  }
 
   .table-tag-list {
     display: flex;
