@@ -118,7 +118,6 @@
       :page-size.sync="query.limit"
       :current.sync="query.page"
       :show-sizer="true"
-      :page-size-opts="[30, 50, 100, 200]"
       @on-change="handlePageChange"
       @on-page-size-change="handlePageSizeChange"></Pagination>
   </div>
@@ -130,6 +129,8 @@
   import utils from '@/utils/utils'
   import { ProblemMixin } from '@oj/components/mixins'
   import Pagination from '@oj/components/Pagination'
+  // 每页条数档位与默认值 —— 全站统一，别再各页写死（见 constants.js 的注释）
+  import { DEFAULT_PAGE_SIZE, parsePageSize } from '@/utils/constants'
 
   export default {
     name: 'ProblemList',
@@ -158,7 +159,7 @@
           difficulty: '',
           tag: '',
           page: 1,
-          limit: 30,
+          limit: DEFAULT_PAGE_SIZE,
           view: '',
           source: '0'
         }
@@ -183,11 +184,8 @@
         if (this.query.page < 1) {
           this.query.page = 1
         }
-        // 每页 30 起（10 条太稀疏）；URL 里带了非法档位也回落到 30
-        const limitOpts = [30, 50, 100, 200]
-        this.query.limit = limitOpts.indexOf(parseInt(query.limit)) !== -1
-          ? parseInt(query.limit)
-          : 30
+        // 每页 30 起（10 条太稀疏）；URL 里带了非法档位（老链接的 limit=10）也回落到 30
+        this.query.limit = parsePageSize(query.limit)
         this.query.view = query.view === 'study' ? 'study' : ''
         this.query.source = query.source === '1' ? '1' : '0'
         this.showSourceColumn = this.query.source !== '0'

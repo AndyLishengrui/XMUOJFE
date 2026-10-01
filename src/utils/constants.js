@@ -119,6 +119,21 @@ export const STORAGE_KEY = {
   languages: 'languages_v2'
 }
 
+// ── 分页「每页条数」档位（学生端全站统一）────────────────────────────
+// 🔑 各页的默认每页条数**必须是这里的一员**：iView 的分页下拉是个 Select，
+//    当前值靠 getOptionData(value) 去选项里查 label（见 select.vue），
+//    查不到就返回 null → 下拉框显示**空白**（而不是回落到第一项）。
+//    原先 /contest 默认 15、/status 默认 12 都不在档位里，选择框一直是空的。
+export const PAGE_SIZE_OPTS = [30, 50, 100, 200]
+export const DEFAULT_PAGE_SIZE = 30
+
+// URL 里的 limit 参数只接受合法档位（老链接可能还带着已去掉的 limit=10），
+// 非法值一律回落到默认档 —— 否则又会出现"数据条数和选择器对不上"。
+export function parsePageSize (raw) {
+  const size = parseInt(raw)
+  return PAGE_SIZE_OPTS.indexOf(size) !== -1 ? size : DEFAULT_PAGE_SIZE
+}
+
 export function buildProblemCodeKey (problemID, contestID = null) {
   if (contestID) {
     return `${STORAGE_KEY.PROBLEM_CODE}_${contestID}_${problemID}`

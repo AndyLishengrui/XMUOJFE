@@ -150,6 +150,17 @@ export const m = {
   Home: '首頁',
   NavProblems: '試題',
   Contests: '比賽',
+  Question_Bank: '題庫',
+  // 導覽列「網站配色」切換（三套配色見 build/themes/）
+  // ⚠️ 別用 m.Theme —— 該鍵已被 Monaco/CodeMirror 的「編輯器主題」佔用
+  Palette: '配色',
+  Palette_Auto: '跟隨網站',
+  Palette_Light: '晴空',
+  Palette_Deep: '深靛',
+  Palette_Sand: '暖砂',
+  Title: '標題',
+  Start_Time: '開始時間',
+  Teacher: '任課老師',
   NavStatus: '狀態',
   Rank: '排名',
   ACM_Rank: 'ACM 排名',

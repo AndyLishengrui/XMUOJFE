@@ -152,6 +152,17 @@ export const m = {
   Home: 'Home',
   NavProblems: 'Problems',
   Contests: 'Contests',
+  Question_Bank: 'Question Bank',
+  // Navbar site-palette switcher (the three palettes live in build/themes/)
+  // ⚠️ not m.Theme — that key belongs to the Monaco/CodeMirror editor theme selector
+  Palette: 'Theme',
+  Palette_Auto: 'Follow site',
+  Palette_Light: 'Sky',
+  Palette_Deep: 'Indigo',
+  Palette_Sand: 'Sand',
+  Title: 'Title',
+  Start_Time: 'Start Time',
+  Teacher: 'Teacher',
   NavStatus: 'Status',
   Rank: 'Rank',
   ACM_Rank: 'ACM Rank',

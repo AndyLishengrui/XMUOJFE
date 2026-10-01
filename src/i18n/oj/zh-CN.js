@@ -154,6 +154,17 @@ export const m = {
   Home: '首页',
   NavProblems: '问题',
   Contests: '实验',
+  Question_Bank: '题库',
+  // 导航栏「站点配色」切换（三套配色见 build/themes/）
+  // ⚠️ 别用 m.Theme —— 那个键已经被 Monaco/CodeMirror 的「编辑器主题」占用了
+  Palette: '配色',
+  Palette_Auto: '跟随站点',
+  Palette_Light: '晴空',
+  Palette_Deep: '深靛',
+  Palette_Sand: '暖砂',
+  Title: '标题',
+  Start_Time: '开始时间',
+  Teacher: '任课老师',
   NavCourses: '课程',
   Course_List: '课程列表',
   Course_Detail: '课程详情',

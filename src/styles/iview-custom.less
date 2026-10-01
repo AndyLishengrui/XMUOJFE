@@ -41,6 +41,24 @@
   background-color: var(--c-bg-card);
 }
 
+// ── 分页「当前页」要把底色还回品牌色 ─────────────────────────────
+// 🔥 上面那组里的 `.ivu-page-item{background-color:var(--c-bg-card)}` 与 iView 的
+//    `.ivu-page-item-active{background-color:@primary-color}` **权重相同**（都是单个类），
+//    而本文件加载在 iView 之后 → 当前页的品牌底色被覆盖成了**卡片底色**。
+//    可 iView 给当前页码的文字写死的是 `a{color:#fff}`（不跟主题走）
+//    → 暖砂 / 晴空（卡片是白的）下变成**白字白底，页码整个看不见**。
+//    （深靛的卡片是深色，反而碰巧正常 —— 所以三套里只有亮底的两套会暴露。）
+//    文字用 --c-text-inverse（三套主题下都是 #fff），跟 iView 原意一致。
+.ivu-page-item-active {
+  background-color: var(--c-brand);
+  border-color: var(--c-brand);
+
+  a,
+  &:hover a {
+    color: var(--c-text-inverse);
+  }
+}
+
 // ── 表格表头 ──────────────────────────────────────────────────
 // 🔑 表头底色**不能**用 --c-bg-card：iView 走的是另一个变量 @table-thead-bg
 //    （亮色下 #f8f8f9 ≠ 卡片的 #fff）。先前把它混进上面那组，
@@ -128,16 +146,38 @@
   background-color: var(--c-bg-card);
 }
 
-table {
+// ── 表格宽度 ──────────────────────────────────────────────────
+// 🔥 原来这里是**全站** `table { width: 100% !important; }`，它把 iView 数据表的宽度也压掉了：
+//    iView 反着来 —— 它把内层 <table> 的行内宽度设成**各列宽度之和**
+//    （node_modules/iview/src/components/table/table.vue:450 算出、:260-274 写成 style="width:6346px"），
+//    连它自带的 `width: 100%` 都是**注释掉的**（iview/src/styles/components/table.less:136-139）。
+//    而作者 !important 会压过行内样式 ⇒ 列少时（列宽之和 < 容器）被拉伸铺满、看不出问题；
+//    **列一多**（比赛排名页 83 道题 × 72px ≈ 6346px）整张表被强行压回容器宽度，
+//    列挤成最小内容宽度、数字互相撞 —— 老师报的"题目一多就挤在一起"就是这个。
+//
+//    改成 min-width 后两种情形都正确：
+//      · 容器更宽 → min-width 生效，与原来的 width:100% **走同一条代码路径**（其它页面逐像素不变）
+//      · 列宽之和更宽 → 表格保持设计宽度，交给 .ivu-table-body 横向滚动
+//    ⚠️ 别直接删这条规则：题目列表等页面正是靠它撑满，删了右边会空一大块。
+.ivu-table table {
+  min-width: 100%;
+}
+
+// 非 iView 的表格（题面/公告里的 markdown 表、代码块行号表）照旧铺满
+.markdown-body table,
+.hljs-ln {
   width: 100% !important;
 }
-.auto-resize {
-  table {
-    table-layout: auto !important;
-  }
-}
+
 .ivu-table-wrapper {
   border: none;
+}
+
+// 冻结列（iView 的 fixed:'left'）与主表之间的分隔：
+// iView 把阴影写死成 rgba(0,0,0,.2)，深靛主题的卡片本来就暗，等于看不见 → 冻结列会"糊"进主表。
+// --c-border-strong 在亮/暖砂是深色描边、在深靛是浅色描边，三套主题都分得开。
+.ivu-table-fixed {
+  box-shadow: 2px 0 6px -2px var(--c-border-strong);
 }
 
 .ivu-table td {
@@ -152,9 +192,14 @@ table {
   border-bottom-color: var(--c-border);
 }
 
+// 首杀格子：原来底色和文字都被抽成同一个 --c-success ⇒ **字和底同色、看不见**。
+// 用 .ac 同族的写法，再拿一道描边把"首杀"和普通 AC 区分开。
+// ⚠️ 不要改成"绿底白字"：深靛主题的 --c-success 是浅薄荷绿，白字对比度只有 ~1.9:1。
 .ivu-table .first-ac {
-  background-color: var(--c-success);
+  background-color: var(--c-success-tint);
   color: var(--c-success);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1.5px var(--c-success);
 }
 
 .ivu-table .ac {

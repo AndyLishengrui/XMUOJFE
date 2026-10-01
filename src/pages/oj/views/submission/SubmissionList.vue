@@ -49,7 +49,7 @@
 <script>
   import { mapActions, mapGetters } from 'vuex'
   import api from '@oj/api'
-  import { JUDGE_STATUS, USER_TYPE } from '@/utils/constants'
+  import { JUDGE_STATUS, USER_TYPE, DEFAULT_PAGE_SIZE } from '@/utils/constants'
   import utils from '@/utils/utils'
   import time from '@/utils/time'
   import Pagination from '@/pages/oj/components/Pagination'
@@ -177,7 +177,8 @@
         loadingTable: false,
         submissions: [],
         total: 30,
-        limit: 12,
+        // 原为 12 —— 不在分页器档位（30/50/100/200）里，选择框一直显示空白
+        limit: DEFAULT_PAGE_SIZE,
         page: 1,
         contestID: '',
         problemID: '',

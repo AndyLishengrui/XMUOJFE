@@ -92,16 +92,27 @@ const mode = process.env.THEME_MODE || 'auto'
 if (THEMES.concat('auto').indexOf(mode) === -1) fail(`THEME_MODE 只能是 auto/light/deep/sand，收到 "${mode}"`)
 
 const entries = THEMES.map(t => `${t}:'/static/css/${map[t]}'`).join(',')
+//
+// 优先级（从高到低）：
+//   ① `?theme=xxx`  —— 排障/预览后门，最高，谁都盖不过
+//   ② 用户自己选的（存在浏览器 localStorage 里）—— **只在站点档位是 auto 时生效**
+//   ③ 站点档位 ${mode} —— 由 set_theme.sh 改；站点一旦钉死某套，就以站点为准（用户改不动）
+// 必须在 CSS 加载**之前**决定，否则会先闪一下默认配色。
 const script =
   '<script>(function(){' +
-  `var t='${mode}';` +                                     // ← set_theme.sh 只改这一个词
+  `var site='${mode}';` +                                  // ← set_theme.sh 只改这一个词
   `var CSS={${entries}};` +
-  // 自动档：按访问者本地小时数选配色
+  "var pick=null;try{pick=localStorage.getItem('oj_theme')}catch(e){}" +
+  'var t=site;' +
+  "if(t==='auto'&&pick&&CSS[pick])t=pick;" +               // ② 站点是自动档时才让用户偏好生效
+  // ③ 自动档：按访问者本地小时数选配色
   "if(t==='auto'){var h=new Date().getHours();t=h<7?'deep':(h<19?'light':'sand');}" +
-  "var m=location.search.match(/[?&]theme=(light|deep|sand)\\b/);" +  // 预览后门（优先级最高）
+  "var m=location.search.match(/[?&]theme=(light|deep|sand)\\b/);" +  // ① 预览后门（优先级最高）
   'if(m)t=m[1];' +
   "document.write('<link rel=stylesheet href=\"'+CSS[t]+'\">');" +
-  "document.documentElement.setAttribute('data-theme',t)" +
+  "document.documentElement.setAttribute('data-theme',t);" +
+  // 给导航栏用：站点档 / 本机选择 / 实际生效 / 用户能不能自选
+  "window.__OJ_THEME__={css:CSS,site:site,pick:pick,resolved:t,switchable:site==='auto'}" +
   '})()</script>'
 
 const out = html.replace(LINK_RE, script)

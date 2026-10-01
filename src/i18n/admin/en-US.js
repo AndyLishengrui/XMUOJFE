@@ -161,6 +161,8 @@ export const m = {
   Exam_Mode_Desc: 'Prevent students from downloading test cases via plugin',
   Show_Problem_Links: 'Show Reference Links',
   Show_Problem_Links_Desc: 'When on, students can see the reference solution and original-problem links in a problem hint',
+  Question_Bank_Mode: 'Question Bank',
+  Question_Bank_Mode_Desc: 'When on, this contest appears on the Question Bank page; off shows it as a class experiment',
   Public_Bank_Show_Links: 'Public Bank: Show Reference Links',
   Public_Bank_Show_Links_Desc: 'Applies to public-bank problems only; problems inside a contest follow that contest setting',
   // Dashboard.vue

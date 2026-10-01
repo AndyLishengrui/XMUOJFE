@@ -29,12 +29,12 @@
     <div v-show="showChart" class="echarts">
       <ECharts :options="options" ref="chart" auto-resize></ECharts>
     </div>
+        <!-- 不设 height：表格有多行就多高，高度跟着"每页条数"变（老师要求），
+             页面整体滚动。横向滚动是 iView 按实测宽度自己开的（.ivu-table-overflowX）。 -->
         <Table ref="tableRank"
-          class="contest-rank-table auto-resize"
+          class="contest-rank-table"
           :columns="columns"
-          :data="dataRank"
-          disabled-hover
-          height="600"></Table>
+          :data="dataRank"></Table>
     <Pagination :total="total"
                 :page-size.sync="limit"
                 :current.sync="page"
@@ -61,10 +61,15 @@
         total: 0,
         page: 1,
         contestID: '',
+        // ⚠️ 前几列固定 width + fixed:'left'（冻结）：题目一多表格要横向滚动 6000+ px，
+        //    不冻住就看不出「这一行是谁」。iView 会把带 fixed 的列挪到最前，
+        //    我们冻的就是最前面这几列，视觉顺序不变。
+        // ⚠️ 冻结区宽度必须恒定 —— 所以题目列用 minWidth（见下），富余宽度只摊给题目列。
         columns: [
           {
             align: 'center',
             width: 60,
+            fixed: 'left',
             className: 'rank-col-compact',
             render: (h, params) => {
               return h('span', {}, params.index + (this.page - 1) * this.limit + 1)
@@ -74,6 +79,7 @@
             title: this.$i18n.t('m.User_User'),
             align: 'center',
             width: 220,
+            fixed: 'left',
             className: 'rank-col-user',
             render: (h, params) => {
               return h('a', {
@@ -97,6 +103,7 @@
             title: this.$i18n.t('m.Total_Score'),
             align: 'center',
             width: 90,
+            fixed: 'left',
             className: 'rank-col-compact',
             render: (h, params) => {
               return h('a', {
@@ -221,12 +228,18 @@
           this.columns.push({
             align: 'center',
             key: problem.id,
-            width: problemColumnWidth,
+            // 用 minWidth 而不是 width：题目多时保持这一档宽度（表格撑到设计宽度、横向滚动），
+            // 题目少时富余宽度摊给题目列（照样铺满面板），两种情形下冻结区都不变宽。
+            minWidth: problemColumnWidth,
             className: 'rank-problem-col',
             renderHeader: (h, params) => {
               return h('a', {
                 'class': {
                   'emphasis': true
+                },
+                // 表头只显示题号（P07），悬停给出完整题名
+                attrs: {
+                  title: problem.title
                 },
                 on: {
                   click: () => {

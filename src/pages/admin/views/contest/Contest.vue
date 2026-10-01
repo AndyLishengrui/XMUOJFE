@@ -80,6 +80,16 @@
               <span style="font-size:12px;color:#999;margin-left:8px">{{ $t('m.Show_Problem_Links_Desc') }}</span>
             </el-form-item>
           </el-col>
+          <el-col :span="8">
+            <el-form-item :label="$t('m.Question_Bank_Mode')">
+              <el-switch
+                v-model="contest.is_question_bank"
+                active-color="#409EFF"
+                inactive-color="#909399">
+              </el-switch>
+              <span style="font-size:12px;color:#999;margin-left:8px">{{ $t('m.Question_Bank_Mode_Desc') }}</span>
+            </el-form-item>
+          </el-col>
           <el-col :span="24">
             <el-form-item :label="$t('m.Allowed_IP_Ranges')">
               <div v-for="(range, index) in contest.allowed_ip_ranges" :key="index">
@@ -126,6 +136,7 @@
           visible: true,
           is_exam: false,
           show_problem_links: false,
+          is_question_bank: false,
           allowed_ip_ranges: [{
             value: ''
           }]
@@ -174,6 +185,8 @@
           data.allowed_ip_ranges = ranges
           // 老后端可能还没这个字段，缺省按「隐藏」处理
           data.show_problem_links = !!data.show_problem_links
+          // 同上：缺省按「实验」处理
+          data.is_question_bank = !!data.is_question_bank
           this.contest = data
         }).catch(() => {
         })

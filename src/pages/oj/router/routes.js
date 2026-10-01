@@ -87,7 +87,15 @@ export default [
   {
     name: 'contest-list',
     path: '/contest',
-    meta: {title: 'm.Contest_List'},
+    // category 交给后端 ContestListAPI 过滤（experiment = 课堂实验，排除题库）
+    meta: {title: 'm.Contest_List', category: 'experiment'},
+    component: Contest.ContestList
+  },
+  {
+    // 题库：复用同一个 ContestList 组件，只靠 meta.category 区分
+    name: 'question-bank-list',
+    path: '/question-bank',
+    meta: {title: 'm.Question_Bank', category: 'question_bank'},
     component: Contest.ContestList
   },
   {

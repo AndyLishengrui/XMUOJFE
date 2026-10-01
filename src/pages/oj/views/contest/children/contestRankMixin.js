@@ -66,7 +66,9 @@ export default {
           if (this.showChart) {
             this.$refs.chart.resize()
           }
-          this.$refs.tableRank.handleResize()
+          if (this.$refs.tableRank) {
+            this.$refs.tableRank.handleResize()
+          }
         })
       }
     },
@@ -81,6 +83,9 @@ export default {
             title: 'RealName',
             align: 'center',
             width: 150,
+            // ⚠️ 必须跟前面几列一样冻结：冻结浮层是按"带头几列"拼的，
+            //    这里漏掉的话冻结区与主表的列序会错开，整片错位。
+            fixed: 'left',
             render: (h, {row}) => {
               return h('span', row.user.real_name)
             }

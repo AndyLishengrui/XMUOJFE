@@ -161,6 +161,8 @@ export const m = {
   Exam_Mode_Desc: '开启后禁止学生通过插件下载测试数据',
   Show_Problem_Links: '显示参考题解/原题链接',
   Show_Problem_Links_Desc: '开启后学生才能看到题目里的参考题解与原题链接；关闭时仅老师可见',
+  Question_Bank_Mode: '题库模式',
+  Question_Bank_Mode_Desc: '开启后该比赛归入「题库」页；关闭则作为课堂实验显示在「实验」页',
   Public_Bank_Show_Links: '公共题库：显示参考题解/原题链接',
   Public_Bank_Show_Links_Desc: '只对公共题库（不属于任何实验的题）生效；实验里的题跟随各实验自己的开关',
   // Dashboard.vue
