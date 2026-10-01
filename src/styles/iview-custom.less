@@ -1,3 +1,121 @@
+// ═══════════════════════════════════════════════════════════════
+//  iView 的「白色表面」重新指向主题 token
+//
+//  🔑 为什么必须单独做这件事：**iView 2.x 本来就不是为暗色主题设计的** ——
+//  它在 card.less / table.less 等几十处把背景**写死成 #fff**，而且**没有对应的
+//  主题变量**。所以只覆盖 iView 的 less 变量是不够的：暗色主题下卡片、表格、
+//  气泡（Poptip）、下拉、分页仍然是一片白 —— 表现为"题目区域全白、页面没法看"。
+//
+//  这些规则写在 app 自己的样式里，而 app 样式在 iView 之后加载 → 同权重时后者胜。
+//  ⚠️ iView 里有几条是 `background:#fff!important`（如 .ivu-tag-dot），必须跟着写 !important。
+//
+//  在亮色主题下 --c-bg-card 就是 #ffffff → 与原来完全一致，不影响现状。
+// ═══════════════════════════════════════════════════════════════
+
+.ivu-card,
+.ivu-table,
+.ivu-table td,
+.ivu-table th,
+.ivu-collapse-content,
+.ivu-modal-content,
+.ivu-message-notice-content,
+.ivu-notice-notice,
+.ivu-poptip-inner,
+.ivu-select-dropdown,
+.ivu-cascader-menu,
+.ivu-menu-light,
+.ivu-page-item,
+.ivu-page-prev,
+.ivu-page-next,
+.ivu-page-options-elevator input,
+.ivu-page-simple .ivu-page-simple-pager input,
+.ivu-table-filter-list,
+.ivu-transfer-list,
+.ivu-upload-drag,
+.ivu-input,
+.ivu-input-number,
+.ivu-input-number-handler-wrap,
+.ivu-select-selection,
+.ivu-radio-group-button .ivu-radio-wrapper,
+.ivu-radio-group-button .ivu-radio-wrapper-checked,
+.ivu-tabs.ivu-tabs-card > .ivu-tabs-bar .ivu-tabs-tab-active {
+  background-color: var(--c-bg-card);
+}
+
+// iView 里带 !important 的那几个
+.ivu-tag-dot,
+.ivu-tag-border {
+  background: var(--c-bg-card) !important;
+}
+
+// 按钮的 hover / active 底色：iView 默认变白，暗色下很刺眼
+.ivu-btn:hover,
+.ivu-btn:active,
+.ivu-btn.active {
+  background-color: var(--c-bg-card);
+}
+
+// 输入类控件在暗色下比卡片再"陷"一点，层次才分得开
+.ivu-input,
+.ivu-input-number,
+.ivu-select-selection,
+.ivu-page-options-elevator input {
+  border-color: var(--c-border-strong);
+}
+
+// ── 第二批：iView 里另外几类写死的白 ────────────────────────────
+// 分隔线：下拉/选择器里的分割线默认是白线，暗色下很扎眼
+.ivu-dropdown-item-divided:before,
+.ivu-select-item-divided:before,
+.ivu-cascader .ivu-cascader-menu-item-divided:before,
+.ivu-cascader-transfer .ivu-cascader-menu-item-divided:before,
+.ivu-menu-horizontal .ivu-menu-submenu .ivu-select-dropdown .ivu-menu-item-divided:before,
+.ivu-table-filter-list .ivu-table-filter-select-item-divided:before,
+.ivu-transfer-list-content-item-divided:before {
+  background-color: var(--c-border);
+}
+
+// 禁用项的 hover 底色
+.ivu-select-item-disabled:hover,
+.ivu-dropdown-item-disabled:hover,
+.ivu-cascader .ivu-cascader-menu-item-disabled:hover,
+.ivu-cascader-transfer .ivu-cascader-menu-item-disabled:hover,
+.ivu-menu-horizontal .ivu-menu-submenu .ivu-select-dropdown .ivu-menu-item-disabled:hover,
+.ivu-table-filter-list .ivu-table-filter-select-item-disabled:hover,
+.ivu-transfer-list-content-item-disabled:hover,
+.ivu-time-picker-cells-cell-disabled:hover {
+  background-color: var(--c-bg-soft);
+}
+
+// 多选选中项
+.ivu-select-multiple .ivu-select-item-selected {
+  background-color: var(--c-brand-tint);
+}
+
+// 复选框/单选框的「面」
+.ivu-checkbox-inner,
+.ivu-radio-inner {
+  background-color: var(--c-bg-card);
+  border-color: var(--c-border-strong);
+}
+
+// 输入组的前后缀、错误态
+.ivu-form-item-error .ivu-input-group-append,
+.ivu-form-item-error .ivu-input-group-prepend,
+.ivu-form-item-error .ivu-transfer .ivu-input,
+.input-group-error-append,
+.input-group-error-prepend {
+  background-color: var(--c-bg-card);
+}
+
+// 时间轴圆点 / 步骤条圆圈：跟着卡片走（原来写死白）
+.ivu-timeline-item-head,
+.ivu-steps-item.ivu-steps-status-wait .ivu-steps-head-inner,
+.ivu-steps-item.ivu-steps-status-error .ivu-steps-head-inner,
+.ivu-steps-item.ivu-steps-status-finish .ivu-steps-head-inner {
+  background-color: var(--c-bg-card);
+}
+
 table {
   width: 100% !important;
 }
