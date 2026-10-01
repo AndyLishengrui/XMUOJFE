@@ -73,20 +73,32 @@ if (found.length !== 1) {
 }
 
 const built = /oj\.[0-9a-f]+\.css/.exec(found[0])[0]
-const current = process.env.THEME || 'light'
-if (map[current] !== built) {
-  fail(`本次构建（THEME=${current}）产出的是 ${built}，\n` +
-       `        但 theme-map.json 里记录的是 ${map[current]} —— map 过期了。\n` +
+const buildTheme = process.env.THEME || 'light'          // 本次编译用的是哪套配色
+if (map[buildTheme] !== built) {
+  fail(`本次构建（THEME=${buildTheme}）产出的是 ${built}，\n` +
+       `        但 theme-map.json 里记录的是 ${map[buildTheme]} —— map 过期了。\n` +
        '        请跑 `npm run build:themes` 重新生成。')
 }
 
 // ③ 生成脚本并替换
+//
+// 默认档位 `var t='…'` 有三个含义：
+//   'auto'          → 按**访问者本地时间**自动选（00:00-06:59 深靛 / 07:00-18:59 晴空 / 19:00-23:59 暖砂）
+//   'light'/'deep'/'sand' → 固定用这一套，不再自动变
+// 运维换挡由 ~/theme_work/set_theme.sh 改这**一个词**完成（同一套命令，自动/手动不打架）。
+// 用本地时间而不是服务器时间的理由：服务器跑的是 UTC，用服务器时间得小心换算时区；
+// 而访问者浏览器的时间天然就是北京时间，整点立刻生效，也不需要任何定时任务。
+const mode = process.env.THEME_MODE || 'auto'
+if (THEMES.concat('auto').indexOf(mode) === -1) fail(`THEME_MODE 只能是 auto/light/deep/sand，收到 "${mode}"`)
+
 const entries = THEMES.map(t => `${t}:'/static/css/${map[t]}'`).join(',')
 const script =
   '<script>(function(){' +
-  `var t='${current}';` +                                  // ← set_theme.sh 只改这一个词
+  `var t='${mode}';` +                                     // ← set_theme.sh 只改这一个词
   `var CSS={${entries}};` +
-  "var m=location.search.match(/[?&]theme=(light|deep|sand)\\b/);" +  // 预览后门
+  // 自动档：按访问者本地小时数选配色
+  "if(t==='auto'){var h=new Date().getHours();t=h<7?'deep':(h<19?'light':'sand');}" +
+  "var m=location.search.match(/[?&]theme=(light|deep|sand)\\b/);" +  // 预览后门（优先级最高）
   'if(m)t=m[1];' +
   "document.write('<link rel=stylesheet href=\"'+CSS[t]+'\">');" +
   "document.documentElement.setAttribute('data-theme',t)" +
@@ -105,5 +117,5 @@ if (leftover.length !== 0) {
 fs.writeFileSync(INDEX, out)
 
 console.log('[theme] ✅ index.html 已改为按主题加载 CSS')
-console.log(`       当前主题: ${current}`)
+console.log(`       默认档位: ${mode}（auto = 按访问者本地时间自动：00-06 深靛 / 07-18 晴空 / 19-23 暖砂）`)
 for (const t of THEMES) console.log(`         ${t.padEnd(6)} → ${map[t]}`)
