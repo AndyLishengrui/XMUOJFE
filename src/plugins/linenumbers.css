@@ -8,8 +8,11 @@
     user-select: none;
 
     text-align: center;
-    color: #666;
-    border-right: 1px solid #999;
+    /* ⚠️ 原来写死 #666 / #999 —— 暗色主题下 #666 压在 #12141a 的代码底上
+       对比度只有 2.7:1，行号基本看不见。改成读主题 token：
+       亮色下取值就是原来的 #666 / #999，外观零变化。 */
+    color: var(--c-ln-fg);
+    border-right: 1px solid var(--c-ln-border);
     vertical-align: top;
     padding-right: 5px!important;
 

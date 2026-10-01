@@ -55,6 +55,32 @@
   --c-code-bg: @c-code-bg;
   --c-code-text: @c-code-text;
 
+  // 表格表头（iView 表头底色 ≠ 卡片底色，必须单独一个 token）
+  --c-bg-thead: @c-bg-thead;
+  --c-text-thead: @c-text-thead;
+
+  // 明暗标记：'light' | 'dark'。纯给 JS 读（见 src/utils/theme.js），
+  // 没有任何 CSS 规则引用它 —— 所以它不会造成任何外观变化。
+  --c-scheme: @c-scheme;
+
+  // 代码高亮（highlight.js）的语法配色。写在 :root 是因为
+  // highlight.js 的规则来自一份独立的 CSS 文件（src/styles/hljs.less），
+  // 它只认 CSS 变量、不认 LESS 变量。
+  --c-hl-bg: @c-hl-bg;
+  --c-hl-fg: @c-hl-fg;
+  --c-hl-comment: @c-hl-comment;
+  --c-hl-keyword: @c-hl-keyword;
+  --c-hl-name: @c-hl-name;
+  --c-hl-literal: @c-hl-literal;
+  --c-hl-string: @c-hl-string;
+  --c-hl-builtin: @c-hl-builtin;
+  --c-hl-attr: @c-hl-attr;
+  --c-hl-symbol: @c-hl-symbol;
+
+  // 代码块行号列（src/plugins/linenumbers.css 用）
+  --c-ln-fg: @c-ln-fg;
+  --c-ln-border: @c-ln-border;
+
   // 布局
   --app-page-bg: @app-page-bg;
   --app-card-bg: @app-card-bg;
@@ -62,3 +88,4 @@
 
 @import './common.less';
 @import './iview-custom.less';
+@import './hljs.less';

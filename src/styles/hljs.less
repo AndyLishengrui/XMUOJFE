@@ -1,0 +1,96 @@
+// ═══════════════════════════════════════════════════════════════
+//  代码高亮（highlight.js）的配色 —— 改成读主题 token
+//
+//  🔑 为什么要自己写一份：原来 `src/plugins/highlight.js` 直接
+//  `import 'highlight.js/styles/atom-one-light.css'` —— 那是一份**写死颜色**的
+//  亮色主题（`.hljs{background:#fafafa}`）。这份 CSS 是整个 bundle 里唯一
+//  不经过 LESS 编译的高亮样式，所以暗色主题下**代码块永远是白底**。
+//
+//  这份文件 **逐条对抄 atom-one-light 的结构**（选择器分组、顺序、继承关系
+//  完全一致），只把颜色换成 `var(--c-hl-*)`。token 的取值：
+//    · light 主题 = atom-one-light 原值 → 亮色下与改动前**完全一致**
+//    · deep  主题 = atom-one-dark 的语法色 + 本站自己的代码底色
+//
+//  ⚠️ 这里只能用 CSS 变量（var()），不能用 LESS 变量 —— 因为 highlight.js 的
+//     规则要能被 `?theme=` 那种「运行期换一份 CSS」的方式覆盖，
+//     而 LESS 变量是编译期就烧死的。
+//  ⚠️ 分组和顺序别随手合并：highlight.js 的 token 类名有交叉，
+//     合并分组会改变同权重时的先后关系。
+// ═══════════════════════════════════════════════════════════════
+
+.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 0.5em;
+  color: var(--c-hl-fg);
+  background: var(--c-hl-bg);
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--c-hl-comment);
+  font-style: italic;
+}
+
+.hljs-doctag,
+.hljs-keyword,
+.hljs-formula {
+  color: var(--c-hl-keyword);
+}
+
+.hljs-section,
+.hljs-name,
+.hljs-selector-tag,
+.hljs-deletion,
+.hljs-subst {
+  color: var(--c-hl-name);
+}
+
+.hljs-literal {
+  color: var(--c-hl-literal);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute,
+.hljs-meta-string {
+  color: var(--c-hl-string);
+}
+
+.hljs-built_in,
+.hljs-class .hljs-title {
+  color: var(--c-hl-builtin);
+}
+
+.hljs-attr,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-type,
+.hljs-selector-class,
+.hljs-selector-attr,
+.hljs-selector-pseudo,
+.hljs-number {
+  color: var(--c-hl-attr);
+}
+
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link,
+.hljs-meta,
+.hljs-selector-id,
+.hljs-title {
+  color: var(--c-hl-symbol);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: bold;
+}
+
+.hljs-link {
+  text-decoration: underline;
+}

@@ -93,5 +93,34 @@ module.exports = {
 
   // 布局（应用自身在用，见 styles/common.less）
   '@app-page-bg': '#f7f9fb',
-  '@app-card-bg': '#fff'
+  '@app-card-bg': '#fff',
+
+  // 表头 —— 对应 iView 的 @table-thead-bg / 表头文字色。
+  // 🔑 为什么单列 token：iView 表头底色走的是 `@table-thead-bg`（≠ --c-bg-card）。
+  //   我先前误把 .ivu-table th 接进 --c-bg-card 那一组，结果亮色下表头从 #f8f8f9 变成纯白。
+  '@c-bg-thead': '#f8f8f9',
+  '@c-text-thead': '#5a6b82',
+
+  // 明暗标记 —— 只给 JS 读（Monaco / 代码高亮 / 以后的 ECharts）。
+  // CSS 侧没有任何规则引用它，所以不会影响任何现有外观。
+  // ⚠️ 必须用 ~"" 转义，否则 LESS 会输出带引号的字符串。
+  '@c-scheme': '~"light"',
+
+  // 代码高亮（highlight.js）—— 取值即 highlight.js 的 atom-one-light
+  '@c-hl-bg': '#fafafa',
+  '@c-hl-fg': '#383a42',
+  '@c-hl-comment': '#a0a1a7',
+  '@c-hl-keyword': '#a626a4',
+  '@c-hl-name': '#e45649',
+  '@c-hl-literal': '#0184bb',
+  '@c-hl-string': '#50a14f',
+  '@c-hl-builtin': '#c18401',
+  '@c-hl-attr': '#986801',
+  '@c-hl-symbol': '#4078f2',
+
+  // 代码块的行号列（见 src/plugins/linenumbers.css）
+  // 那份 CSS 原来写死 color:#666 / border-right:1px solid #999 —— 见下方 deep 的注释。
+  // 亮色下取值与原来**逐字相同**，外观零变化。
+  '@c-ln-fg': '#666',
+  '@c-ln-border': '#999'
 }

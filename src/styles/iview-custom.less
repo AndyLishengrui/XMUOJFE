@@ -15,7 +15,6 @@
 .ivu-card,
 .ivu-table,
 .ivu-table td,
-.ivu-table th,
 .ivu-collapse-content,
 .ivu-modal-content,
 .ivu-message-notice-content,
@@ -40,6 +39,19 @@
 .ivu-radio-group-button .ivu-radio-wrapper-checked,
 .ivu-tabs.ivu-tabs-card > .ivu-tabs-bar .ivu-tabs-tab-active {
   background-color: var(--c-bg-card);
+}
+
+// ── 表格表头 ──────────────────────────────────────────────────
+// 🔑 表头底色**不能**用 --c-bg-card：iView 走的是另一个变量 @table-thead-bg
+//    （亮色下 #f8f8f9 ≠ 卡片的 #fff）。先前把它混进上面那组，
+//    结果亮色下表头被改成了纯白 —— 表头跟卡片"糊"在一起。
+//
+// ⚠️ 这里必须同时给**文字色**：iView 的表头没有自己的 color，是从 .ivu-table
+//    继承 @text-color（次级灰）。深靛下就是 #9aa4b8 压在 #1d2027 上 ——
+//    老师报的"表头看不清楚字"。所以表头文字提到最高对比的 --c-text-thead。
+.ivu-table th {
+  background-color: var(--c-bg-thead);
+  color: var(--c-text-thead);
 }
 
 // iView 里带 !important 的那几个

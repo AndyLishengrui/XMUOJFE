@@ -110,6 +110,7 @@
 <script>
   import utils from '@/utils/utils'
   import templateData from '@/utils/acwing_templates.json'
+  import {defaultEditorTheme} from '@/utils/theme'
 
   // Monaco is loaded via <script> tag in index.html (UMD build)
   // window.monaco is available globally
@@ -315,7 +316,10 @@
       },
       theme: {
         type: String,
-        default: 'vs'
+        // 默认跟着站点主题走：暗色站点 → 'vs-dark'，否则 'vs'。
+        // ⚠️ 原来写死 'vs'，深靛主题下编辑器就是一块白的（老师报的"编码区默认主题是 light"）。
+        // 函数形式的 default 在 Vue 2 里会被调用取值（type 不是 Function 时），所以每次实例化都重新读。
+        default: () => defaultEditorTheme()
       },
       enableTemplates: {
         type: Boolean,

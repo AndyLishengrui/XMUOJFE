@@ -84,5 +84,34 @@ module.exports = {
   '@c-code-text': '#c9d3e0',
 
   '@app-page-bg': '#15171c',
-  '@app-card-bg': '#1d2027'
+  '@app-card-bg': '#1d2027',
+
+  // 表头 —— iView 表头底色走 `@table-thead-bg`。暗色下 #1d2027 的表头
+  // 与卡片同色、文字又是次级灰 #9aa4b8 → 表头"糊"在卡片里。这里把底色略抬一层、
+  // 文字提到最高对比，表头才立得起来。
+  '@c-bg-thead': '#23272f',
+  '@c-text-thead': '#e6e9ef',
+
+  // 明暗标记 —— 只给 JS 读（Monaco / 代码高亮 / 以后的 ECharts）
+  // ⚠️ 必须用 ~"" 转义，否则 LESS 会输出带引号的字符串。
+  '@c-scheme': '~"dark"',
+
+  // 代码高亮（highlight.js）—— atom-one-dark 的语法色，
+  // 但**底色/正文色改用本站自己的 --c-code-bg / --c-code-text**，
+  // 免得代码块里那块 #282c34（蓝灰）跟深靛的 #12141a 打架。
+  '@c-hl-bg': '#12141a',
+  '@c-hl-fg': '#c9d3e0',
+  '@c-hl-comment': '#5c6370',
+  '@c-hl-keyword': '#c678dd',
+  '@c-hl-name': '#e06c75',
+  '@c-hl-literal': '#56b6c2',
+  '@c-hl-string': '#98c379',
+  '@c-hl-builtin': '#e6c07b',
+  '@c-hl-attr': '#d19a66',
+  '@c-hl-symbol': '#61aeee',
+
+  // 代码块的行号列。原来写死 #666（深灰）—— 压在 #12141a 的代码底上
+  // 对比度只有 2.7:1，行号基本看不见。这里提到 5.3:1。
+  '@c-ln-fg': '#8b93a5',
+  '@c-ln-border': '#3a4048'
 }

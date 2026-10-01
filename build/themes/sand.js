@@ -77,5 +77,29 @@ module.exports = {
   '@c-code-text': '#4a4038',
 
   '@app-page-bg': '#faf8f4',
-  '@app-card-bg': '#ffffff'
+  '@app-card-bg': '#ffffff',
+
+  // 表头
+  '@c-bg-thead': '#f5f0e8',
+  '@c-text-thead': '#6b6259',
+
+  // 明暗标记 —— 只给 JS 读；暖砂是亮色主题
+  '@c-scheme': '~"light"',
+
+  // 代码高亮 —— 底色/正文换成暖色（跟 --c-code-bg 同族），
+  // 语法色沿用 atom-one-light（这几档在暖底上同样能看清，不另造一套）。
+  '@c-hl-bg': '#f7f2ea',
+  '@c-hl-fg': '#423a33',
+  '@c-hl-comment': '#9c9188',
+  '@c-hl-keyword': '#a626a4',
+  '@c-hl-name': '#c4432f',
+  '@c-hl-literal': '#0184bb',
+  '@c-hl-string': '#4a7c3f',
+  '@c-hl-builtin': '#b5761a',
+  '@c-hl-attr': '#986801',
+  '@c-hl-symbol': '#3f6fd0',
+
+  // 代码块的行号列（暖底上把灰调偏暖）
+  '@c-ln-fg': '#8a8078',
+  '@c-ln-border': '#c9c0b4'
 }

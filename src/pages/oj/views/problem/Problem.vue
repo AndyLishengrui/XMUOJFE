@@ -282,6 +282,7 @@
   import api from '@oj/api'
   import {pie, largePie} from './chartData'
   import utils from '@/utils/utils'
+  import {siteScheme, defaultEditorTheme} from '@/utils/theme'
 
   // 只显示这些状态的图形占用
   const filtedStatus = ['-1', '-2', '0', '1', '2', '3', '4', '8']
@@ -305,7 +306,8 @@
         submitting: false,
         code: '',
         language: 'C++',
-        theme: 'vs',
+        // 编辑器主题默认跟着站点明暗走（暗色站点 → vs-dark）
+        theme: defaultEditorTheme(),
         submissionId: '',
         submitted: false,
         testResults: [],
@@ -351,7 +353,13 @@
         next(vm => {
           vm.language = problemCode.language
           vm.code = problemCode.code
-          vm.theme = problemCode.theme
+          // 🔑 主题偏好只在"存的时候的明暗 == 现在的明暗"时才恢复。
+          //    否则会把用户上次在亮色站点存的 'vs' 带到暗色站点上 ——
+          //    这正是"深靛下编码区还是 light"的成因之一。
+          //    老数据没有 scheme 字段（undefined ≠ 'light'）→ 自动落到站点默认值。
+          vm.theme = (problemCode.scheme === siteScheme())
+            ? problemCode.theme
+            : defaultEditorTheme()
         })
       } else {
         next()
@@ -673,7 +681,9 @@
       storage.set(buildProblemCodeKey(this.problem._id, from.params.contestID), {
         code: this.code,
         language: this.language,
-        theme: this.theme
+        theme: this.theme,
+        // 记下"存的时候站点是明还是暗"，好让下次恢复主题偏好时能判断该不该沿用
+        scheme: siteScheme()
       })
       next()
     },
