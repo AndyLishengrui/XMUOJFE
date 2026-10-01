@@ -9,7 +9,11 @@ import VueAnalytics from 'vue-analytics'
 import { GOOGLE_ANALYTICS_ID } from '@/utils/constants'
 
 import iView from 'iview'
-import 'iview/dist/styles/iview.css'
+// 🔑 主题化：改为引入 iView 的 **LESS 源**（原来是预编译的 iview.css）。
+// 只有用 LESS 源，less-loader 的 modifyVars 才能覆盖 iView 的默认配色
+// —— 预编译 CSS 里的颜色是写死的，运行时/构建期都改不动。
+// 主题变量的具体值见 build/themes/*.js（由 build/utils.js 注入）。
+import 'iview/src/styles/index.less'
 
 import Panel from '@oj/components/Panel.vue'
 import VerticalMenu from '@oj/components/verticalMenu/verticalMenu.vue'

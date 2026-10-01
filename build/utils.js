@@ -2,6 +2,8 @@
 const path = require('path')
 const config = require('../config')
 const ExtractTextPlugin = require('extract-text-webpack-plugin')
+// 主题变量：注入到每一次 LESS 编译（iView 的源 + 各 .vue 的 <style lang="less">）
+const { THEME, vars: themeVars } = require('./themes')
 
 exports.assetsPath = function (_path) {
   const assetsSubDirectory = process.env.NODE_ENV === 'production'
@@ -25,11 +27,17 @@ exports.cssLoaders = function (options) {
   function generateLoaders (loader, loaderOptions) {
     const loaders = [cssLoader]
     if (loader) {
+      const opts = Object.assign({}, loaderOptions, {
+        sourceMap: options.sourceMap
+      })
+      // 🔑 主题注入点：modifyVars 在 LESS 编译末尾生效，会**覆盖** iView
+      // custom.less 里的默认值，从而把整套 iView 组件换成主题配色。
+      if (loader === 'less') {
+        opts.modifyVars = Object.assign({}, themeVars, opts.modifyVars || {})
+      }
       loaders.push({
         loader: loader + '-loader',
-        options: Object.assign({}, loaderOptions, {
-          sourceMap: options.sourceMap
-        })
+        options: opts
       })
     }
 
