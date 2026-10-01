@@ -693,6 +693,12 @@
   .flex-container {
     #problem-main {
       flex: auto;
+      // 🔑 min-width: 0 是必须的：flex 项的 min-width 默认是 auto，
+      // 意味着它**不允许收缩到内容的最小宽度以下**。这一列里装着 Monaco 编辑器
+      // （固有宽度很大），缺这一行整列就被撑住不缩 → 窗口缩小时编程框不跟随缩小。
+      // 项目里其它页面（CourseProblem 的 .cp-left、NotificationList、UserHome）
+      // 都踩过同一个坑并加了这一行，只有做题页漏了。
+      min-width: 0;
       margin-right: 18px;
     }
     #right-column {
