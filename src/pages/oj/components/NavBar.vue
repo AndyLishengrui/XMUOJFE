@@ -14,10 +14,7 @@
         <Icon type="trophy"></Icon>
         {{$t('m.Contests')}}
       </Menu-item>
-      <Menu-item name="/course">
-        <Icon type="ios-book"></Icon>
-        课程
-      </Menu-item>
+      <!-- 「课程」(/course) 入口暂时隐藏：后端 API 未实现，功能未成熟（2026-09-27） -->
       <Menu-item name="/status">
         <Icon type="ios-pulse-strong"></Icon>
         {{$t('m.NavStatus')}}
