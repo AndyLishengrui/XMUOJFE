@@ -118,6 +118,7 @@
       :page-size.sync="query.limit"
       :current.sync="query.page"
       :show-sizer="true"
+      :page-size-opts="[30, 50, 100, 200]"
       @on-change="handlePageChange"
       @on-page-size-change="handlePageSizeChange"></Pagination>
   </div>
@@ -157,7 +158,7 @@
           difficulty: '',
           tag: '',
           page: 1,
-          limit: 10,
+          limit: 30,
           view: '',
           source: '0'
         }
@@ -182,7 +183,11 @@
         if (this.query.page < 1) {
           this.query.page = 1
         }
-        this.query.limit = parseInt(query.limit) || 10
+        // 每页 30 起（10 条太稀疏）；URL 里带了非法档位也回落到 30
+        const limitOpts = [30, 50, 100, 200]
+        this.query.limit = limitOpts.indexOf(parseInt(query.limit)) !== -1
+          ? parseInt(query.limit)
+          : 30
         this.query.view = query.view === 'study' ? 'study' : ''
         this.query.source = query.source === '1' ? '1' : '0'
         this.showSourceColumn = this.query.source !== '0'

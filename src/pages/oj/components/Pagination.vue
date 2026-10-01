@@ -5,7 +5,7 @@
           @on-change="onChange"
           @on-page-size-change="onPageSizeChange"
           :show-sizer="showSizer"
-          :page-size-opts="[10, 30, 50, 100, 200]"
+          :page-size-opts="pageSizeOpts"
           :current="current"></Page>
   </div>
 </template>
@@ -26,6 +26,13 @@
         required: false,
         type: Boolean,
         default: false
+      },
+      // 每页条数可选项 —— 提成 prop，这样各页可以按自己的数据密度定制
+      // （比如题目列表行矮、信息密，就不需要 10 条这种稀疏档）
+      pageSizeOpts: {
+        required: false,
+        type: Array,
+        default: () => [10, 30, 50, 100, 200]
       },
       current: {
         required: false,
