@@ -17,23 +17,23 @@ module.exports = {
   // ══════════════════════════════════════════════════════
   //  第一部分：iView 官方变量（控制 iView 组件的外观）
   // ══════════════════════════════════════════════════════
-  '@primary-color': '#2d8cf0',
-  '@info-color': '#2db7f5',
-  '@success-color': '#19be6b',
-  '@warning-color': '#ff9900',
-  '@error-color': '#ed3f14',
-  '@link-color': '#2d8cf0',
+  '@primary-color': '#0095ff',
+  '@info-color': '#0891b2',
+  '@success-color': '#16a34a',
+  '@warning-color': '#d97706',
+  '@error-color': '#dc2626',
+  '@link-color': '#0095ff',
   '@rate-star-color': '#f5a623',
 
   '@body-background': '#fff',
-  '@title-color': '#1c2438',
-  '@text-color': '#495060',
-  '@subsidiary-color': '#80848f',
+  '@title-color': '#1a2233',
+  '@text-color': '#5a6b82',
+  '@subsidiary-color': '#94a3b8',
 
-  '@border-color-base': '#dddee1',
-  '@border-color-split': '#e9eaec',
+  '@border-color-base': 'rgba(15,23,42,.18)',
+  '@border-color-split': 'rgba(15,23,42,.10)',
 
-  '@background-color-base': '#f7f7f7',
+  '@background-color-base': '#f0f4f8',
   '@head-bg': '#f9fafc',
   '@table-thead-bg': '#f8f8f9',
   '@table-td-stripe-bg': '#f8f8f9',
@@ -50,31 +50,31 @@ module.exports = {
   // ══════════════════════════════════════════════════════
 
   // 品牌
-  '@c-brand': '#2d8cf0',
-  '@c-brand-hover': '#2b85e4',
-  '@c-brand-tint': '#eef6ff',
+  '@c-brand': '#0095ff',
+  '@c-brand-hover': '#0080e6',
+  '@c-brand-tint': '#e6f4ff',
 
   // 文字三级
-  '@c-text-1': '#1c2438',
-  '@c-text-2': '#495060',
-  '@c-text-3': '#80848f',
+  '@c-text-1': '#1a2233',
+  '@c-text-2': '#5a6b82',
+  '@c-text-3': '#94a3b8',
   '@c-text-inverse': '#ffffff',
 
   // 背景
-  '@c-bg-page': '#eee',
+  '@c-bg-page': '#f7f9fb',
   '@c-bg-card': '#ffffff',
-  '@c-bg-soft': '#f8f8f9',
-  '@c-bg-hover': '#f3f5f7',
+  '@c-bg-soft': '#f0f4f8',
+  '@c-bg-hover': '#eef3f8',
 
   // 边框
-  '@c-border': '#e8eaec',
-  '@c-border-strong': '#dddee1',
+  '@c-border': 'rgba(15,23,42,.10)',
+  '@c-border-strong': 'rgba(15,23,42,.18)',
 
   // 语义
-  '@c-success': '#19be6b',
-  '@c-warning': '#ff9900',
-  '@c-error': '#ff4949',
-  '@c-info': '#2db7f5',
+  '@c-success': '#16a34a',
+  '@c-warning': '#d97706',
+  '@c-error': '#dc2626',
+  '@c-info': '#0891b2',
 
   // 提交结果里的独立状态色（ECharts 饼图用）——不能和 WA 撞色，所以单独给 token
   '@c-st-mle': '#f7de00',
@@ -83,15 +83,15 @@ module.exports = {
 
   // 语义色的「极浅底」——状态徽章/提示条的背景。
   // 🔑 这几个在暗色主题里必须换成暗色调，否则就是最典型的"露白底"。
-  '@c-success-tint': '#edfff3',
-  '@c-warning-tint': '#fff7e6',
-  '@c-error-tint': '#ffeef0',
+  '@c-success-tint': '#e9f9ef',
+  '@c-warning-tint': '#fdf3e3',
+  '@c-error-tint': '#fdecec',
 
   // 代码
   '@c-code-bg': '#f6f8fa',
   '@c-code-text': '#476573',
 
   // 布局（应用自身在用，见 styles/common.less）
-  '@app-page-bg': '#eee',
+  '@app-page-bg': '#f7f9fb',
   '@app-card-bg': '#fff'
 }
