@@ -1,32 +1,36 @@
 <template>
   <div class="problem-list-page">
-    <div class="search-hero">
-      <div class="hero-search-row">
-        <Input v-model="query.keyword"
-               size="large"
-               @on-enter="filterByKeyword"
-               :placeholder="$t('m.Problem_Search_Placeholder')"
-               icon="ios-search-strong"/>
-        <Button type="primary" size="large" @click="filterByKeyword">
-          {{$t('m.Search')}}
+    <!-- 工具栏：搜索 / 难度 / 视图设置 / 重置 —— 全部压在一行 -->
+    <div class="pl-toolbar">
+      <Input v-model="query.keyword"
+             @on-enter="filterByKeyword"
+             :placeholder="$t('m.Problem_Search_Placeholder')"
+             icon="ios-search-strong"
+             class="pl-search"/>
+      <Button type="primary" @click="filterByKeyword">
+        {{$t('m.Search')}}
+      </Button>
+
+      <Dropdown @on-click="filterByDifficulty" trigger="click">
+        <Button>
+          {{currentDifficultyLabel}}
+          <Icon type="arrow-down-b"></Icon>
         </Button>
-      </div>
-      <div class="hero-tools-row">
-        <Dropdown @on-click="filterByDifficulty" trigger="click">
-          <Button size="large">
-            {{currentDifficultyLabel}}
-            <Icon type="arrow-down-b"></Icon>
-          </Button>
-          <Dropdown-menu slot="list">
-            <Dropdown-item name="">{{$t('m.All')}}</Dropdown-item>
-            <Dropdown-item name="Low">{{$t('m.Low')}}</Dropdown-item>
-            <Dropdown-item name="Mid">{{$t('m.Mid')}}</Dropdown-item>
-            <Dropdown-item name="High">{{$t('m.High')}}</Dropdown-item>
-          </Dropdown-menu>
-        </Dropdown>
-        <div class="view-switch-group">
-          <div class="view-mode-switch">
-            <div class="view-mode-copy">
+        <Dropdown-menu slot="list">
+          <Dropdown-item name="">{{$t('m.All')}}</Dropdown-item>
+          <Dropdown-item name="Low">{{$t('m.Low')}}</Dropdown-item>
+          <Dropdown-item name="Mid">{{$t('m.Mid')}}</Dropdown-item>
+          <Dropdown-item name="High">{{$t('m.High')}}</Dropdown-item>
+        </Dropdown-menu>
+      </Dropdown>
+
+      <!-- 两个开关是「设置项」（设一次就不动），收进弹层，不再各占一个 210px 的盒子 -->
+      <Poptip placement="bottom-end" width="300" trigger="click">
+        <Button :type="showSourceColumn || showTagColumn ? 'primary' : 'default'"
+                shape="circle" icon="gear-a"></Button>
+        <div slot="content" class="view-options-panel">
+          <div class="view-option">
+            <div class="view-option-copy">
               <span>{{$t('m.Show_Source')}}</span>
               <small>{{$t('m.Show_Source_Help')}}</small>
             </div>
@@ -35,8 +39,8 @@
               <span slot="close">{{$t('m.Off')}}</span>
             </i-switch>
           </div>
-          <div class="view-mode-switch">
-            <div class="view-mode-copy">
+          <div class="view-option">
+            <div class="view-option-copy">
               <span>{{$t('m.Study_View')}}</span>
               <small>{{$t('m.Study_View_Help')}}</small>
             </div>
@@ -46,11 +50,12 @@
             </i-switch>
           </div>
         </div>
-        <Button type="ghost" size="large" @click="onReset">
-          <Icon type="refresh"></Icon>
-          {{$t('m.Reset')}}
-        </Button>
-      </div>
+      </Poptip>
+
+      <Button type="ghost" @click="onReset">
+        <Icon type="refresh"></Icon>
+        {{$t('m.Reset')}}
+      </Button>
     </div>
 
     <div v-if="hasActiveFilters" class="active-filters-bar">
@@ -553,62 +558,55 @@
   .problem-list-page {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 12px;
   }
 
-  .search-hero {
-    padding: 18px 20px;
-    border-radius: 14px;
-    background: linear-gradient(135deg, var(--c-bg-card) 0%, var(--c-brand-tint) 55%, var(--c-brand-tint) 100%);
-    border: 1px solid var(--c-brand-tint);
-    box-shadow: 0 10px 30px rgba(51, 119, 204, 0.08);
-  }
-
-  .hero-search-row,
-  .hero-tools-row {
+  /* 工具栏：一行放下所有筛选控件（原来是两行 large 控件 + 一个大渐变 hero） */
+  .pl-toolbar {
     display: flex;
     align-items: center;
-    gap: 12px;
-  }
-
-  .hero-tools-row {
-    margin-top: 12px;
+    gap: 10px;
     flex-wrap: wrap;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--c-bg-card);
+    border: 1px solid var(--c-border);
   }
 
-  .view-switch-group {
+  /* 搜索框吃掉剩余宽度，控件都靠右排 */
+  .pl-search {
+    flex: 1 1 260px;
+    min-width: 200px;
+  }
+
+  /* 齿轮弹层里的两个开关 */
+  .view-options-panel {
     display: flex;
-    align-items: stretch;
-    gap: 12px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 14px;
+    padding: 4px 2px;
   }
 
-  .hero-search-row .ivu-input-wrapper {
-    flex: 1;
-  }
-
-  .view-mode-switch {
+  .view-option {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    min-width: 210px;
-    padding: 0 10px;
-    border: 1px solid var(--c-border);
-    border-radius: 6px;
-    min-height: 36px;
-    background: var(--c-bg-card);
-    color: var(--c-text-2);
+    gap: 12px;
   }
 
-  .view-mode-copy {
+  .view-option-copy {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    line-height: 1.2;
+    line-height: 1.35;
   }
 
-  .view-mode-copy small {
+  .view-option-copy span {
+    color: var(--c-text-1);
+    font-size: 13px;
+  }
+
+  .view-option-copy small {
     color: var(--c-text-3);
     font-size: 11px;
   }
@@ -618,10 +616,9 @@
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
-    min-height: 48px;
     box-sizing: border-box;
-    padding: 12px 14px;
-    border-radius: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
     background: var(--c-brand-tint);
     border: 1px solid var(--c-brand-tint);
   }
