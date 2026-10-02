@@ -71,7 +71,12 @@ const STUB_IMPORTS = [
   [/import\s+(\w+)\s+from\s+'@oj\/views\/user\/\w+'/, 'const $1 = __stub.Noop'],
   [/import\s+\{([^}]*)\}\s+from\s+'@\/utils\/constants'/, (m, names) =>
     `const {${names}} = {PAGE_SIZE_OPTS: [30, 50, 100, 200], DEFAULT_PAGE_SIZE: 30,` +
-    ` parsePageSize: (r) => {const n = parseInt(r); return [30, 50, 100, 200].indexOf(n) !== -1 ? n : 30}}`]
+    ` parsePageSize: (r) => {const n = parseInt(r); return [30, 50, 100, 200].indexOf(n) !== -1 ? n : 30},` +
+    ` CONTEST_TYPE: {PUBLIC: 0, PASSWORD_PROTECTED: 1, PRIVATE: 2},` +
+    ` CONTEST_STATUS_REVERSE: {'-1': {name: 'Ended', color: 'gray'}, '0': {name: 'Under way', color: 'green'},` +
+    ` '1': {name: 'Not started', color: 'blue'}}}`],
+  // 兜底：`@/utils/xxx` 默认导出 → 由 __stub.xxx 提供（必须放在 constants 那条**之后**）
+  [/import\s+(\w+)\s+from\s+'@\/utils\/(\w+)'/, (m, name, mod) => `const ${name} = __stub.${mod}`]
 ]
 
 // ── 编译一个真实 .vue ─────────────────────────────────────────────
@@ -253,8 +258,120 @@ function checkNavIconGlyphs () {
   })
 }
 
+// 2026-10-02 老师报「从题目页 / 排名页切到实验就卡顿」的根因（两个，都在 ContestList.vue）：
+//   ① 取数写在 beforeRouteEnter 的 .then() 里 —— vue-router 要等 next()，而 next() 只在
+//      请求回来后调用 ⇒ **整次跳转被一次网络往返挡住**；期间 URL 不变、旧页面还盖在上面、
+//      没有任何 loading ⇒ 用户点了菜单像"卡死"。
+//   ② watch('$route') 会先于 router-view 重渲染执行 ⇒ **即将被销毁的旧实例**也触发一次
+//      ⇒ 每次跳转发两条一模一样的请求，过期响应还可能覆盖新列表。
+// 这两个毛病看代码看不出来、只有真去切页面才感受得到（日志里靠 referer 才认出来），
+// 所以钉成机器检查：改回去就报错。
+function checkContestListNav () {
+  const src = fs.readFileSync(path.join(ROOT, 'src/pages/oj/views/contest/ContestList.vue'), 'utf8')
+  const blockingGuard = /beforeRouteEnter\s*\(/.test(src)
+  const routeWatcher = /['"]\$route['"]\s*[:(]/.test(src)
+  // watch('$route') 本身是对的（见组件里的注释：两条路由记录共用同一个组件，
+  // beforeRouteUpdate 在这两个页面互切时**不触发**），但必须带"旧实例别取数"的判定。
+  const watcherGuarded = !routeWatcher || /_isDestroyed|_isBeingDestroyed/.test(src)
+  return Promise.resolve({
+    name: '实验/题库列表：跳转不被网络请求挡住 / 每次跳转只取一次数（静态）',
+    ok: !blockingGuard && watcherGuarded,
+    detail: `beforeRouteEnter（会挡住跳转）→ ${blockingGuard ? '❌ 又出现了' : '没有 ✅'}` +
+            ` / watch("$route") 的"旧实例别取数"判定 → ${watcherGuarded ? '有 ✅' : '❌ 丢了（会白发请求）'}`
+  })
+}
+
+// 上面那条是"看源码"的静态检查；这条是**真跑一遍路由**的行为验证（vue-router 就在 node_modules 里）。
+// 用一个**永远不 resolve** 的取数 promise 来模拟"网慢/请求被堵"：
+//   · 旧代码把取数放在 beforeRouteEnter 的 .then() 里 ⇒ push() 永远不完成（= 老师看到的"点了没反应"）
+//   · 旧代码用 watch('$route') ⇒ 同组件换路由记录时会多取一次（垂死的旧实例也触发）
+function checkContestListNavBehavior () {
+  const VueRouter = require('vue-router')
+  if (!checkContestListNavBehavior._installed) {
+    Vue.use(VueRouter)
+    checkContestListNavBehavior._installed = true
+  }
+  const prevLoading = Vue.prototype.$Loading
+  Vue.prototype.$Loading = {start () {}, finish () {}, error () {}}
+
+  const calls = []
+  const api = {
+    getContestList (offset, limit, query) {
+      calls.push((query && query.category) || '')
+      return new Promise(() => {})       // 永不 resolve
+    }
+  }
+  const vuex = {
+    mapGetters: names => {
+      const o = {}
+      ;(names || []).forEach(n => { o[n] = () => undefined })
+      return o
+    }
+  }
+  const Noop = {render (h) { return h('div') }}
+  const ContestList = buildSFC('src/pages/oj/views/contest/ContestList.vue',
+    {api, Pagination: Noop, vuex, Noop,
+     utils: {filterEmptyValue: o => o},
+     time: {utcToLocal: () => ''}})
+  const Dummy = {render (h) { return h('div', 'dummy') }}
+  const router = new VueRouter({
+    mode: 'abstract',   // jsdom 9 的 pushState 不靠谱，abstract 模式不碰 URL
+    routes: [
+      {path: '/problem', component: Dummy},
+      {path: '/contest', component: ContestList, meta: {category: 'experiment'}},
+      {path: '/question-bank', component: ContestList, meta: {category: 'question_bank'}}
+    ]
+  })
+  const vm = new Vue({router, render: h => h('router-view')}).$mount()
+
+  // ⚠️ vue-router 3.0.1 的 push() **不返回 Promise**（3.1.0 才加），只能用回调式。
+  const push = to => new Promise(resolve => {
+    const timer = setTimeout(() => resolve('TIMEOUT'), 600)
+    router.push(to,
+      () => { clearTimeout(timer); resolve('OK') },
+      () => { clearTimeout(timer); resolve('ERR') })
+  })
+
+  // ⚠️ 取样前必须 settle：组件里把取数推迟到了 $nextTick（为了排掉被销毁的旧实例），
+  //    而 push 的 onComplete 早于那个 nextTick 回调 —— 不 settle 会数少一条（踩过）。
+  const settle = () => new Promise(resolve => setTimeout(resolve, 20))
+  const step = async to => { const res = await push(to); await settle(); return res }
+
+  return (async () => {
+    let r = []
+    try {
+      r.push(await step('/problem'))            // 起点：另一个组件
+      r.push(await step('/contest'))            // ① 跨组件进实验页
+      const n1 = calls.length
+      r.push(await step('/question-bank'))      // ② 同组件换路由记录
+      const n2 = calls.length
+      r.push(await step('/question-bank?page=2')) // ③ 同记录、只改 query
+      const n3 = calls.length
+      r.push(await step('/problem'))              // ④ 离开实验页（旧实例被销毁）
+      const n4 = calls.length
+      const notBlocked = r.every(x => x === 'OK')
+      const oneShot = n1 === 1 && n2 === 2 && n3 === 3 && n4 === 3
+      vm.$destroy()
+      Vue.prototype.$Loading = prevLoading
+      return {
+        name: '实验/题库列表：跳转不被请求挡住 + 每次跳转只取一次数（真实跑路由）',
+        ok: notBlocked && oneShot,
+        detail: `取数 promise 永不 resolve 时：进实验页=${r[1]} 换记录=${r[2]} 换query=${r[3]} 离开=${r[4]}` +
+                `（OK=没被挡住）/ 取数次数 ①${n1}→②${n2}→③${n3}→④${n4}` +
+                `（应 1→2→3→3：每进一次取一次，**离开时不该再取**）`
+      }
+    } catch (e) {
+      vm.$destroy()
+      Vue.prototype.$Loading = prevLoading
+      return {name: '实验/题库列表：跳转不被请求挡住 + 每次跳转只取一次数（真实跑路由）',
+              ok: false, detail: '用例本身异常：' + e.message}
+    }
+  })()
+}
+
 // ── 跑 ───────────────────────────────────────────────────────────
-const cases = [checkAnnouncements, checkPaletteSwitch, checkRankFrozenColumns, checkNavIconGlyphs]
+const cases = [checkAnnouncements, checkPaletteSwitch, checkRankFrozenColumns, checkNavIconGlyphs,
+               checkContestListNav, checkContestListNavBehavior]
 
 ;(async () => {
   const results = []

@@ -105,53 +105,63 @@
         cur_contest_id: ''
       }
     },
-    beforeRouteEnter (to, from, next) {
-      // ⚠️ 首次进入只走 beforeRouteEnter（$route 的 watch 不会为初次导航触发），
-      //    所以这里必须带上 URL 上的**全部**筛选条件 —— 否则直接打开
-      //    /contest?owner=曾鸣 这类链接会显示未筛选结果、筛选框也是空的。
-      let page = parseInt(to.query.page) || 1
-      let size = parsePageSize(to.query.limit)
-      let q = Object.assign({}, to.query, {category: to.meta.category})
-      delete q.page
-      delete q.limit
-      api.getContestList((page - 1) * size, size, q).then((res) => {
-        next((vm) => {
-          vm.contests = res.data.data.results.map(withAuthor)
-          vm.total = res.data.data.total
-        })
-      }, (res) => {
-        next()
-      })
-    },
     mounted () {
-      // 首屏的取数在 beforeRouteEnter 里已经做过了，这里只把筛选框/分页按 URL 回填，
-      // 避免重复请求（原来没有这一步，所以带筛选的链接打开后输入框是空的）。
-      this.syncQuery()
+      // ⚠️ 取数**不能**放在 beforeRouteEnter 里。vue-router 会等 next()，而 next() 只能写在
+      //    请求回调里 ⇒ **整次跳转被一次网络往返挡住**。挡住期间：URL 不变、旧页面还盖在上面、
+      //    没有任何 loading ⇒ 用户点了菜单像"卡死"。
+      //    （2026-10-02 老师报的「从题目页 / 排名页切到实验就卡顿」就是它：日志里那个请求带的
+      //      referer 还是**上一个页面**的地址，正好证明点击那一刻地址栏都还没变。）
+      //    改成 mounted 取数 + $Loading：点击立刻跳转，表格随后填上。
+      this.init()
+    },
+    watch: {
+      // 复用同一个实例时的刷新（/contest ↔ /question-bank 互切、翻页、筛选、排序）。
+      // ⚠️ 这里**必须**用 watch，不能用 beforeRouteUpdate：`/contest` 与 `/question-bank`
+      //    是**两条路由记录共用同一个组件**（routes.js 里两个 record 指向同一个 ContestList），
+      //    而 vue-router 只在"同一条记录被复用"时才调 beforeRouteUpdate ⇒ 这两个页面互切时
+      //    它根本不触发，列表会一直停在**上一个分类**的数据上。
+      //    （2026-10-02 用真实路由跑出来的：beforeRouteUpdate 版本取数次数是 1→1→1。）
+      // 🔑 代价：跨组件跳走时**即将被销毁的旧实例**也会触发这个 watcher（Vue 的用户 watcher
+      //    先于 router-view 的重渲染执行）⇒ 白发一条一模一样的请求、过期响应还可能覆盖新列表。
+      //    所以推迟到 nextTick 再判 —— 那时重渲染已跑完，被弹掉的实例已经 _isDestroyed。
+      '$route' (to) {
+        this.$nextTick(() => {
+          if (this._isDestroyed || this._isBeingDestroyed) return
+          this.init(to)
+        })
+      }
     },
     methods: {
-      // 从 URL 同步筛选状态（不取数）
-      syncQuery () {
-        let route = this.$route.query
-        this.query.status = route.status || ''
-        this.query.rule_type = route.rule_type || ''
-        this.query.keyword = route.keyword || ''
-        this.query.owner = route.owner || ''
-        this.query.ordering = route.ordering || ''
-        this.query.category = this.$route.meta.category || ''
-        this.page = parseInt(route.page) || 1
-        this.limit = parsePageSize(route.limit)
+      // 从 URL 同步筛选状态（不取数）。省略 route 时用当前路由；
+      // ⚠️ watcher 里**必须**把 to 传进来 —— 那一刻 this.$route 还是旧路由。
+      syncQuery (route) {
+        route = route || this.$route
+        const q = route.query || {}
+        this.query.status = q.status || ''
+        this.query.rule_type = q.rule_type || ''
+        this.query.keyword = q.keyword || ''
+        this.query.owner = q.owner || ''
+        this.query.ordering = q.ordering || ''
+        this.query.category = (route.meta || {}).category || ''
+        this.page = parseInt(q.page) || 1
+        this.limit = parsePageSize(q.limit)
       },
-      init () {
-        this.syncQuery()
+      init (route) {
+        this.syncQuery(route)
         this.getContestList(this.page)
       },
       getContestList (page = 1) {
+        this.$Loading.start()
         let offset = (page - 1) * this.limit
         api.getContestList(offset, this.limit, this.query).then((res) => {
           // 「实验 / 题库」的区分由后端 category 参数完成（见 ContestListAPI）。
           // 原来这里按标题前缀 filter('[教材]') 是死代码：全库 0 个标题带该前缀。
           this.contests = res.data.data.results.map(withAuthor)
           this.total = res.data.data.total
+          this.$Loading.finish()
+        }, () => {
+          // 失败也要收掉进度条，否则页面永远停在"加载中"
+          this.$Loading.error()
         })
       },
       changeRoute () {
@@ -313,15 +323,7 @@
         )
         return cols
       }
-    },
-    watch: {
-      '$route' (newVal, oldVal) {
-        if (newVal !== oldVal) {
-          this.init()
-        }
-      }
     }
-
   }
 </script>
 <style lang="less" scoped>
