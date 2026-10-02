@@ -1,5 +1,9 @@
 // jshint multistr:true
-import hljs from "highlight.js";
+// 🔥 这里**只能引核心**（lib/highlight），不能引 'highlight.js'（= lib/index）！
+//    lib/index 会把**全部 185 个语言文件**（932 KB）require 进来，而本项目只注册
+//    cpp / python / java 三种（见 src/plugins/highlight.js）。
+//    下面这段只是往 hljs 上挂自己的函数，一种语言都不需要。
+import hljs from "highlight.js/lib/highlight";
 import "./linenumbers.css";
 (function (w, d) {
     'use strict';

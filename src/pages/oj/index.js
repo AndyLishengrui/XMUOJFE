@@ -24,17 +24,8 @@ import highlight from '@/plugins/highlight'
 import katex from '@/plugins/katex'
 import filters from '@/utils/filters.js'
 
-import ECharts from 'vue-echarts/components/ECharts.vue'
-import 'echarts/lib/chart/bar'
-import 'echarts/lib/chart/line'
-import 'echarts/lib/chart/pie'
-import 'echarts/lib/component/title'
-import 'echarts/lib/component/grid'
-import 'echarts/lib/component/dataZoom'
-import 'echarts/lib/component/legend'
-import 'echarts/lib/component/tooltip'
-import 'echarts/lib/component/toolbox'
-import 'echarts/lib/component/markPoint'
+// ⚠️ ECharts（echarts + zrender 约 1.1MB）**不在入口引** —— 见下面注册成异步组件那一行。
+//    图表类型与组件都收在 src/plugins/echarts.js，只有排行榜类页面会用到。
 
 // register global utility filters.
 Object.keys(filters).forEach(key => {
@@ -54,7 +45,10 @@ Vue.use(VueAnalytics, {
   router
 })
 
-Vue.component('ECharts', ECharts)
+// 🔥 异步组件：ECharts 不在首包里，只有模板里真的渲染 <ECharts> 时才去下那个 chunk。
+//    用法完全不变（模板照旧写 <ECharts>），但**首次渲染会晚一拍** ⇒
+//    凡是用 this.$refs.chart 的地方都得判空（contestRankMixin / ACMRank / OIRank 已处理）。
+Vue.component('ECharts', () => import(/* webpackChunkName: "echarts" */ '@/plugins/echarts'))
 Vue.component(VerticalMenu.name, VerticalMenu)
 Vue.component(VerticalMenuItem.name, VerticalMenuItem)
 Vue.component(Panel.name, Panel)

@@ -170,8 +170,10 @@
     methods: {
       getRankData (page) {
         let offset = (page - 1) * this.limit
+        // ⚠️ ECharts 是**异步组件**（首包不再带它），首次进页面时 $refs.chart 可能还没挂上
+        //    ⇒ 判空降级：图表照常出（数据走 prop），只是没有 loading 遮罩。
         let bar = this.$refs.chart
-        bar.showLoading({maskColor: 'rgba(250, 250, 250, 0.8)'})
+        if (bar) bar.showLoading({maskColor: 'rgba(250, 250, 250, 0.8)'})
         this.loadingTable = true
         api.getUserRank(offset, this.limit, RULE_TYPE.ACM).then(res => {
           this.loadingTable = false
@@ -180,10 +182,10 @@
           }
           this.total = res.data.data.total
           this.dataRank = res.data.data.results
-          bar.hideLoading()
+          if (bar) bar.hideLoading()
         }).catch(() => {
           this.loadingTable = false
-          bar.hideLoading()
+          if (bar) bar.hideLoading()
         })
       },
       changeCharts (rankData) {

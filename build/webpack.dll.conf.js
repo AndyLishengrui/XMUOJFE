@@ -18,7 +18,10 @@ const vendors = [
   'vuex',
   'axios',
   'moment',
-  'raven-js',
+  // ⚠️ 2026-10-02 去掉 'raven-js'：前端只在 USE_SENTRY=1 时才引 src/utils/sentry.js，
+  //    生产从不开这个开关（config/dev.env.js 里也是 '0'）⇒ 整个 raven 是**死重量**，
+  //    却因为列在这里被塞进 dll，每个访问者都白下。
+  //    真要重开 Sentry，记得连这一行一起加回来。
   'browser-detect'
 ];
 

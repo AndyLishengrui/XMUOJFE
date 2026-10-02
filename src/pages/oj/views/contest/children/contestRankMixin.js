@@ -11,7 +11,9 @@ export default {
   methods: {
     getContestRankData (page = 1, refresh = false) {
       let offset = (page - 1) * this.limit
-      if (this.showChart && !refresh) {
+      // ⚠️ ECharts 是**异步组件**（首包不再带它），刚进页面时 $refs.chart 可能还没挂上
+      //    ⇒ 必须判空，否则这里直接 TypeError。图表照常出，只是没有 loading 遮罩。
+      if (this.showChart && !refresh && this.$refs.chart) {
         this.$refs.chart.showLoading({maskColor: 'rgba(250, 250, 250, 0.8)'})
       }
       let params = {
@@ -21,7 +23,7 @@ export default {
         force_refresh: this.forceUpdate ? '1' : '0'
       }
       api.getContestRank(params).then(res => {
-        if (this.showChart && !refresh) {
+        if (this.showChart && !refresh && this.$refs.chart) {
           this.$refs.chart.hideLoading()
         }
         this.total = res.data.data.total
@@ -63,7 +65,7 @@ export default {
       set (value) {
         this.$store.commit(types.CHANGE_CONTEST_ITEM_VISIBLE, {menu: value})
         this.$nextTick(() => {
-          if (this.showChart) {
+          if (this.showChart && this.$refs.chart) {
             this.$refs.chart.resize()
           }
           if (this.$refs.tableRank) {
