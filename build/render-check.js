@@ -369,9 +369,56 @@ function checkContestListNavBehavior () {
   })()
 }
 
+// 2026-10-05：老师要「实验/题库/考试」在列表标题前各有图标（旧卡片列表开头那张奖杯，改成
+// iView Table 后丢了）。图标是在标题列的 render 里 h('Icon', {type}) 生成的 —— **模板里 grep 不到**，
+// 所以只能真跑一遍 render、按类型逐个断言；顺带照 checkNavIconGlyphs 的办法核对字形在本构建里真的存在。
+function checkContestTypeIcons () {
+  if (!Vue.options.components.Icon) {
+    Vue.component('Icon', {props: ['type'], render (h) { return h('i', {class: 'ivu-icon ivu-icon-' + this.type}) }})
+  }
+  const api = {getContestList: () => Promise.resolve({data: {data: {results: [], total: 0}}})}
+  const vuex = {mapGetters: names => {const o = {}; (names || []).forEach(n => {o[n] = () => undefined}); return o}}
+  const Noop = {render (h) { return h('div') }}
+  const prevLoading = Vue.prototype.$Loading
+  Vue.prototype.$Loading = {start () {}, finish () {}, error () {}}
+  const ContestList = buildSFC('src/pages/oj/views/contest/ContestList.vue',
+    {api, Pagination: Noop, vuex, Noop, utils: {filterEmptyValue: o => o}, time: {utcToLocal: () => ''}})
+  const vm = new Vue(ContestList).$mount()
+  const col = vm.columns.filter(c => c.key === 'title')[0]
+  const h = vm.$createElement
+  const spec = [
+    [{is_exam: false, is_question_bank: false}, 'code', 'exp'],
+    [{is_exam: false, is_question_bank: true}, 'ios-book-outline', 'qb'],
+    [{is_exam: true, is_question_bank: false}, 'trophy', 'exam'],
+    [{is_exam: true, is_question_bank: true}, 'ios-book-outline', 'qb']   // 同时为真 → 按「题库」
+  ]
+  const got = spec.map(([flags, wantType, wantCls]) => {
+    const row = Object.assign({id: 1, title: 'T', contest_type: 1}, flags)
+    const vnode = col.render(h, {row})
+    const icon = vnode.children[0]
+    const t = icon && icon.componentOptions ? icon.componentOptions.propsData.type : null
+    const cls = icon && icon.data ? (icon.data.staticClass || icon.data.class || '') : ''
+    return {t, cls: String(cls), wantType, wantCls}
+  })
+  vm.$destroy()
+  Vue.prototype.$Loading = prevLoading
+  const iconsFile = fs.readFileSync(path.join(ROOT,
+    'node_modules/iview/src/styles/common/iconfont/_ionicons-icons.less'), 'utf8')
+  const glyphs = [...new Set(got.map(g => g.wantType))]
+  const missing = glyphs.filter(n => iconsFile.indexOf('@{ionicons-prefix}' + n + ':before') === -1)
+  const ok = got.every(g => g.t === g.wantType && g.cls.indexOf(g.wantCls) !== -1) && missing.length === 0
+  return Promise.resolve({
+    name: '实验/题库列表：标题前的类型图标（考试=奖杯 / 题库=书 / 实验=code）',
+    ok,
+    detail: got.map((g, i) => `#${i + 1} ${g.cls.trim() || '?'}→${g.t}` +
+      (g.t === g.wantType && g.cls.indexOf(g.wantCls) !== -1 ? '' : `❌(应${g.wantType}/${g.wantCls})`)).join(' / ') +
+      (missing.length ? ` / ❌ 字形不存在：${missing.join(', ')}` : ' / 字形全部存在 ✅')
+  })
+}
+
 // ── 跑 ───────────────────────────────────────────────────────────
 const cases = [checkAnnouncements, checkPaletteSwitch, checkRankFrozenColumns, checkNavIconGlyphs,
-               checkContestListNav, checkContestListNavBehavior]
+               checkContestListNav, checkContestListNavBehavior, checkContestTypeIcons]
 
 ;(async () => {
   const results = []

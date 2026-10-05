@@ -68,6 +68,7 @@ module.exports = {
   '@c-warning': '#f0b429',
   '@c-error': '#f2555a',
   '@c-info': '#4d6bfe',
+  '@c-gold': '#f7c948',
 
   // 提交结果的独立状态色（ECharts 饼图）——深底上要提亮，否则发闷
   '@c-st-mle': '#e8c547',

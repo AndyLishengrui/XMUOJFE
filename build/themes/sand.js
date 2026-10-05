@@ -63,6 +63,7 @@ module.exports = {
   '@c-warning': '#b45309',
   '@c-error': '#b91c1c',
   '@c-info': '#0e7490',
+  '@c-gold': '#a16207',
 
   // 提交结果的独立状态色（ECharts 饼图）——暖底上要避开刺眼的纯色
   '@c-st-mle': '#ca8a04',

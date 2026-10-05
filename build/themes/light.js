@@ -75,6 +75,7 @@ module.exports = {
   '@c-warning': '#d97706',
   '@c-error': '#dc2626',
   '@c-info': '#0891b2',
+  '@c-gold': '#b8860b',
 
   // 提交结果里的独立状态色（ECharts 饼图用）——不能和 WA 撞色，所以单独给 token
   '@c-st-mle': '#f7de00',

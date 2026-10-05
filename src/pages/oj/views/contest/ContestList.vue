@@ -76,6 +76,20 @@
   // 其余 sortable 列（「任课老师」）仍是前端当前页排序 —— 见 columns 里的注释。
   const SERVER_SORT_KEYS = ['title', 'start_time', 'end_time']
 
+  // 比赛类型 → 标题前的图标。三个都是 iView 自带 ionicons 字形，单色、颜色走 CSS
+  // currentColor ⇒ 天然跟随三套主题（配色见下方 .contest-type-icon）。
+  // 🔑 旧版卡片列表每个条目前面有张奖杯图，改成 iView Table 后丢了；这里按类型补回来：
+  //    考试=奖杯、题库=书、实验=</>（打代码）。
+  // ⚠️ 判定优先级 题库 > 考试 > 实验：个别比赛 is_exam 与 is_question_bank 同时为真
+  //    （例：474 新书配套题库），按「题库」处理。
+  const TYPE_ICON = {exam: 'trophy', qb: 'ios-book-outline', exp: 'code'}
+
+  function contestType (c) {
+    if (c.is_question_bank) return 'qb'
+    if (c.is_exam) return 'exam'
+    return 'exp'
+  }
+
   export default {
     name: 'contest-list',
     components: {
@@ -237,7 +251,13 @@
             sortable: 'custom',
             render (h, params) {
               let row = params.row
+              let type = contestType(row)
               let children = [
+                // 类型图标放在标题**前面**（旧版那个奖杯的位置）
+                h('Icon', {
+                  class: 'contest-type-icon ' + type,
+                  props: {type: TYPE_ICON[type]}
+                }),
                 h('a', {
                   class: 'entry',
                   on: {
@@ -364,6 +384,18 @@
         .ivu-icon {
           margin-left: 6px;
           vertical-align: middle;
+        }
+        // 标题前的类型图标。⚠️ 必须排在 .ivu-icon 之后：两者特异性相同（都是两段类名），
+        //    靠源码顺序覆盖掉 .ivu-icon 的 margin-left，把间距放到右侧（图标在标题左边）。
+        .contest-type-icon {
+          margin-left: 0;
+          margin-right: 8px;
+          font-size: 18px;
+          vertical-align: middle;
+          // 暖色系：考试/题库=金、实验=橙（都是各主题自带的 token，三套主题下自动跟着变）
+          &.exam { color: var(--c-gold); }    // 考试：奖杯，金
+          &.qb { color: var(--c-gold); }      // 题库：书，金
+          &.exp { color: var(--c-warning); }  // 实验：</>，橙
         }
       }
     }
