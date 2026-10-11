@@ -30,6 +30,9 @@ const win = dom.defaultView
 global.window = win
 global.document = dom
 global.navigator = win.navigator
+// node 16 没有全局 CustomEvent（浏览器里是 window.CustomEvent）—— 被测源码写的是
+// 裸 `new CustomEvent(...)`，所以这里把 jsdom 那份挂到全局，保证与浏览器同语义。
+global.CustomEvent = win.CustomEvent
 
 // jsdom 9 缺 transition/animation 的 Delay/Duration → Vue 读到时崩，补上
 const realGCS = win.getComputedStyle.bind(win)
@@ -75,6 +78,8 @@ const STUB_IMPORTS = [
     ` CONTEST_TYPE: {PUBLIC: 0, PASSWORD_PROTECTED: 1, PRIVATE: 2},` +
     ` CONTEST_STATUS_REVERSE: {'-1': {name: 'Ended', color: 'gray'}, '0': {name: 'Under way', color: 'green'},` +
     ` '1': {name: 'Not started', color: 'blue'}}}`],
+  // 具名导入：`import {a, b} from '@/utils/theme'`
+  [/import\s+\{([^}]*)\}\s+from\s+'@\/utils\/theme'/, (m, names) => `const {${names}} = __stub.theme`],
   // 兜底：`@/utils/xxx` 默认导出 → 由 __stub.xxx 提供（必须放在 constants 那条**之后**）
   [/import\s+(\w+)\s+from\s+'@\/utils\/(\w+)'/, (m, name, mod) => `const ${name} = __stub.${mod}`]
 ]
@@ -180,7 +185,8 @@ function checkPaletteSwitch () {
       },
       mapActions: () => ({getProfile: () => Promise.resolve(), fetchUnreadCount: () => {}, changeModalStatus: () => {}})
     }
-    const NavBar = buildSFC('src/pages/oj/components/NavBar.vue', {Noop, vuex})
+    const NavBar = buildSFC('src/pages/oj/components/NavBar.vue',
+      {Noop, vuex, theme: {applyTheme: () => true}})
     const vm = new Vue(NavBar).$mount()
     const html = vm.$el.outerHTML || ''
     vm.$destroy()
@@ -416,9 +422,106 @@ function checkContestTypeIcons () {
   })
 }
 
+/**
+ * 换配色必须是「不刷新页面」的换 <link>（2026-10-11 学生事故的回归自检）。
+ *
+ * 事故：NavBar.changeTheme 原来是 window.location.reload()，而"把代码存进 localStorage"
+ * 的钩子是路由的 beforeRouteLeave —— **整页刷新不触发它** ⇒ 题目页写了没保存的代码被清空。
+ *
+ * 这个用例把真实的 src/utils/theme.js 拿来在 jsdom 里跑，断言：
+ *   ① resolveTheme 认得三套原名、非法值返回 null
+ *   ② applyTheme 会插入新主题 <link>、摘掉旧 <link>、更新 html[data-theme] / __OJ_THEME__
+ *   ③ 派发 oj-theme-change 事件（Monaco 靠它跟色）
+ *   ④ NavBar 源码里**不再有 location.reload**，且确实接了 applyTheme
+ */
+function checkThemeSwitch () {
+  // 把真实源码的 `export ` 去掉后在 jsdom 里执行
+  let code = fs.readFileSync(path.join(ROOT, 'src/utils/theme.js'), 'utf8')
+  code = code.replace(/^export\s+/gm, '')
+  const themeApi = new Function(code +
+    '\n;return {siteScheme: siteScheme, resolveTheme: resolveTheme, applyTheme: applyTheme}')()
+  const themeApiOk = themeApi && typeof themeApi.applyTheme === 'function'
+
+  // 清场 + 造一个"当前是晴空"的现场
+  const stale = dom.querySelectorAll('link[href*="/static/css/oj."]')
+  Array.prototype.slice.call(stale).forEach(l => { if (l.parentNode) l.parentNode.removeChild(l) })
+  const oldLink = dom.createElement('link')
+  oldLink.setAttribute('rel', 'stylesheet')
+  oldLink.setAttribute('href', '/static/css/oj.light.css')
+  dom.head.appendChild(oldLink)
+
+  win.__OJ_THEME__ = {
+    css: {light: '/static/css/oj.light.css', deep: '/static/css/oj.deep.css', sand: '/static/css/oj.sand.css'},
+    site: 'auto', pick: null, resolved: 'light', switchable: true
+  }
+  let detail = null
+  const onEvt = e => { detail = e.detail }
+  win.addEventListener('oj-theme-change', onEvt)
+
+  const resolveOk = themeApiOk &&
+    themeApi.resolveTheme('deep') === 'deep' &&
+    themeApi.resolveTheme('light') === 'light' &&
+    themeApi.resolveTheme('bogus') === null
+
+  if (themeApiOk) themeApi.applyTheme('deep')
+  // jsdom 不加载外链 ⇒ onload 不会自己触发，手动模拟浏览器"新表已加载"
+  const fresh = dom.querySelector('link[href="/static/css/oj.deep.css"]')
+  if (fresh && typeof fresh.onload === 'function') fresh.onload()
+  win.removeEventListener('oj-theme-change', onEvt)
+
+  const oldGone = !dom.querySelector('link[href="/static/css/oj.light.css"]')
+  const attrOk = dom.documentElement.getAttribute('data-theme') === 'deep'
+  const stateOk = win.__OJ_THEME__.pick === 'deep' && win.__OJ_THEME__.resolved === 'deep'
+  const evtOk = !!(detail && detail.theme === 'deep')
+
+  const navSrc = fs.readFileSync(path.join(ROOT, 'src/pages/oj/components/NavBar.vue'), 'utf8')
+  const noReload = navSrc.indexOf('location.reload') === -1 && /applyTheme\s*\(/.test(navSrc)
+
+  const bad = []
+  if (!themeApiOk) bad.push('theme.js 里找不到 applyTheme')
+  if (!resolveOk) bad.push('resolveTheme 结果不对')
+  if (!fresh) bad.push('没插入新主题 <link>')
+  if (!oldGone) bad.push('旧主题 <link> 没被摘掉')
+  if (!attrOk) bad.push('html[data-theme] 没更新')
+  if (!stateOk) bad.push('window.__OJ_THEME__ 没同步')
+  if (!evtOk) bad.push('没派发 oj-theme-change 事件')
+  if (!noReload) bad.push('NavBar 仍在整页刷新 / 没接 applyTheme')
+
+  return {
+    name: '不刷新换肤（换 <link> + 事件 + 不再 reload）',
+    ok: bad.length === 0,
+    detail: bad.length ? '❌ ' + bad.join('；')
+      : '换表/摘旧表/data-theme/状态/事件/去 reload 全部 ✅'
+  }
+}
+
+/**
+ * 草稿兜底的回归自检：题目页必须把代码在"刷新/关闭/打字"时都存进 localStorage，
+ * 否则一次 F5 或换配色就白写了。这里只做**源码连线**断言（真正写盘要挂载整个 Problem.vue，
+ * 在 jsdom 里代价太大）；配合上面的换肤用例，覆盖住这次事故的两条根因。
+ */
+function checkDraftGuard () {
+  const src = fs.readFileSync(path.join(ROOT, 'src/pages/oj/views/problem/Problem.vue'), 'utf8')
+  const need = [
+    ["window.addEventListener('beforeunload', this.saveDraftNow)", '刷新/关闭时立即存草稿'],
+    ["window.addEventListener('oj-theme-change', this.onSiteThemeChange)", '换配色时编辑器跟色'],
+    ["window.removeEventListener('beforeunload', this.saveDraftNow)", 'beforeDestroy 摘掉监听'],
+    ['saveDraftNow () {', 'saveDraftNow 方法'],
+    ['scheduleDraftSave', '打字防抖存草稿'],
+    ['buildProblemCodeKey(this.problem._id, this.$route.params.contestID)', '与 beforeRouteLeave 同一把 key']
+  ]
+  const missing = need.filter(([s]) => src.indexOf(s) === -1).map(([, label]) => label)
+  return {
+    name: '题目页草稿兜底（刷新/关闭/打字都存）',
+    ok: missing.length === 0,
+    detail: missing.length ? '❌ 缺：' + missing.join('、') : '6 处连线全部到位 ✅'
+  }
+}
+
 // ── 跑 ───────────────────────────────────────────────────────────
 const cases = [checkAnnouncements, checkPaletteSwitch, checkRankFrozenColumns, checkNavIconGlyphs,
-               checkContestListNav, checkContestListNavBehavior, checkContestTypeIcons]
+               checkContestListNav, checkContestListNavBehavior, checkContestTypeIcons,
+               checkThemeSwitch, checkDraftGuard]
 
 ;(async () => {
   const results = []

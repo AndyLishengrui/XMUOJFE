@@ -308,6 +308,10 @@
         language: 'C++',
         // 编辑器主题默认跟着站点明暗走（暗色站点 → vs-dark）
         theme: defaultEditorTheme(),
+        // 用户是否在编辑器里手动选过主题（选过就不再自动跟站点配色）
+        editorThemePicked: false,
+        // 打字时防抖存草稿用的定时器
+        draftTimer: null,
         submissionId: '',
         submitted: false,
         testResults: [],
@@ -357,9 +361,13 @@
           //    否则会把用户上次在亮色站点存的 'vs' 带到暗色站点上 ——
           //    这正是"深靛下编码区还是 light"的成因之一。
           //    老数据没有 scheme 字段（undefined ≠ 'light'）→ 自动落到站点默认值。
+          let siteDefault = defaultEditorTheme()
           vm.theme = (problemCode.scheme === siteScheme())
             ? problemCode.theme
-            : defaultEditorTheme()
+            : siteDefault
+          // 恢复出来的主题不是站点默认那套 ⇒ 是用户自己在编辑器里选过的，
+          // 以后换站点配色时别去动它（见 onSiteThemeChange）
+          vm.editorThemePicked = (vm.theme !== siteDefault)
         })
       } else {
         next()
@@ -368,6 +376,18 @@
     mounted () {
       this.$store.commit(types.CHANGE_CONTEST_ITEM_VISIBLE, {menu: false})
       this.init()
+      // 整页刷新 / F5 / 关标签页都**不会**触发路由的 beforeRouteLeave ⇒ 这里再兜一道，
+      // 保证编辑器里的代码不会因为"刷一下"就没了。
+      window.addEventListener('beforeunload', this.saveDraftNow)
+      // 换配色已改成不刷新页面，编辑器主题靠这个事件自己跟（见 onSiteThemeChange）
+      window.addEventListener('oj-theme-change', this.onSiteThemeChange)
+    },
+    beforeDestroy () {
+      window.removeEventListener('beforeunload', this.saveDraftNow)
+      window.removeEventListener('oj-theme-change', this.onSiteThemeChange)
+      if (this.draftTimer) {
+        clearTimeout(this.draftTimer)
+      }
     },
     methods: {
       ...mapActions(['changeDomTitle']),
@@ -459,6 +479,37 @@
       },
       onChangeTheme (newTheme) {
         this.theme = newTheme
+        // 用户在编辑器里手动选过 ⇒ 以后换站点配色时不再自动跟（他可能就想要 High Contrast）
+        this.editorThemePicked = true
+      },
+      // 站点配色变了（NavBar 调 applyTheme 后派发的事件）：编辑器主题跟着站点明暗走，
+      // 除非用户自己选过。
+      onSiteThemeChange () {
+        if (!this.editorThemePicked) {
+          this.theme = defaultEditorTheme()
+        }
+      },
+      // 把当前代码/语言/主题写进 localStorage（与 beforeRouteLeave 同一把 key、同一份载荷）
+      saveDraftNow () {
+        if (!this.problem || !this.problem._id) {
+          return
+        }
+        storage.set(buildProblemCodeKey(this.problem._id, this.$route.params.contestID), {
+          code: this.code,
+          language: this.language,
+          theme: this.theme,
+          scheme: siteScheme()
+        })
+      },
+      // 打字时防抖存草稿（连浏览器崩溃也不丢）
+      scheduleDraftSave () {
+        if (this.draftTimer) {
+          clearTimeout(this.draftTimer)
+        }
+        this.draftTimer = setTimeout(() => {
+          this.draftTimer = null
+          this.saveDraftNow()
+        }, 1500)
       },
       onResetToTemplate () {
         this.$Modal.confirm({
@@ -535,6 +586,8 @@
         })
       },
       onSaveCode () {
+        // Ctrl+S：以前只弹个提示、其实啥也没存 —— 现在真的存一份草稿
+        this.saveDraftNow()
         this.$Message.success('代码已保存到本地')
       },
       checkSubmissionStatus () {
@@ -678,18 +731,18 @@
       clearInterval(this.refreshStatus)
 
       this.$store.commit(types.CHANGE_CONTEST_ITEM_VISIBLE, {menu: true})
-      storage.set(buildProblemCodeKey(this.problem._id, from.params.contestID), {
-        code: this.code,
-        language: this.language,
-        theme: this.theme,
-        // 记下"存的时候站点是明还是暗"，好让下次恢复主题偏好时能判断该不该沿用
-        scheme: siteScheme()
-      })
+      // 与 saveDraftNow 同一份载荷（存的时候站点是明是暗也记下来，
+      // 好让下次恢复主题偏好时判断该不该沿用）
+      this.saveDraftNow()
       next()
     },
     watch: {
       '$route' () {
         this.init()
+      },
+      // 一打字就防抖存草稿 ⇒ 离开页面/刷新/崩溃都不会丢
+      code () {
+        this.scheduleDraftSave()
       }
     }
   }

@@ -51,3 +51,85 @@ export function isDarkSite () {
 export function defaultEditorTheme () {
   return isDarkSite() ? 'vs-dark' : 'vs'
 }
+
+/**
+ * 把「用户选的配色名」解析成实际要加载的那一套（'light' | 'deep' | 'sand'）。
+ *   'light'/'deep'/'sand' 原样返回；'auto' 按**访问者本地时间**选。
+ *
+ * ⚠️ auto 的分档规则必须与 index.html 里那段内联脚本**逐字一致**：
+ *    00:00-06:59 深靛 / 07:00-18:59 晴空 / 19:00-23:59 暖砂。
+ *    两边一旦不一致，就会出现「切到 auto 后的配色 ≠ 刷新后的配色」。
+ * 返回 null = 解析不出来（映射表里没这套），调用方应放弃本次切换。
+ */
+export function resolveTheme (name) {
+  const css = (typeof window !== 'undefined' && window.__OJ_THEME__ && window.__OJ_THEME__.css) || {}
+  let t = name
+  if (t === 'auto') {
+    const h = new Date().getHours()
+    t = h < 7 ? 'deep' : (h < 19 ? 'light' : 'sand')
+  }
+  return css[t] ? t : null
+}
+
+/**
+ * **不刷新页面**换配色。
+ *
+ * 为什么必须不刷新：原来 changeTheme 里是 window.location.reload()，
+ * 而「把代码存进 localStorage」的钩子是路由的 beforeRouteLeave ——
+ * **整页刷新不会触发它** ⇒ 学生在题目页写了没保存的代码，一点配色就被清空了（真实事故）。
+ *
+ * 做法：找到 index.html 里那段内联脚本 document.write 出来的主题 <link>，换掉它的 href。
+ *   新表**先加载、加载完再摘掉旧表**，且插在旧表**原来的位置**（不挪到 head 末尾）
+ *   ⇒ 中间既不闪白，层叠顺序也与刷新后一致。
+ *   整套界面都写在 var(--c-*) 上，所以换掉文件 = 所有颜色立刻跟着变。
+ *
+ * 唯一读不到 CSS 变量的运行期组件是 Monaco 编辑器（它的主题是 JS 参数，不是 CSS），
+ * 所以这里额外派发一个 window 事件 'oj-theme-change'，由编辑器那边自己跟。
+ *
+ * @returns {boolean} 是否成功切换
+ */
+export function applyTheme (name) {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return false
+  const target = resolveTheme(name)
+  if (!target) return false
+
+  const info = window.__OJ_THEME__ || {}
+  const href = (info.css || {})[target]
+  const old = document.querySelector('link[rel="stylesheet"][href*="/static/css/oj."]')
+
+  const finish = () => {
+    if (old && old.parentNode) old.parentNode.removeChild(old)
+    document.documentElement.setAttribute('data-theme', target)
+    // 回写状态。下次刷新时那段内联脚本读的是 localStorage，这里只是让本页读法保持一致。
+    info.pick = name
+    info.resolved = target
+    info.scheme = siteScheme()
+    window.__OJ_THEME__ = info
+    window.dispatchEvent(new CustomEvent('oj-theme-change', {
+      detail: {theme: target, scheme: info.scheme}
+    }))
+  }
+
+  // 当前就是这套 → 不折腾 <link>，只同步一下状态
+  if (old && old.getAttribute('href') === href) {
+    finish()
+    return true
+  }
+
+  const link = document.createElement('link')
+  link.rel = 'stylesheet'
+  link.href = href
+  let settled = false
+  const once = () => { if (!settled) { settled = true; finish() } }
+  link.onload = once
+  // 加载失败也别卡住：旧表还在，界面不会坏，只是这次切换没生效
+  link.onerror = once
+  if (old && old.parentNode) {
+    old.parentNode.insertBefore(link, old.nextSibling)
+  } else {
+    document.head.appendChild(link)
+  }
+  // 个别环境下 onload 可能不触发，兜个底
+  setTimeout(once, 1500)
+  return true
+}

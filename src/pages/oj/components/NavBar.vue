@@ -88,7 +88,9 @@
           </Dropdown>
         </template>
         <!-- 配色切换：放在用户名按钮**右边**（老师要求）。
-             三套配色都在容器里（内容哈希缓存），切换＝改浏览器里存的一个词 + 刷新。
+             三套配色都在容器里（内容哈希缓存），切换＝改浏览器里存的一个词 + **当场换 <link>**。
+             ⚠️ 绝不能整页刷新 —— 刷新不触发路由的 beforeRouteLeave，
+                会把题目页编辑器里没保存的代码清空（学生反馈的真实事故）。
              站点用 set_theme.sh 把外观钉死成某一套时，这里整个不显示（以站点为准）。 -->
         <div class="theme-switch" v-if="themeSwitchable" :title="$t('m.Palette')">
           <Dropdown trigger="click" placement="bottom-end" @on-click="changeTheme">
@@ -113,6 +115,7 @@
 
 <script>
   import { mapGetters, mapActions } from 'vuex'
+  import { applyTheme } from '@/utils/theme'
   import login from '@oj/views/user/Login'
   import register from '@oj/views/user/Register'
 
@@ -172,9 +175,12 @@
         } catch (e) {
           // 隐私模式下写不了 localStorage —— 不报错，只是这次选择不被记住
         }
-        // 刷新一次：主题是在 <head> 那段脚本里、CSS 加载前定下来的，
-        // 而且 Monaco / 代码高亮 / ECharts 是挂载时读色的，只有整页重载才真正一致。
-        window.location.reload()
+        // 🔥 绝不能整页刷新：refresh 不触发路由的 beforeRouteLeave，
+        //    会把题目页编辑器里没保存的代码一起清掉（学生反馈的真实事故）。
+        //    改成当场换主题 <link>（见 utils/theme.js），编辑不中断；
+        //    需要跟色的运行期组件（Monaco）通过 oj-theme-change 事件自己跟。
+        applyTheme(name)
+        this.themeChoice = name
       }
     },
     computed: {
