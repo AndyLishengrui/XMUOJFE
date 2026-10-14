@@ -518,10 +518,188 @@ function checkDraftGuard () {
   }
 }
 
+/**
+ * 换肤的**边界用例**回归自检（2026-10-13 老师报的"点了配色整站没样式"）。
+ *
+ * 上面 checkThemeSwitch 只走"点到另一套 + 新表加载成功"这一条顺路。
+ * 两条会让**旧表被摘掉却没有新表顶上**的岔路它都测不到：
+ *   ① 点「当前就是的那一套」（未登入首访者 pick=null，下拉当前项是「自动」，最容易点到）
+ *   ② 新表加载失败（onerror）/ 慢到来不及
+ * —— 任何一条走岔，页面上就一张主题 CSS 都不剩 = 整站白板。
+ */
+function checkThemeSafeSwap () {
+  let code = fs.readFileSync(path.join(ROOT, 'src/utils/theme.js'), 'utf8')
+  code = code.replace(/^export\s+/gm, '')
+  const api = new Function(code + '\n;return {applyTheme: applyTheme}')()
+
+  const themeLinks = () => Array.prototype.slice
+    .call(dom.querySelectorAll('link[href*="/static/css/oj."]'))
+    .map(l => l.getAttribute('href'))
+
+  // 造现场：当前生效的是 <theme>，用户点了 <click>；fire 用来模拟浏览器的加载结果
+  function scenario (theme, click, fire) {
+    Array.prototype.slice.call(dom.querySelectorAll('link[href*="/static/css/"]'))
+      .forEach(l => { if (l.parentNode) l.parentNode.removeChild(l) })
+    const oldLink = dom.createElement('link')
+    oldLink.setAttribute('rel', 'stylesheet')
+    oldLink.setAttribute('href', '/static/css/oj.' + theme + '.css')
+    dom.head.appendChild(oldLink)
+    win.__OJ_THEME__ = {
+      css: {
+        light: '/static/css/oj.light.css',
+        deep: '/static/css/oj.deep.css',
+        sand: '/static/css/oj.sand.css'
+      },
+      site: 'auto', pick: null, resolved: theme, switchable: true
+    }
+    api.applyTheme(click)
+    // jsdom 不加载外链：新表的结局要手动喂进来，喂完**再**取样式表清单
+    if (fire) {
+      const fresh = dom.querySelector('link[href="/static/css/oj.' + fire.target + '.css"]')
+      if (fresh && typeof fresh[fire.event] === 'function') fresh[fire.event]()
+    }
+    return themeLinks()
+  }
+
+  const bad = []
+
+  // ① 点当前生效的那一套 —— 必须还有那张表在场（曾经会一张不剩 = 整站白板）
+  const same1 = scenario('sand', 'sand')
+  if (same1.length === 0) bad.push('点「当前这套」后一张主题表都不剩（整站白板）')
+
+  // ② 点「自动」而自动解析出来的正是当前这套 —— 同样不能摘表
+  const same2 = scenario('sand', 'auto')
+  if (same2.length === 0) bad.push('点「自动」命中当前这套后一张主题表都不剩')
+
+  // ③ 新表 onerror（离线/404）—— 旧表必须还在，坏掉的新表要被撤掉
+  const err = scenario('sand', 'deep', {target: 'deep', event: 'onerror'})
+  if (err.indexOf('/static/css/oj.sand.css') === -1) bad.push('新表加载失败后旧表被摘了')
+  if (err.indexOf('/static/css/oj.deep.css') >= 0) bad.push('加载失败的新表没撤掉')
+
+  // ④ 顺路确认没把正常路径改坏：新表加载成功 → 换表 + 旧表摘掉
+  const ok = scenario('sand', 'deep', {target: 'deep', event: 'onload'})
+  if (ok.indexOf('/static/css/oj.deep.css') === -1) bad.push('正常路径：新表没留下')
+  if (ok.indexOf('/static/css/oj.sand.css') >= 0) bad.push('正常路径：旧表没摘掉')
+
+  // ⑤ 源码层面：不许再有"超时就把旧表摘掉"的兜底（注释里出现不算）
+  const codeNoComments = code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+  if (codeNoComments.indexOf('setTimeout') >= 0) bad.push('仍有 setTimeout 摘表兜底')
+
+  return {
+    name: '换肤边界：点当前这套 / 新表加载失败，都不能丢样式',
+    ok: bad.length === 0,
+    detail: bad.length ? '❌ ' + bad.join('；')
+      : '同套不摘表 / 失败保留旧表并撤新表 / 无超时摘表 ✅'
+  }
+}
+
+// ── Monaco 按需加载：打开页面不许拉编辑器 ──────────────────────────
+// 2026-10-14：原来 index.html 无条件 require(['vs/editor/editor.main'])，而这是全站共用的
+// SPA 壳 ⇒ 每次进站（含首页）白拉 editor.api 3.67MB/gzip 945KB，把 ~0.5MB/s 的出口吃光。
+// 这条用例钉死两件事：① 页面打开时**一个 Monaco 脚本都不注入**；② MonacoEditor 走 __loadMonaco。
+async function checkMonacoLazy () {
+  const bad = []
+  const html = fs.readFileSync(path.join(ROOT, 'src/pages/oj/index.html'), 'utf8')
+  const block = (html.match(/<script>([\s\S]*?)<\/script>/g) || [])
+    .map(b => b.replace(/^<script>/, '').replace(/<\/script>$/, ''))
+    .find(b => b.indexOf('__loadMonaco') >= 0)
+  if (!block) {
+    return {name: 'Monaco 按需加载：打开页面不拉编辑器', ok: false,
+            detail: '❌ index.html 里找不到定义 window.__loadMonaco 的 <script>'}
+  }
+
+  const savedRequire = win.require
+  const savedMonaco = win.monaco
+  Array.prototype.slice.call(dom.querySelectorAll('head script')).forEach(s => s.parentNode.removeChild(s))
+  win.monaco = undefined
+
+  new Function(block)()
+
+  const injected = () => Array.prototype.slice.call(dom.querySelectorAll('head script'))
+    .map(s => s.getAttribute('src')).filter(Boolean)
+
+  // ① 打开页面（还没人调 __loadMonaco）—— 不许注入任何脚本
+  const atOpen = injected()
+  if (atOpen.length !== 0) bad.push('打开页面就注入了脚本（应等到调用时）：' + atOpen.join(', '))
+
+  // ② 第一次调用 —— 只许注入 loader.js，不许直接注入 editor.main
+  let resolved = null
+  win.__loadMonaco().then(m => { resolved = m })
+  const afterFirst = injected()
+  if (afterFirst.filter(s => s.indexOf('loader.js') >= 0).length !== 1) {
+    bad.push('调用后没注入 loader.js：' + (afterFirst.join(', ') || '(无)'))
+  }
+  if (afterFirst.some(s => s.indexOf('editor.main') >= 0)) bad.push('页面直接注入了 editor.main（应由 AMD loader 拉）')
+
+  // ③ 模拟 loader.js 执行 + editor.main 就绪（jsdom 不执行外链，手动喂）
+  const loaderEl = Array.prototype.slice.call(dom.querySelectorAll('head script'))
+    .filter(s => (s.getAttribute('src') || '').indexOf('loader.js') >= 0)[0]
+  win.require = function (deps, cb) {
+    if (deps && deps[0] === 'vs/editor/editor.main') {
+      win.monaco = {editor: {}, languages: {}, KeyCode: {}, KeyMod: {}}
+      cb()
+    }
+  }
+  if (loaderEl && typeof loaderEl.onload === 'function') loaderEl.onload()
+  await new Promise(resolve => setImmediate(resolve))
+
+  if (resolved !== win.monaco || !win.monaco) bad.push('__loadMonaco() 没有 resolve 出 window.monaco')
+
+  // ④ 幂等：再调一次不许重复注入
+  win.__loadMonaco()
+  if (injected().filter(s => s.indexOf('loader.js') >= 0).length !== 1) bad.push('重复调用会重复注入 loader.js')
+
+  // ⑤ 组件侧：必须走 __loadMonaco；theme watcher 必须判空（按需加载后 monaco 可能还没到）
+  const ed = fs.readFileSync(path.join(ROOT, 'src/pages/oj/components/MonacoEditor.vue'), 'utf8')
+  if (ed.indexOf('__loadMonaco') === -1) bad.push('MonacoEditor.vue 没调 window.__loadMonaco')
+  const tw = ed.match(/'theme'\s*\(newVal\)\s*\{[\s\S]*?\n\s{6}\}/)
+  if (!tw || tw[0].indexOf('if (window.monaco)') === -1) {
+    bad.push('MonacoEditor.vue 的 theme watcher 没判空（Monaco 未就绪时会抛错）')
+  }
+
+  win.require = savedRequire
+  win.monaco = savedMonaco
+
+  return {
+    name: 'Monaco 按需加载：打开页面不拉编辑器',
+    ok: bad.length === 0,
+    detail: bad.length ? '❌ ' + bad.join('；')
+      : '开页 0 注入 / 调用才拉 loader.js / 幂等 / 组件已改 ✅'
+  }
+}
+
+// ── 未读消息轮询间隔：不许再回到 30 秒 ──────────────────────────────
+// 2026-10-14：30 秒的轮询占了**全站 40% 的请求**（高峰 20 分钟 6385/16001），而出口只有 ~0.5MB/s。
+// 拉长到 2 分钟。这条用例把间隔钉死，防止以后有人手滑改回去。
+function checkUnreadPollInterval () {
+  const bad = []
+  const src = fs.readFileSync(path.join(ROOT, 'src/pages/oj/components/NavBar.vue'), 'utf8')
+  const m = src.match(/const\s+UNREAD_POLL_INTERVAL_MS\s*=\s*(\d+)/)
+  if (!m) {
+    bad.push('NavBar.vue 没有 UNREAD_POLL_INTERVAL_MS 常量')
+  } else if (parseInt(m[1], 10) < 120000) {
+    bad.push(`轮询间隔只有 ${m[1]}ms（要求 ≥120000ms，即 2 分钟）`)
+  }
+  const line = src.split('\n').find(l => l.indexOf('setInterval') >= 0 && l.indexOf('fetchUnreadCount') >= 0) || ''
+  if (!line) {
+    bad.push('找不到 unread_count 的 setInterval')
+  } else {
+    if (line.indexOf('UNREAD_POLL_INTERVAL_MS') < 0) bad.push('setInterval 没走常量：' + line.trim())
+    if (/\b\d{4,}\b/.test(line)) bad.push('setInterval 里还写死了数字：' + line.trim())
+  }
+  return {
+    name: '未读消息轮询：间隔 ≥2 分钟且走常量',
+    ok: bad.length === 0,
+    detail: bad.length ? '❌ ' + bad.join('；')
+      : `间隔 ${m ? m[1] : '?'}ms（原 30000ms）✅ — 请求量降到 1/4`
+  }
+}
+
 // ── 跑 ───────────────────────────────────────────────────────────
 const cases = [checkAnnouncements, checkPaletteSwitch, checkRankFrozenColumns, checkNavIconGlyphs,
                checkContestListNav, checkContestListNavBehavior, checkContestTypeIcons,
-               checkThemeSwitch, checkDraftGuard]
+               checkThemeSwitch, checkDraftGuard, checkThemeSafeSwap, checkMonacoLazy,
+               checkUnreadPollInterval]
 
 ;(async () => {
   const results = []

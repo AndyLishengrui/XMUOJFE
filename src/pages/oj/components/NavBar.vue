@@ -119,6 +119,12 @@
   import login from '@oj/views/user/Login'
   import register from '@oj/views/user/Register'
 
+  // 「有没有新消息」红点的轮询间隔。
+  // 2026-10-14：原为 30 秒，实测它占了**全站 40% 的请求**（高峰 20 分钟里 6385/16001 条），
+  // 而服务器出口只有 ~0.5MB/s —— 等于四成带宽和请求都花在回答"没有新消息"上。
+  // 拉长到 2 分钟：红点最迟晚 2 分钟才亮，学生无感，请求量直接砍到 1/4。
+  const UNREAD_POLL_INTERVAL_MS = 120000
+
   export default {
     components: {
       login,
@@ -142,7 +148,7 @@
     mounted () {
       this.getProfile()
       this.fetchUnreadCount()
-      this._notifTimer = setInterval(() => { this.fetchUnreadCount() }, 30000)
+      this._notifTimer = setInterval(() => { this.fetchUnreadCount() }, UNREAD_POLL_INTERVAL_MS)
     },
     beforeDestroy () {
       if (this._notifTimer) {

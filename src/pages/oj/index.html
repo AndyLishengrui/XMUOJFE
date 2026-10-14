@@ -17,15 +17,36 @@
     }
   </script>
 
-  <!-- Monaco Editor via CDN — sets window.monaco globally -->
+  <!-- Monaco Editor —— **不**在打开页面时预加载。
+       原来这里无条件 require(['vs/editor/editor.main'])，而它是全站共用的一份 SPA 壳，
+       于是每次进入站点（含首页、比赛列表）都会白拉 editor.api 3.67MB / gzip 945KB，
+       在 ~0.5MB/s 的出口上把带宽吃光（2026-10-14 首页卡住的元凶）。
+       现在改成按需：只有题目页的 MonacoEditor.vue 会调 window.__loadMonaco()。 -->
   <script>
-    var require = { paths: { vs: '/static/monaco/vs' } }
-  </script>
-  <script src="/static/monaco/vs/loader.js"></script>
-  <script>
-    require(['vs/editor/editor.main'], function() {
-      console.log('Monaco Editor ready')
-    })
+    window.__loadMonaco = (function () {
+      var promise = null
+      return function loadMonaco () {
+        if (window.monaco) return Promise.resolve(window.monaco)
+        if (promise) return promise
+        promise = new Promise(function (resolve, reject) {
+          // Monaco 的 AMD loader 读的是「脚本加载前」就存在的全局 require 配置对象
+          window.require = { paths: { vs: '/static/monaco/vs' } }
+          var s = document.createElement('script')
+          s.src = '/static/monaco/vs/loader.js'
+          s.onload = function () {
+            window.require(['vs/editor/editor.main'], function () {
+              resolve(window.monaco)
+            }, reject)
+          }
+          s.onerror = function () {
+            promise = null // 允许下次重试
+            reject(new Error('Monaco loader.js 加载失败'))
+          }
+          document.head.appendChild(s)
+        })
+        return promise
+      }
+    })()
   </script>
 </head>
 <body>

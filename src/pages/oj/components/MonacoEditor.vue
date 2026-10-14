@@ -395,7 +395,26 @@
       })
     },
     methods: {
-      waitForMonaco () {
+      waitForMonaco (attempt) {
+        if (window.monaco) {
+          this.initEditor()
+          return
+        }
+        // Monaco 不再由 index.html 预加载（那会让每次开页都白下 ~1MB）—— 这里按需拉起。
+        if (typeof window.__loadMonaco === 'function') {
+          window.__loadMonaco().then(() => {
+            this.initEditor()
+          }).catch(err => {
+            const n = attempt || 0
+            if (n >= 3) {
+              console.error('Monaco 加载失败，代码编辑器不可用：', err)
+              return
+            }
+            setTimeout(() => this.waitForMonaco(n + 1), 500 * (n + 1))
+          })
+          return
+        }
+        // 兜底：老行为（轮询等 window.monaco 出现）
         const check = () => {
           if (window.monaco) {
             this.initEditor()
@@ -564,7 +583,10 @@
         }
       },
       'theme' (newVal) {
-        window.monaco.editor.setTheme(newVal)
+        // 按需加载后，theme 可能在 Monaco 到位前就变（首页不再预加载）—— 必须判空
+        if (window.monaco) {
+          window.monaco.editor.setTheme(newVal)
+        }
       },
       'enableTemplates' (newVal) {
         templateCompletionLocallyEnabled = newVal

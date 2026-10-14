@@ -97,8 +97,8 @@ export function applyTheme (name) {
   const href = (info.css || {})[target]
   const old = document.querySelector('link[rel="stylesheet"][href*="/static/css/oj."]')
 
-  const finish = () => {
-    if (old && old.parentNode) old.parentNode.removeChild(old)
+  // 只同步状态，**绝不碰 <link>**（摘表是另一件事，见下面 swapOld）
+  const syncState = () => {
     document.documentElement.setAttribute('data-theme', target)
     // 回写状态。下次刷新时那段内联脚本读的是 localStorage，这里只是让本页读法保持一致。
     info.pick = name
@@ -110,9 +110,12 @@ export function applyTheme (name) {
     }))
   }
 
-  // 当前就是这套 → 不折腾 <link>，只同步一下状态
+  // 当前就是这套 → 只同步状态。
+  // 🔥 这里**绝不能摘旧表**：没有新表顶上来，摘了就一张都不剩 ⇒ 整站白板。
+  //    （未登入的首访者 localStorage 里没有 oj_theme，下拉里当前项就是「自动」，
+  //     点它 / 点眼下正生效的那套，都会命中这一支 —— 2026-10-13 老师报的正是这个。）
   if (old && old.getAttribute('href') === href) {
-    finish()
+    syncState()
     return true
   }
 
@@ -120,16 +123,27 @@ export function applyTheme (name) {
   link.rel = 'stylesheet'
   link.href = href
   let settled = false
-  const once = () => { if (!settled) { settled = true; finish() } }
-  link.onload = once
-  // 加载失败也别卡住：旧表还在，界面不会坏，只是这次切换没生效
-  link.onerror = once
+  // 只有**确认新表真的能用**了，才把旧表摘掉 —— 摘早了中间就是白板
+  link.onload = () => {
+    if (settled) return
+    settled = true
+    if (old && old.parentNode) old.parentNode.removeChild(old)
+    syncState()
+  }
+  // 新表拿不到（离线 / 404 / 被中间层拦）⇒ 撤掉它、**保留旧表**：
+  // 界面丝毫不受影响，只是这次配色没换成。
+  link.onerror = () => {
+    if (settled) return
+    settled = true
+    if (link.parentNode) link.parentNode.removeChild(link)
+  }
   if (old && old.parentNode) {
     old.parentNode.insertBefore(link, old.nextSibling)
   } else {
     document.head.appendChild(link)
   }
-  // 个别环境下 onload 可能不触发，兜个底
-  setTimeout(once, 1500)
+  // ⚠️ 刻意**不做超时兜底**：老的 `setTimeout(once, 1500)` 会在新表还没下载完时
+  //    就把旧表摘掉 ⇒ 慢网络下整站白板（注释写着"加载失败也别卡住"，代码却是反的）。
+  //    onload 万一不触发，新旧两张表都在场、新表在后 ⇒ 同权重仍以后者为准，界面不会坏。
   return true
 }
