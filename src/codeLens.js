@@ -4,35 +4,35 @@ const { findProblemMetadata } = require("./problemWorkspace");
 
 const SHORTCUT_COMMANDS = {
   start: {
-    title: "XMUOJ: 打开代码",
+    title: "打开代码",
     command: "xmuoj.startWorkingOnProblem"
   },
   test: {
-    title: "XMUOJ: 运行本地测试",
+    title: "运行本地测试",
     command: "xmuoj.runLocalTests"
   },
   submit: {
-    title: "XMUOJ: 提交评测",
+    title: "提交评测",
     command: "xmuoj.submitCurrentFile"
   },
   description: {
-    title: "XMUOJ: 查看题面",
+    title: "查看题面",
     command: "xmuoj.showCurrentProblemDescription"
   },
   results: {
-    title: "XMUOJ: 查看结果报表",
+    title: "查看结果报表",
     command: "xmuoj.showResultPanel"
   },
   language: {
-    title: "XMUOJ: 切换代码语言",
+    title: "切换代码语言",
     command: "xmuoj.switchProblemLanguage"
   },
   aiSolution: {
-    title: "XMUOJ: AI解题",
+    title: "AI 解题",
     command: "xmuoj.generateAiSolution"
   },
   aiCode: {
-    title: "XMUOJ: AI代码",
+    title: "AI 生成代码",
     command: "xmuoj.generateAiCode"
   }
 };

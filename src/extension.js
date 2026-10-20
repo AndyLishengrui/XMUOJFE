@@ -3009,10 +3009,10 @@ function updateStatusBars(state, userStatusBar, contestStatusBar, client) {
   if (state.contestWorkspace && state.contestWorkspace.contest) {
     const contest = state.contestWorkspace.contest;
     const statusLabel = getContestStatusLabel(contest);
-    contestStatusBar.text = `XMUOJ $(book) ${contest.title} [${statusLabel}]`;
+    contestStatusBar.text = `XMUOJ $(trophy) ${contest.title} [${statusLabel}]`;
     contestStatusBar.tooltip = `实验 #${contest.id} · 状态：${statusLabel}`;
   } else {
-    contestStatusBar.text = "XMUOJ $(book) 未打开实验";
+    contestStatusBar.text = "XMUOJ $(trophy) 未打开实验";
     contestStatusBar.tooltip = "先打开或浏览一个实验";
   }
 }
@@ -4511,7 +4511,7 @@ async function runWorkspaceScanAndMigration(context, state, client, outputChanne
           `本地目录迁移完成：移动 ${result.moved}，跳过 ${result.skipped}，重复 ${result.duplicate}，失败 ${result.failed}。`
         );
         if (result.failed) {
-          outputChannel.appendLine("可在命令面板执行“XMUOJ：回滚本地目录迁移”恢复到旧布局。");
+          outputChannel.appendLine("可在命令面板执行“回滚目录迁移”恢复到旧布局。");
         }
       }
     );
@@ -4862,8 +4862,8 @@ function activate(context) {
       const recent = (state.recentProblems || [])[0];
       const pick = await vscode.window.showQuickPick([
         { label: "$(search) 搜索题目", description: "本地 + 在线", value: "search" },
-        { label: "$(repo) 打开我的实验", description: "加载或查看已保存的实验", value: "contests" },
-        { label: "$(book) 打开公共题库", description: "刷题台与刷题队列", value: "problemset" },
+        { label: "$(trophy) 打开我的实验", description: "加载或查看已保存的实验", value: "contests" },
+        { label: "$(library) 打开公共题库", description: "刷题台与刷题队列", value: "problemset" },
         ...(recent ? [{
           label: "$(history) 继续上次的题目",
           description: `${recent.displayId || recent.problemId} ${recent.title || ""}`.trim(),
@@ -4894,7 +4894,7 @@ function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.migrateWorkspaces", async () => {
     const root = store.normalizeWorkspaceRootPath(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "");
     if (!root) {
-      vscode.window.showWarningMessage("请先在命令面板执行“XMUOJ：快速开始”或设置本地工作区目录。");
+      vscode.window.showWarningMessage("请先在命令面板执行“快速开始”或设置本地工作区目录。");
       return;
     }
     try {
@@ -5119,7 +5119,7 @@ function activate(context) {
     outputChannel.appendLine(`题目目录名修复：改名 ${renamed}，跳过 ${skipped}，失败 ${failed}${problems.length ? `；${problems.join("；")}` : ""}`);
     vscode.window.showInformationMessage(`题目目录名修复完成：改名 ${renamed}，跳过 ${skipped}，失败 ${failed}。`);
     if (skipped) {
-      vscode.window.showWarningMessage(`有 ${skipped} 个目录正在编辑中，关闭对应文件后再次执行“XMUOJ：修复题目目录名”。`);
+      vscode.window.showWarningMessage(`有 ${skipped} 个目录正在编辑中，关闭对应文件后再次执行“修复题目目录名”。`);
     }
   }));
 
@@ -5228,7 +5228,7 @@ function activate(context) {
       { label: "$(folder) 选择本地工作区目录", description: root || "尚未设置", value: "workspace" },
       { label: "$(sync) 迁移旧题目目录到 problems/", value: "migrate" },
       { label: "$(history) 回滚上一次目录迁移", value: "rollback" },
-      { label: "$(refresh) 重建本地题目索引", value: "rebuild" },
+      { label: "$(refresh) 重建题目索引", value: "rebuild" },
       { label: "$(tools) 修复题目目录名（! / $ 等字符）", value: "fixNames" },
       { label: "$(cloud-download) 检查扩展更新", value: "update" },
       { label: "$(clear-all) 清除最近搜索", value: "clearSearch" }
@@ -5500,7 +5500,7 @@ function activate(context) {
 
       items.push({ label: "操作", kind: vscode.QuickPickItemKind.Separator });
       items.push({
-        label: "$(book) 在公共题库中继续浏览",
+        label: "$(library) 在公共题库中继续浏览",
         description: `关键词：${trimmed}`,
         payload: { type: "browse" }
       });
@@ -5790,7 +5790,7 @@ function activate(context) {
       String(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "").trim()
     );
     if (!root) {
-      vscode.window.showWarningMessage("请先在命令面板执行「XMUOJ：快速开始」选择本地工作区根目录。");
+      vscode.window.showWarningMessage("请先在命令面板执行「快速开始」选择本地工作区根目录。");
       return;
     }
     // v0.1.0 起实验题与公共题统一放在 root/problems/ 下，实验信息保存在元数据里
@@ -5806,7 +5806,7 @@ function activate(context) {
       String(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "").trim()
     );
     if (!root) {
-      vscode.window.showWarningMessage("请先在命令面板执行「XMUOJ：快速开始」选择本地工作区根目录。");
+      vscode.window.showWarningMessage("请先在命令面板执行「快速开始」选择本地工作区根目录。");
       return;
     }
     const problemsDir = path.join(root, PROBLEMS_DIR_NAME);

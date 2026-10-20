@@ -573,14 +573,14 @@ function buildShellCommands({ sourceFileName, language, extractedCaseDir, sample
     return {
       build: `mkdir -p ${buildDir} && cc ${quotedSource} -O2 -std=c17 -o ${buildDir}/main-c`,
       run: `mkdir -p ${buildDir} && cc ${quotedSource} -O2 -std=c17 -o ${buildDir}/main-c && ${buildDir}/main-c < ${quotedSample}`,
-      note: `可在命令面板执行“XMUOJ：运行本地测试”，或直接查看 ${quotedExtracted} 与 ${quotedSamples} 下的测试数据`
+      note: `可在命令面板执行“运行本地测试”，或直接查看 ${quotedExtracted} 与 ${quotedSamples} 下的测试数据`
     };
   }
   if (language === "C++") {
     return {
       build: `mkdir -p ${buildDir} && c++ -x c++ ${quotedSource} -O2 -std=c++14 -o ${buildDir}/main-cpp`,
       run: `mkdir -p ${buildDir} && c++ -x c++ ${quotedSource} -O2 -std=c++14 -o ${buildDir}/main-cpp && ${buildDir}/main-cpp < ${quotedSample}`,
-      note: `可在命令面板执行“XMUOJ：运行本地测试”，或直接查看 ${quotedExtracted} 与 ${quotedSamples} 下的测试数据`
+      note: `可在命令面板执行“运行本地测试”，或直接查看 ${quotedExtracted} 与 ${quotedSamples} 下的测试数据`
     };
   }
   if (language === "Java") {
@@ -588,20 +588,20 @@ function buildShellCommands({ sourceFileName, language, extractedCaseDir, sample
     return {
       build: `mkdir -p ${buildDir} && javac -encoding UTF-8 -d ${buildDir} ${quotedSource}`,
       run: `mkdir -p ${buildDir} && javac -encoding UTF-8 -d ${buildDir} ${quotedSource} && java -cp ${buildDir} ${className} < ${quotedSample}`,
-      note: `可在命令面板执行“XMUOJ：运行本地测试”，或直接查看 ${quotedExtracted} 与 ${quotedSamples} 下的测试数据`
+      note: `可在命令面板执行“运行本地测试”，或直接查看 ${quotedExtracted} 与 ${quotedSamples} 下的测试数据`
     };
   }
   if (language === "Python3") {
     return {
       build: `python3 -m py_compile ${quotedSource}`,
       run: `python3 ${quotedSource} < ${quotedSample}`,
-      note: `可在命令面板执行“XMUOJ：运行本地测试”，或直接查看 ${quotedExtracted} 与 ${quotedSamples} 下的测试数据`
+      note: `可在命令面板执行“运行本地测试”，或直接查看 ${quotedExtracted} 与 ${quotedSamples} 下的测试数据`
     };
   }
   return {
     build: `echo 不支持的语言: ${language}`,
     run: `echo 不支持的语言: ${language}`,
-    note: "可在命令面板执行“XMUOJ：运行本地测试”"
+    note: "可在命令面板执行“运行本地测试”"
   };
 }
 

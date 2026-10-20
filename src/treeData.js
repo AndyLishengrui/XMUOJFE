@@ -52,13 +52,13 @@ function getActionIcon(command) {
     "xmuoj.search": "search",
     "xmuoj.login": "account",
     "xmuoj.logout": "sign-out",
-    "xmuoj.browseContests": "search",
-    "xmuoj.browseProblemset": "book",
+    "xmuoj.browseContests": "trophy",
+    "xmuoj.browseProblemset": "library",
     "xmuoj.openProblemsetProblem": "book",
-    "xmuoj.manageProblemsetSelections": "trash",
-    "xmuoj.openContestWorkspaceByItem": "repo",
+    "xmuoj.manageProblemsetSelections": "list-selection",
+    "xmuoj.openContestWorkspaceByItem": "trophy",
     "xmuoj.openContestWorkspaceProblem": "note",
-    "xmuoj.manageContestWorkspaceSelections": "trash",
+    "xmuoj.manageContestWorkspaceSelections": "list-selection",
     "xmuoj.showResultPanel": "graph",
     "xmuoj.startWorkingOnProblem": "play",
     "xmuoj.showCurrentProblemDescription": "eye",
@@ -72,7 +72,9 @@ function getActionIcon(command) {
     "xmuoj.removeContestWorkspaceSelection": "close",
     "xmuoj.initContestWorkspace": "new-folder",
     "xmuoj.openRecentProblem": "history",
-    "xmuoj.removeRecentProblem": "close"
+    "xmuoj.removeRecentProblem": "close",
+    "xmuoj.openOnlineProblem": "link-external",
+    "xmuoj.fixProblemDirectoryNames": "tools"
   };
   return makeThemeIcon(mapping[command] || "chevron-right");
 }
@@ -216,7 +218,15 @@ class ContestTreeItem extends vscode.TreeItem {
     const problemCount = (entry.problems || []).length;
     this.description = `${isActive ? "当前实验 · " : ""}${statusSummary} · ${problemCount} 题${entry.scanned ? " · 本地" : ""}`;
     this.tooltip = `${this.label}\n${statusSummary}\n${problemCount} 道题${entry.scanned ? "\n来自本地目录扫描" : ""}`;
-    this.iconPath = makeThemeIcon(isActive ? "target" : "repo", isActive ? "charts.blue" : undefined);
+    const statusKey = normalizeContestStatus(entry.contest ? entry.contest.status : "").key;
+    const statusColor = statusKey === "running"
+      ? "charts.green"
+      : statusKey === "pending"
+        ? "charts.yellow"
+        : statusKey === "ended"
+          ? "disabledForeground"
+          : undefined;
+    this.iconPath = makeThemeIcon(isActive ? "target" : "trophy", isActive ? "charts.blue" : statusColor);
   }
 }
 
@@ -230,11 +240,10 @@ class WorkspaceEntryTreeItem extends vscode.TreeItem {
     this.contextValue = entry.isDirectory ? "problemWorkspaceFolder" : "problemWorkspaceFile";
     this.tooltip = entry.fullPath;
     this.description = this.isActive ? "当前编辑" : (path.relative(rootDir, entry.fullPath) || ".");
-    this.iconPath = this.isActive
-      ? makeThemeIcon("edit", "charts.green")
-      : makeThemeIcon(entry.isDirectory ? "folder" : "file");
+    // 交给 VS Code 的文件图标主题处理：Python / C++ / Java 等文件会显示各自语言图标。
+    this.resourceUri = vscode.Uri.file(entry.fullPath);
+    this.iconPath = this.isActive ? makeThemeIcon("edit", "charts.green") : undefined;
     if (!entry.isDirectory) {
-      this.resourceUri = vscode.Uri.file(entry.fullPath);
       this.command = {
         command: "vscode.open",
         title: "打开文件",
@@ -284,8 +293,8 @@ class ProblemTreeDataProvider {
     const queueCount = (this.state.problemsetSelections || []).length;
     return [
       new SectionTreeItem("recent", "最近在做", recentCount ? `${recentCount} 道` : undefined, "history"),
-      new SectionTreeItem("contests", "我的实验", contests.length ? `${contests.length} 场` : undefined, "repo"),
-      new SectionTreeItem("problemset", "公共题库", queueCount ? `${queueCount} 道` : undefined, "book")
+      new SectionTreeItem("contests", "我的实验", contests.length ? `${contests.length} 场` : undefined, "trophy"),
+      new SectionTreeItem("problemset", "公共题库", queueCount ? `${queueCount} 道` : undefined, "library")
     ];
   }
 
@@ -306,7 +315,7 @@ class ProblemTreeDataProvider {
     const entries = this.state.recentProblems || [];
     if (!entries.length) {
       return [
-        new ActionTreeItem("搜索题目开始刷题", "按题号、标题或关键词搜索在线题目与本地目录", "xmuoj.search"),
+        new ActionTreeItem("搜索题目", "按题号、标题或关键词搜索在线题目与本地目录", "xmuoj.search"),
         new InfoTreeItem("暂无最近题目", "打开任意题目后会出现在这里", "history")
       ];
     }
@@ -372,9 +381,9 @@ class ProblemTreeDataProvider {
 
   getContestsSectionChildren() {
     const entries = this.getContestEntries();
-    const items = [new ActionTreeItem("搜索并加载实验", "按关键词搜索实验，加入下面的实验列表", "xmuoj.browseContests")];
+    const items = [new ActionTreeItem("搜索实验", "按关键词搜索实验，加入下面的实验列表", "xmuoj.browseContests")];
     if (!entries.length) {
-      items.push(new InfoTreeItem("暂无实验", "加载实验或打开题目后，磁盘上的实验会自动出现在这里", "repo"));
+      items.push(new InfoTreeItem("暂无实验", "加载实验或打开题目后，磁盘上的实验会自动出现在这里", "trophy"));
       return items;
     }
     const activeContestId = this.state.contestWorkspace && this.state.contestWorkspace.contest
@@ -411,7 +420,7 @@ class ProblemTreeDataProvider {
   getProblemsetSectionChildren() {
     const items = [
       new ActionTreeItem("搜索题目", "在线搜索公共题库 + 本地工作区过滤", "xmuoj.search"),
-      new ActionTreeItem("进入刷题台", "搜索公开题目、编排刷题队列并连续开刷", "xmuoj.browseProblemset"),
+      new ActionTreeItem("打开刷题台", "搜索公开题目、编排刷题队列并连续开刷", "xmuoj.browseProblemset"),
       new ActionTreeItem("打开题目目录", "在文件管理器中打开 root/problems", "xmuoj.revealProblemsetWorkspace")
     ];
     const selections = this.state.problemsetSelections || [];

@@ -1,0 +1,24 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="xmuoj-bg" x1="64" y1="32" x2="448" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2563EB"/>
+      <stop offset="0.55" stop-color="#0F766E"/>
+      <stop offset="1" stop-color="#134E4A"/>
+    </linearGradient>
+    <linearGradient id="xmuoj-shine" x1="256" y1="16" x2="256" y2="300" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#xmuoj-bg)"/>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#xmuoj-shine)"/>
+  <rect x="16.75" y="16.75" width="478.5" height="478.5" rx="111.25" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="1.5"/>
+  <g transform="translate(112 112) scale(12)" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 4.4h8v4.3a4 4 0 0 1-8 0V4.4Z"/>
+    <path d="M7.4 6.1 4.2 8.3l3.2 2.2"/>
+    <path d="M16.6 6.1l3.2 2.2-3.2 2.2"/>
+    <path d="M12 12.8v2.4"/>
+    <path d="M9.4 15.4h5.2l.6 4.2H8.8l.6-4.2Z"/>
+    <path d="M8.4 19.6h7.2"/>
+  </g>
+</svg>

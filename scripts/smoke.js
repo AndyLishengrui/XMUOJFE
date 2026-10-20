@@ -273,6 +273,28 @@ async function main() {
         throw new Error(`缺少必需命令：${id}`);
       }
     }
+
+    // 菜单文案规范：命令标题不再硬编码 “XMUOJ：” 前缀，统一由 category 分组。
+    const manifest = require(path.join(__dirname, "..", "package.json"));
+    const invalidTitles = manifest.contributes.commands.filter((entry) => /^XMUOJ[：:]/.test(String(entry.title || "")));
+    if (invalidTitles.length) {
+      throw new Error(`命令标题仍带 XMUOJ 前缀：${invalidTitles.map((entry) => entry.command).join(", ")}`);
+    }
+    const missingCategory = manifest.contributes.commands.filter((entry) => entry.category !== "XMUOJ");
+    if (missingCategory.length) {
+      throw new Error(`命令缺少 XMUOJ 分类：${missingCategory.map((entry) => entry.command).join(", ")}`);
+    }
+    if (!manifest.icon) {
+      throw new Error("package.json 缺少扩展图标 media/icon.png");
+    }
+    const titleCommands = manifest.contributes.menus["view/title"] || [];
+    for (const item of titleCommands) {
+      const entry = manifest.contributes.commands.find((command) => command.command === item.command);
+      if (!entry || typeof entry.icon !== "string" || !entry.icon.startsWith("$(")) {
+        throw new Error(`视图标题栏命令缺少 codicon 图标：${item.command}`);
+      }
+    }
+
     const activatedCommandCount = registeredCommands.length;
 
     // 事件回调（编辑器切换、命令执行入口）同步冒烟
