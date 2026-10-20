@@ -253,7 +253,7 @@ async function main() {
     if (registeredCommands.length < EXPECTED_MIN_COMMANDS) {
       throw new Error(`命令注册数量异常：期望 >= ${EXPECTED_MIN_COMMANDS}，实际 ${registeredCommands.length}`);
     }
-    const requiredCommands = ["xmuoj.login", "xmuoj.submitCurrentFile", "xmuoj.startWorkingOnProblem", "xmuoj.quickStart"];
+    const requiredCommands = ["xmuoj.login", "xmuoj.submitCurrentFile", "xmuoj.startWorkingOnProblem", "xmuoj.openOnlineProblem", "xmuoj.quickStart"];
     for (const id of requiredCommands) {
       if (!registeredCommands.some((entry) => entry.id === id)) {
         throw new Error(`缺少必需命令：${id}`);

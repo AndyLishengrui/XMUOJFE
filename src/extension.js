@@ -381,7 +381,8 @@ const ACTION_ICONS = {
   submit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20v-6l13-2-13-2V4l18 8-18 8Z" fill="currentColor"/></svg>',
   showResults: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9h3v10H5V9Zm5-4h3v14h-3V5Zm5 7h3v7h-3v-7Z" fill="currentColor"/></svg>',
   switchLanguage: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10.01 10.01 0 0 0 12 2Zm6.93 9h-3.09a15.65 15.65 0 0 0-1.38-5.03A8.03 8.03 0 0 1 18.93 11ZM12 4.07A13.74 13.74 0 0 1 13.82 11h-3.64A13.74 13.74 0 0 1 12 4.07ZM4.06 13h3.09a15.65 15.65 0 0 0 1.38 5.03A8.03 8.03 0 0 1 4.06 13Zm3.09-2H4.06a8.03 8.03 0 0 1 4.47-5.03A15.65 15.65 0 0 0 7.15 11ZM12 19.93A13.74 13.74 0 0 1 10.18 13h3.64A13.74 13.74 0 0 1 12 19.93ZM10.18 11a13.74 13.74 0 0 1 1.82-6.93A13.74 13.74 0 0 1 13.82 11Zm4.64 2a15.65 15.65 0 0 1-1.38 5.03A15.65 15.65 0 0 1 12.06 13h2.76Zm-.88 5.03A8.03 8.03 0 0 0 18.93 13h-3.09a15.65 15.65 0 0 1-1.38 5.03Z" fill="currentColor"/></svg>',
-  language: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10.01 10.01 0 0 0 12 2Zm6.93 9h-3.09a15.65 15.65 0 0 0-1.38-5.03A8.03 8.03 0 0 1 18.93 11ZM12 4.07A13.74 13.74 0 0 1 13.82 11h-3.64A13.74 13.74 0 0 1 12 4.07ZM4.06 13h3.09a15.65 15.65 0 0 0 1.38 5.03A8.03 8.03 0 0 1 4.06 13Zm3.09-2H4.06a8.03 8.03 0 0 1 4.47-5.03A15.65 15.65 0 0 0 7.15 11ZM12 19.93A13.74 13.74 0 0 1 10.18 13h3.64A13.74 13.74 0 0 1 12 19.93ZM10.18 11a13.74 13.74 0 0 1 1.82-6.93A13.74 13.74 0 0 1 13.82 11Zm4.64 2a15.65 15.65 0 0 1-1.38 5.03A15.65 15.65 0 0 1 12.06 13h2.76Zm-.88 5.03A8.03 8.03 0 0 0 18.93 13h-3.09a15.65 15.65 0 0 1-1.38 5.03Z" fill="currentColor"/></svg>'
+  language: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10A10.01 10.01 0 0 0 12 2Zm6.93 9h-3.09a15.65 15.65 0 0 0-1.38-5.03A8.03 8.03 0 0 1 18.93 11ZM12 4.07A13.74 13.74 0 0 1 13.82 11h-3.64A13.74 13.74 0 0 1 12 4.07ZM4.06 13h3.09a15.65 15.65 0 0 0 1.38 5.03A8.03 8.03 0 0 1 4.06 13Zm3.09-2H4.06a8.03 8.03 0 0 1 4.47-5.03A15.65 15.65 0 0 0 7.15 11ZM12 19.93A13.74 13.74 0 0 1 10.18 13h3.64A13.74 13.74 0 0 1 12 19.93ZM10.18 11a13.74 13.74 0 0 1 1.82-6.93A13.74 13.74 0 0 1 13.82 11Zm4.64 2a15.65 15.65 0 0 1-1.38 5.03A15.65 15.65 0 0 1 12.06 13h2.76Zm-.88 5.03A8.03 8.03 0 0 0 18.93 13h-3.09a15.65 15.65 0 0 1-1.38 5.03Z" fill="currentColor"/></svg>',
+  openOnline: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7h-2V6.41l-8.29 8.3-1.42-1.42L17.59 5H14V3ZM5 5h5v2H7v10h10v-3h2v5H5V5Z" fill="currentColor"/></svg>'
 };
 
 function normalizeProgressScope(scope) {
@@ -714,9 +715,9 @@ async function rebindProblemFromMetadata(client, state, metadataContext) {
 }
 
 /** 紧凑按钮：单行图标 + 文本，高度 24px，题面/结果页共用。 */
-function renderCompactActionButton(command, iconKey, label, variant = "secondary") {
+function renderCompactActionButton(command, iconKey, label, variant = "secondary", titleText = label) {
   const icon = ACTION_ICONS[iconKey] || ACTION_ICONS.startWork;
-  return `<button type="button" class="action ${variant}" data-command="${command}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${icon}<span>${escapeHtml(label)}</span></button>`;
+  return `<button type="button" class="action ${variant}" data-command="${command}" title="${escapeHtml(titleText)}" aria-label="${escapeHtml(titleText)}">${icon}<span>${escapeHtml(label)}</span></button>`;
 }
 
 async function updateProblemProgress(context, state, progressRef, patch) {
@@ -898,6 +899,7 @@ function renderProblemHtml(problem, baseUrl, workspaceState = {}, _user = null) 
     hasWorkspace ? renderCompactActionButton("runTests", "runTests", "本地测试") : "",
     hasWorkspace ? renderCompactActionButton("submit", "submit", "提交") : "",
     renderCompactActionButton("showResults", "showResults", "结果"),
+    renderCompactActionButton("openOnline", "openOnline", "在线打开", "secondary", "在浏览器中打开 XMUOJ 题目页，可手动在线提交"),
     hasWorkspace ? renderCompactActionButton("switchLanguage", "language", "切换语言") : "",
     problem.can_download_test_case !== false ? renderCompactActionButton("downloadTests", "downloadTests", "下载数据") : ""
   ].filter(Boolean).join("");
@@ -2522,6 +2524,25 @@ async function resolveResultPanelProblemRef(client, state) {
     || buildResultProblemRefFromRecord(state.lastSubmissionResult);
 }
 
+/**
+ * 结果页按钮的题目上下文：结果页可能显示的是历史提交，
+ * 必须带上该结果对应的题目，而不是盲目使用 state.activeProblem。
+ */
+function getResultPanelCommandTarget(state) {
+  const ref = state.resultPanelProblemRef;
+  if (ref && ref.problemId !== undefined && ref.problemId !== null && ref.problemId !== "") {
+    return {
+      problem: {
+        id: ref.problemId,
+        display_id: ref.displayId || "",
+        title: ref.title || ""
+      },
+      contest: ref.contestId ? { id: ref.contestId } : null
+    };
+  }
+  return { problem: state.activeProblem, contest: state.activeContest };
+}
+
 function renderResultPanelHtml(viewModel) {
   const { problemRef, localReport, submissionResult, focusMode, historyCount, historyNavigation } = viewModel;
   const titleLine = problemRef
@@ -3094,34 +3115,131 @@ async function getEditorProblemContext(client, document) {
   };
 }
 
+/** 判断题目元数据是否属于指定题目；contestId 仅在双方都有值时参与比较。 */
+function metadataMatchesProblem(metadata, problem, contest) {
+  if (!metadata || !problem || problem.id === undefined || problem.id === null) {
+    return false;
+  }
+  if (String(metadata.problemId) !== String(problem.id)) {
+    return false;
+  }
+  const metadataContestId = metadata.contestId === undefined || metadata.contestId === null ? "" : String(metadata.contestId);
+  const targetContestId = contest && contest.id !== undefined && contest.id !== null ? String(contest.id) : "";
+  return !metadataContestId || !targetContestId || metadataContestId === targetContestId;
+}
+
 async function resolveSourceContext(client, state, problem = null, contest = null) {
+  const explicitTarget = problem || null;
+  const explicitContest = contest || null;
+
+  // 显式目标（题面页按钮传入）只接受同一题目的源文件，避免把另一道题的文件提交上去；
+  // 没有显式目标时（命令面板、CodeLens、树视图）保持“当前文件优先”的原有行为。
+  const acceptable = (metadataContext) => {
+    if (!metadataContext || !metadataContext.metadata || !metadataContext.problemDir) {
+      return false;
+    }
+    return !explicitTarget || metadataMatchesProblem(metadataContext.metadata, explicitTarget, explicitContest);
+  };
+
+  const fromDocument = async (document, usedActiveEditor) => {
+    if (!document || !document.fileName) {
+      return null;
+    }
+    // 显式目标（题面页按钮）只接受能识别语言的源文件，
+    // 避免把题目目录里的 problem.md、测试数据等误当成源码提交。
+    if (explicitTarget && !inferLanguage(document)) {
+      return null;
+    }
+    let metadataContext;
+    try {
+      metadataContext = await getEditorProblemContext(client, document);
+    } catch (error) {
+      // 元数据损坏或不可读时视为不属于任何题目，继续尝试其它候选。
+      return null;
+    }
+    if (!acceptable(metadataContext)) {
+      return null;
+    }
+    return {
+      document,
+      metadataContext,
+      sourcePath: document.fileName,
+      usedActiveEditor
+    };
+  };
+
   const activeEditor = vscode.window.activeTextEditor;
   if (activeEditor) {
-    const metadataContext = await getEditorProblemContext(client, activeEditor.document);
-    if (metadataContext.metadata && metadataContext.problemDir) {
-      return {
-        document: activeEditor.document,
-        metadataContext,
-        sourcePath: activeEditor.document.fileName,
-        usedActiveEditor: true
-      };
+    const activeContext = await fromDocument(activeEditor.document, true);
+    if (activeContext) {
+      return activeContext;
     }
   }
 
-  if (problem) {
-    const targetContest = contest || (state.contestWorkspace ? state.contestWorkspace.contest : null);
-    const existingWorkspace = await findExistingProblemWorkspace(problem, targetContest);
+  // 点击题面 webview 里的按钮时焦点在 webview 上，activeTextEditor 会变成 undefined，
+  // 此时按「最近编辑过的题目文件 → 工作区记录的规范源文件 → 当前可见的题目文件」兜底。
+  const targetProblem = explicitTarget || state.activeProblem;
+  const targetContest = explicitTarget ? explicitContest : state.activeContest;
+  let existingWorkspace = null;
+  if (targetProblem) {
+    try {
+      existingWorkspace = await findExistingProblemWorkspaceForOpenPanels(targetProblem, targetContest);
+    } catch (error) {
+      existingWorkspace = null;
+    }
+  }
+
+  const candidatePaths = [];
+  if (state.currentSourcePath) {
+    candidatePaths.push(state.currentSourcePath);
+  }
+  // 工作区记录的规范源文件排在可见编辑器之前：可见编辑器只保证“可见”，
+  // 顺序按视图列而不是最近焦点，多语言/多文件时容易选错。
+  if (existingWorkspace && existingWorkspace.sourceFilePath) {
+    candidatePaths.push(existingWorkspace.sourceFilePath);
+  }
+  const visibleEditors = Array.isArray(vscode.window.visibleTextEditors) ? vscode.window.visibleTextEditors : [];
+  for (const editor of visibleEditors) {
+    const document = editor && editor.document;
+    if (document && document.uri && document.uri.scheme === "file") {
+      candidatePaths.push(document.fileName);
+    }
+  }
+  const seenPaths = new Set();
+  for (const candidatePath of candidatePaths) {
+    if (!candidatePath || seenPaths.has(candidatePath)) {
+      continue;
+    }
+    seenPaths.add(candidatePath);
+    try {
+      const document = await vscode.workspace.openTextDocument(candidatePath);
+      const candidateContext = await fromDocument(document, false);
+      if (candidateContext) {
+        return candidateContext;
+      }
+    } catch (error) {
+      // 文件可能已被删除或移动，继续尝试下一个候选。
+    }
+  }
+
+  // 最后回退到当前题目已建立的工作区记录。
+  if (targetProblem) {
     if (existingWorkspace) {
-      return {
-        document: await vscode.workspace.openTextDocument(existingWorkspace.sourceFilePath),
-        metadataContext: {
-          metadata: existingWorkspace.metadata,
-          metadataPath: existingWorkspace.metadataPath,
-          problemDir: existingWorkspace.problemDir
-        },
-        sourcePath: existingWorkspace.sourceFilePath,
-        usedActiveEditor: false
-      };
+      try {
+        const document = await vscode.workspace.openTextDocument(existingWorkspace.sourceFilePath);
+        return {
+          document,
+          metadataContext: {
+            metadata: existingWorkspace.metadata,
+            metadataPath: existingWorkspace.metadataPath,
+            problemDir: existingWorkspace.problemDir
+          },
+          sourcePath: existingWorkspace.sourceFilePath,
+          usedActiveEditor: false
+        };
+      } catch (error) {
+        return null;
+      }
     }
   }
 
@@ -3503,6 +3621,25 @@ async function startWorkingOnProblem(context, client, state, outputChannel, prob
   return workspace;
 }
 
+/**
+ * 生成 XMUOJ 站点上的题目页地址：
+ * - 比赛题目：/contest/<contestId>/problem/<problemId>/
+ * - 公共题目：/problem/<problemId>
+ */
+function buildOnlineProblemUrl(baseUrl, problem, contest) {
+  const origin = String(baseUrl || "").replace(/\/+$/, "");
+  if (!origin || !problem || problem.id === undefined || problem.id === null || problem.id === "") {
+    return "";
+  }
+  const problemId = encodeURIComponent(String(problem.id));
+  const contestId = contest && contest.id !== undefined && contest.id !== null && contest.id !== ""
+    ? encodeURIComponent(String(contest.id))
+    : "";
+  return contestId
+    ? `${origin}/contest/${contestId}/problem/${problemId}/`
+    : `${origin}/problem/${problemId}`;
+}
+
 async function openProblemDetail(client, state, problem, contest, contestPassword) {
   let detail = problem;
   try {
@@ -3533,16 +3670,31 @@ async function openProblemDetail(client, state, problem, contest, contestPasswor
           // 因为面板复用时闭包中的 detail/contest 仍是上一次打开题目的值。
           await vscode.commands.executeCommand("xmuoj.startWorkingOnProblem", state.activeProblem, state.activeContest);
         } else if (message.command === "runTests") {
-          await vscode.commands.executeCommand("xmuoj.runLocalTests");
+          // 显式带上当前题目，保证焦点在 webview 上时也能定位到这道题的源文件。
+          await vscode.commands.executeCommand("xmuoj.runLocalTests", {
+            problem: state.activeProblem,
+            contest: state.activeContest
+          });
         } else if (message.command === "downloadTests") {
-          await vscode.commands.executeCommand("xmuoj.downloadTestCases");
+          await vscode.commands.executeCommand("xmuoj.downloadTestCases", {
+            problem: state.activeProblem,
+            contest: state.activeContest
+          });
         } else if (message.command === "submit") {
-          await vscode.commands.executeCommand("xmuoj.submitCurrentFile");
+          await vscode.commands.executeCommand("xmuoj.submitCurrentFile", {
+            problem: state.activeProblem,
+            contest: state.activeContest
+          });
         } else if (message.command === "showResults") {
           await vscode.commands.executeCommand("xmuoj.showResultPanel", {
             problem: state.activeProblem,
             contest: state.activeContest,
             baseUrl: client.baseUrl
+          });
+        } else if (message.command === "openOnline") {
+          await vscode.commands.executeCommand("xmuoj.openOnlineProblem", {
+            problem: state.activeProblem,
+            contest: state.activeContest
           });
         } else if (message.command === "switchLanguage") {
           await vscode.commands.executeCommand("xmuoj.switchProblemLanguage");
@@ -3574,6 +3726,8 @@ async function openProblemDetail(client, state, problem, contest, contestPasswor
 async function showResultPanel(state, client, options = {}) {
   const preserveFocus = Boolean(options.preserveFocus);
   const problemRef = await resolveResultPanelProblemRef(client, state);
+  // 供结果页按钮使用：面板会被复用，消息回调不能依赖渲染时闭包。
+  state.resultPanelProblemRef = problemRef;
   const explicitSubmission = state.resultPanelFocus && state.resultPanelFocus.submission
     ? state.resultPanelFocus.submission
     : null;
@@ -3597,9 +3751,9 @@ async function showResultPanel(state, client, options = {}) {
     panel.webview.onDidReceiveMessage(async (message) => {
       try {
         if (message.command === "runTests") {
-          await vscode.commands.executeCommand("xmuoj.runLocalTests");
+          await vscode.commands.executeCommand("xmuoj.runLocalTests", getResultPanelCommandTarget(state));
         } else if (message.command === "submit") {
-          await vscode.commands.executeCommand("xmuoj.submitCurrentFile");
+          await vscode.commands.executeCommand("xmuoj.submitCurrentFile", getResultPanelCommandTarget(state));
         } else if (message.command === "showLatestResult") {
           await vscode.commands.executeCommand("xmuoj.showCurrentProblemLatestResult");
         } else if (message.command === "showNewerHistoryResult") {
@@ -4033,7 +4187,9 @@ async function ensureLocalProblemWorkspace(client, state, problem, outputChannel
     vscode.window.showErrorMessage("未选择编程语言，无法创建题目工作区。");
     return null;
   }
-  const contextContest = state.contestWorkspace ? state.contestWorkspace.contest : null;
+  const contextContest = options.contest !== undefined
+    ? options.contest
+    : (state.contestWorkspace ? state.contestWorkspace.contest : null);
   const workspace = await ensureProblemWorkspace({
     rootPath,
     problem,
@@ -4045,7 +4201,7 @@ async function ensureLocalProblemWorkspace(client, state, problem, outputChannel
   return workspace;
 }
 
-async function ensureTestCasesAvailable(client, state, outputChannel, explicitProblemDir, explicitProblem) {
+async function ensureTestCasesAvailable(client, state, outputChannel, explicitProblemDir, explicitProblem, explicitContest) {
   const editor = vscode.window.activeTextEditor;
   const metadataContext = editor ? await getEditorProblemContext(client, editor.document) : { metadata: null, problemDir: explicitProblemDir || null };
   let problem = explicitProblem || state.activeProblem;
@@ -4064,8 +4220,25 @@ async function ensureTestCasesAvailable(client, state, outputChannel, explicitPr
     return null;
   }
 
-  if (!problemDir && state.activeProblem) {
-    const workspace = await ensureLocalProblemWorkspace(client, state, state.activeProblem, outputChannel, { suggestedLanguage: metadataContext.metadata ? metadataContext.metadata.language : null });
+  // 已存在的题目工作区优先：直接复用目录，不重新生成 .xmuoj.json / 题面 / 源文件
+  let resolvedContest = explicitContest !== undefined
+    ? explicitContest
+    : (state.activeContest || (state.contestWorkspace && state.contestWorkspace.contest) || null);
+  if (!problemDir) {
+    const existingWorkspace = await findExistingProblemWorkspaceForOpenPanels(problem, resolvedContest);
+    if (existingWorkspace) {
+      problemDir = existingWorkspace.problemDir;
+      if (explicitContest === undefined && existingWorkspace.metadata && existingWorkspace.metadata.contestId !== undefined && existingWorkspace.metadata.contestId !== null) {
+        resolvedContest = resolvedContest || { id: existingWorkspace.metadata.contestId };
+      }
+    }
+  }
+
+  if (!problemDir) {
+    const workspace = await ensureLocalProblemWorkspace(client, state, problem, outputChannel, {
+      suggestedLanguage: metadataContext.metadata ? metadataContext.metadata.language : null,
+      contest: resolvedContest
+    });
     if (!workspace) {
       return null;
     }
@@ -4073,9 +4246,18 @@ async function ensureTestCasesAvailable(client, state, outputChannel, explicitPr
   }
 
   let contestPassword = "";
-  const contestId = (metadataContext.metadata && metadataContext.metadata.contestId)
-    || (state.contestWorkspace && state.contestWorkspace.contest && state.contestWorkspace.contest.id)
-    || null;
+  let contestId;
+  if (explicitContest !== undefined) {
+    // 题面页显式指定了题目归属：null 表示公共题库题，不能再借用当前实验
+    contestId = resolvedContest && resolvedContest.id !== undefined && resolvedContest.id !== null
+      ? resolvedContest.id
+      : null;
+  } else {
+    contestId = (resolvedContest && resolvedContest.id)
+      || (metadataContext.metadata && metadataContext.metadata.contestId)
+      || (state.contestWorkspace && state.contestWorkspace.contest && state.contestWorkspace.contest.id)
+      || null;
+  }
   if (contestId) {
     contestPassword = resolveContestPassword(state, contestId);
     if (!contestPassword) {
@@ -4100,11 +4282,12 @@ async function ensureTestCasesAvailable(client, state, outputChannel, explicitPr
   const saved = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Window, title: "XMUOJ 下载测试数据" },
     async () => {
-      const archive = await client.downloadTestCases(problem.id || metadataContext.metadata.problemId, contestPassword || undefined);
+      const fallbackMetadata = metadataContext.metadata || {};
+      const archive = await client.downloadTestCases(problem.id || fallbackMetadata.problemId, contestPassword || undefined);
       if (contestId && contestPassword) {
         cacheContestPassword(state, contestId, contestPassword);
       }
-      return saveTestCaseArchive(problemDir, archive.buffer, archive.fileName || `${problem.display_id || metadataContext.metadata.displayId}-testcases.zip`);
+      return saveTestCaseArchive(problemDir, archive.buffer, archive.fileName || `${problem.display_id || fallbackMetadata.displayId || problem.id}-testcases.zip`);
     }
   );
   outputChannel.appendLine(`测试数据压缩包已保存到：${saved.archivePath}`);
@@ -4807,6 +4990,9 @@ function activate(context) {
       const contest = metadataContext.metadata.contestId
         ? { id: metadataContext.metadata.contestId, title: metadataContext.metadata.contestTitle || "" }
         : null;
+      // 面板复用：重新绑定后必须同步活动题目，否则从题面页点按钮仍会带着旧题号。
+      state.activeProblem = detail;
+      state.activeContest = contest;
       await refreshProblemPanel(state, client, detail, contest);
       treeProvider.refresh();
       vscode.window.showInformationMessage(`已重新绑定题目：${detail.display_id} ${detail.title}`);
@@ -4831,7 +5017,7 @@ function activate(context) {
     vscode.window.showInformationMessage("AI 代码功能尚未开放。");
   }));
 
-  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.downloadTestCases", async () => {
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.downloadTestCases", async (target) => {
     // 等待 bootstrap 完成（最多 5 秒），避免竞态导致误判为未登录
     if (!state.bootstrapReady) {
       await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: "正在检查登录状态…" }, async () => {
@@ -4846,7 +5032,16 @@ function activate(context) {
       return;
     }
     try {
-      const saved = await ensureTestCasesAvailable(client, state, outputChannel);
+      // 题面页会显式携带当前题目；命令面板调用时保持原有兜底逻辑
+      const hasTarget = target && typeof target === "object" && target.problem;
+      const saved = await ensureTestCasesAvailable(
+        client,
+        state,
+        outputChannel,
+        undefined,
+        hasTarget ? target.problem : undefined,
+        hasTarget && Object.prototype.hasOwnProperty.call(target, "contest") ? target.contest : undefined
+      );
       if (!saved) {
         return;
       }
@@ -4883,12 +5078,17 @@ function activate(context) {
     }
   }));
 
-  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.runLocalTests", async () => {
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.runLocalTests", async (target) => {
     try {
       // 先保存所有脏文件
       await vscode.workspace.saveAll(false);
-      
-      const sourceContext = await resolveSourceContext(client, state);
+
+      const sourceContext = await resolveSourceContext(
+        client,
+        state,
+        target && target.problem ? target.problem : null,
+        target && target.contest ? target.contest : null
+      );
       if (!sourceContext) {
         vscode.window.showWarningMessage("请先打开本地源文件，或者先为当前题目创建工作区再运行测试");
         return;
@@ -4987,12 +5187,17 @@ function activate(context) {
     }
   }));
 
-  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.submitCurrentFile", async () => {
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.submitCurrentFile", async (target) => {
     try {
       // 先保存所有脏文件
       await vscode.workspace.saveAll(false);
-      
-      const sourceContext = await resolveSourceContext(client, state);
+
+      const sourceContext = await resolveSourceContext(
+        client,
+        state,
+        target && target.problem ? target.problem : null,
+        target && target.contest ? target.contest : null
+      );
       if (!sourceContext) {
         vscode.window.showWarningMessage("请先打开要提交的源文件，或者先为当前题目创建工作区");
         return;
@@ -5037,9 +5242,14 @@ function activate(context) {
       }
       try {
         let contestPassword;
+        // 有显式目标（题面/结果页按钮）时，题目上下文以目标为准，
+        // 不再回退到可能属于其它题目的 state.contestWorkspace。
+        const explicitTarget = target && target.problem ? target : null;
         const contestId = metadataContext.metadata && metadataContext.metadata.contestId
           ? metadataContext.metadata.contestId
-          : (problem && state.contestWorkspace && state.contestWorkspace.contest ? state.contestWorkspace.contest.id : undefined);
+          : (explicitTarget
+            ? (explicitTarget.contest && explicitTarget.contest.id ? explicitTarget.contest.id : undefined)
+            : (problem && state.contestWorkspace && state.contestWorkspace.contest ? state.contestWorkspace.contest.id : undefined));
         if (contestId) {
           const contest = getContestById(state, contestId);
           if (!canContestSubmitRemotely(contest)) {
@@ -5138,6 +5348,28 @@ function activate(context) {
       }
     } catch (error) {
       await handleXmuojError(error, state, client, treeProvider);
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.openOnlineProblem", async (target) => {
+    const problem = target && target.problem ? target.problem : state.activeProblem;
+    if (!problem) {
+      vscode.window.showWarningMessage("请先打开一道题目，再在浏览器中查看");
+      return;
+    }
+    const contest = target && target.contest !== undefined ? target.contest : state.activeContest;
+    const url = buildOnlineProblemUrl(client.baseUrl, problem, contest);
+    if (!url) {
+      vscode.window.showWarningMessage("无法生成这道题的在线页面地址");
+      return;
+    }
+    try {
+      const opened = await vscode.env.openExternal(vscode.Uri.parse(url));
+      if (opened === false) {
+        vscode.window.showWarningMessage(`无法自动打开浏览器，请手动访问：${url}`);
+      }
+    } catch (error) {
+      vscode.window.showWarningMessage(`无法打开浏览器，请手动访问：${url}`);
     }
   }));
 

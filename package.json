@@ -210,6 +210,10 @@
         "title": "XMUOJ：提交当前文件"
       },
       {
+        "command": "xmuoj.openOnlineProblem",
+        "title": "XMUOJ：在浏览器打开当前题目"
+      },
+      {
         "command": "xmuoj.materializeContestWorkspace",
         "title": "XMUOJ：批量生成实验工作区"
       },
