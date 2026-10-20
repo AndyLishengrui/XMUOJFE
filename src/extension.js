@@ -706,9 +706,10 @@ async function rebindProblemFromMetadata(client, state, metadataContext) {
   return detail;
 }
 
-function renderActionButton(command, iconKey, label, variant = "secondary") {
+/** 紧凑按钮：单行图标 + 文本，高度 24px，题面/结果页共用。 */
+function renderCompactActionButton(command, iconKey, label, variant = "secondary") {
   const icon = ACTION_ICONS[iconKey] || ACTION_ICONS.startWork;
-  return `<button class="action-button ${variant} icon-button" data-command="${command}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"><span class="action-button-icon">${icon}</span><span class="action-button-label">${escapeHtml(label)}</span></button>`;
+  return `<button type="button" class="action ${variant}" data-command="${command}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${icon}<span>${escapeHtml(label)}</span></button>`;
 }
 
 async function updateProblemProgress(context, state, progressRef, patch) {
@@ -841,53 +842,344 @@ async function switchProblemLanguageLocally(context, state, client, treeProvider
 }
 
 function renderProblemHtml(problem, baseUrl, workspaceState = {}, _user = null) {
-  const actionLabel = workspaceState.hasWorkspace ? "打开代码" : "创建代码";
-  const progressBadge = workspaceState.progressSummary ? `<span class="pill">${escapeHtml(workspaceState.progressSummary)}</span>` : "";
-  const samples = (problem.samples || []).map((sample, index) => `
-    <section class="sample-block">
-      <h3>样例 ${index + 1}</h3>
-      <div class="grid">
-        <div>
-          <h4>输入</h4>
-          <pre>${escapeHtml(sample.input || "")}</pre>
-        </div>
-        <div>
-          <h4>输出</h4>
-          <pre>${escapeHtml(sample.output || "")}</pre>
-        </div>
-      </div>
-    </section>
-  `).join("");
+  const hasWorkspace = Boolean(workspaceState.hasWorkspace);
   // 题面 HTML 里的 <img src="/public/..."> 是相对路径，webview 解析不到；
   // 统一转成绝对 URL（已是 http(s):/data: 等协议的保持不变）。
   const description = resolveRelativeUrls(problem.description || "", baseUrl);
   const inputDescription = resolveRelativeUrls(problem.input_description || "", baseUrl);
   const outputDescription = resolveRelativeUrls(problem.output_description || "", baseUrl);
   const hint = resolveRelativeUrls(problem.hint || "", baseUrl);
+
+  // 顶部信息条：只保留编码时真正需要频繁确认的元信息。
+  const timeLimit = Number(problem.time_limit);
+  const memoryLimit = Number(problem.memory_limit);
+  const limits = [];
+  if (Number.isFinite(timeLimit) && timeLimit > 0) {
+    limits.push(timeLimit >= 1000
+      ? `${Number.isInteger(timeLimit / 1000) ? timeLimit / 1000 : (timeLimit / 1000).toFixed(1)} s`
+      : `${timeLimit} ms`);
+  }
+  if (Number.isFinite(memoryLimit) && memoryLimit > 0) {
+    limits.push(`${memoryLimit} MB`);
+  }
+  const ioModeLabels = { "Standard IO": "标准 IO", "File IO": "文件 IO" };
+  const ioMode = problem.io_mode ? (ioModeLabels[problem.io_mode] || problem.io_mode) : "";
+  const progressSummary = workspaceState.progressSummary || "";
+  const progressAccepted = /AC|Accepted|通过/i.test(progressSummary);
+
+  const badges = [];
+  if (problem.difficulty) {
+    badges.push(`<span class="badge">${escapeHtml(problem.difficulty)}</span>`);
+  }
+  if (limits.length) {
+    badges.push(`<span class="badge">${escapeHtml(limits.join(" / "))}</span>`);
+  }
+  if (ioMode) {
+    badges.push(`<span class="badge">${escapeHtml(ioMode)}</span>`);
+  }
+  if (progressSummary) {
+    badges.push(`<span class="badge${progressAccepted ? " success" : ""}">${escapeHtml(progressSummary)}</span>`);
+  }
+  if (Array.isArray(problem.tags)) {
+    problem.tags
+      .filter((tag) => tag !== undefined && tag !== null && String(tag).trim())
+      .forEach((tag) => badges.push(`<span class="badge tag">#${escapeHtml(tag)}</span>`));
+  }
+
+  const actions = [
+    renderCompactActionButton("startWork", hasWorkspace ? "continueWork" : "startWork", hasWorkspace ? "继续编码" : "开始编码", "primary"),
+    hasWorkspace ? renderCompactActionButton("runTests", "runTests", "本地测试") : "",
+    hasWorkspace ? renderCompactActionButton("submit", "submit", "提交") : "",
+    renderCompactActionButton("showResults", "showResults", "结果"),
+    hasWorkspace ? renderCompactActionButton("switchLanguage", "language", "切换语言") : "",
+    problem.can_download_test_case !== false ? renderCompactActionButton("downloadTests", "downloadTests", "下载数据") : ""
+  ].filter(Boolean).join("");
+
+  const ioBlocks = [];
+  if (inputDescription) {
+    ioBlocks.push(`<div class="io-block"><h2 class="block-title">输入格式</h2><div class="prose compact">${inputDescription}</div></div>`);
+  }
+  if (outputDescription) {
+    ioBlocks.push(`<div class="io-block"><h2 class="block-title">输出格式</h2><div class="prose compact">${outputDescription}</div></div>`);
+  }
+
+  const samples = (problem.samples || []).map((sample, index) => {
+    const inputId = `sample-${index}-input`;
+    const outputId = `sample-${index}-output`;
+    return `
+      <div class="sample">
+        <div class="sample-grid">
+          <div class="sample-col">
+            <div class="sample-label"><span>样例 ${index + 1} · 输入</span><button type="button" class="copy" data-copy-target="${inputId}">复制</button></div>
+            <pre class="sample-pre" id="${inputId}">${escapeHtml(sample.input || "")}</pre>
+          </div>
+          <div class="sample-col">
+            <div class="sample-label"><span>输出</span><button type="button" class="copy" data-copy-target="${outputId}">复制</button></div>
+            <pre class="sample-pre" id="${outputId}">${escapeHtml(sample.output || "")}</pre>
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+
   return `<!DOCTYPE html>
   <html>
     <head>
       <meta charset="UTF-8" />
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src http: https: data: blob:; media-src http: https: data: blob:; style-src 'unsafe-inline' http: https:; script-src 'unsafe-inline' https://cdn.jsdelivr.net; font-src https: data:; connect-src http: https:;" />
       <style>
-        body { font-family: Georgia, 'Times New Roman', serif; padding: 24px; background: linear-gradient(180deg, #f3efe3 0%, #f7f7f2 100%); color: #17312f; }
-        h1, h2, h3, h4 { color: #0b5d5b; }
-        .meta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
-        .pill { background: #d7ebe5; border-radius: 999px; padding: 6px 12px; font-size: 12px; }
-        .panel { background: rgba(255,255,255,0.72); border: 1px solid #d5ddd4; border-radius: 16px; padding: 18px; margin-bottom: 18px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
-        .actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px; margin-bottom: 18px; align-items: stretch; }
-        .action-button { border: 0; border-radius: 16px; padding: 8px 8px; background: #0b5d5b; color: #f7f7f2; cursor: pointer; font-size: 12px; }
-        .action-button.secondary { background: #d7ebe5; color: #17312f; }
-        .icon-button { min-height: 60px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; line-height: 1; box-shadow: 0 2px 8px rgba(11, 93, 91, 0.08); border: 1px solid rgba(11, 93, 91, 0.08); }
-        .icon-button.primary { background: #0b5d5b; color: #f7f7f2; }
-        .icon-button:hover { transform: translateY(-1px); }
-        .action-button-icon { display: inline-flex; width: 16px; height: 16px; }
-        .action-button-icon svg { width: 16px; height: 16px; display: block; }
-        .action-button-label { font-size: 10px; line-height: 1.2; font-weight: 600; text-align: center; }
-        pre { white-space: pre-wrap; background: #132322; color: #f6f3ea; padding: 12px; border-radius: 12px; overflow: auto; }
-        a { color: #9a3b2f; }
-        img { max-width: 100%; height: auto; }
+        :root {
+          --x-border: var(--vscode-panel-border, rgba(128, 128, 128, 0.28));
+          --x-muted: var(--vscode-descriptionForeground, #8b949e);
+          --x-accent: var(--vscode-textLink-foreground, #4daafc);
+          --x-code-bg: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.12));
+          --x-subtle: rgba(128, 128, 128, 0.07);
+        }
+        * { box-sizing: border-box; }
+        html { scroll-padding-top: 88px; }
+        body {
+          margin: 0;
+          font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+          font-size: 13px;
+          line-height: 1.55;
+          color: var(--vscode-editor-foreground, #cccccc);
+          background: var(--vscode-editor-background, #1e1e1e);
+          -webkit-font-smoothing: antialiased;
+        }
+
+        /* 吸顶操作栏：始终可点，不随题面滚动消失 */
+        .topbar {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: start;
+          gap: 6px 14px;
+          padding: 8px 16px 9px;
+          background: var(--vscode-editor-background, #1e1e1e);
+          border-bottom: 1px solid var(--x-border);
+        }
+        .title-block { min-width: 0; }
+        h1 {
+          margin: 0;
+          font-size: 14px;
+          font-weight: 600;
+          line-height: 1.4;
+          letter-spacing: 0;
+        }
+        .pid {
+          margin-right: 6px;
+          font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
+          font-size: 12px;
+          color: var(--x-muted);
+        }
+        .badges {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 3px 5px;
+          margin-top: 4px;
+        }
+        .badge {
+          display: inline-block;
+          padding: 0 5px;
+          border: 1px solid var(--x-border);
+          border-radius: 3px;
+          font-size: 10.5px;
+          line-height: 1.65;
+          color: var(--x-muted);
+          white-space: nowrap;
+          background: var(--x-subtle);
+        }
+        .badge.success { color: var(--vscode-testing-iconPassed, #73c991); }
+        .badge.tag { color: var(--x-accent); }
+
+        .actions {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+          gap: 4px;
+        }
+        .action {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          height: 24px;
+          padding: 0 8px;
+          border: 1px solid transparent;
+          border-radius: 3px;
+          background: var(--vscode-button-secondaryBackground, #3a3d41);
+          color: var(--vscode-button-secondaryForeground, #cccccc);
+          font-family: inherit;
+          font-size: 11px;
+          line-height: 1;
+          white-space: nowrap;
+          cursor: pointer;
+        }
+        .action svg { width: 13px; height: 13px; flex: none; }
+        .action:hover { background: var(--vscode-button-secondaryHoverBackground, #45494e); }
+        .action.primary {
+          background: var(--vscode-button-background, #0e639c);
+          color: var(--vscode-button-foreground, #ffffff);
+        }
+        .action.primary:hover { background: var(--vscode-button-hoverBackground, #1177bb); }
+
+        main { max-width: 980px; padding: 13px 16px 40px; }
+
+        /* 正文：贴近编辑器排版，段落/列表/代码块全部收紧 */
+        .prose { overflow-wrap: anywhere; }
+        .prose > :first-child { margin-top: 0; }
+        .prose > :last-child { margin-bottom: 0; }
+        .prose p { margin: 0 0 7px; }
+        .prose h1, .prose h2, .prose h3, .prose h4, .prose h5 {
+          margin: 13px 0 5px;
+          color: var(--vscode-editor-foreground, #cccccc);
+          font-weight: 600;
+          line-height: 1.4;
+        }
+        .prose h1 { font-size: 15px; }
+        .prose h2 { font-size: 14px; }
+        .prose h3, .prose h4, .prose h5 { font-size: 13px; }
+        .prose ul, .prose ol { margin: 0 0 7px; padding-left: 19px; }
+        .prose li { margin: 1px 0; }
+        .prose li > p { margin: 0; }
+        .prose code {
+          padding: 1px 4px;
+          border-radius: 3px;
+          background: var(--x-code-bg);
+          font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
+          font-size: 12px;
+        }
+        .prose pre {
+          margin: 0 0 7px;
+          padding: 8px 10px;
+          border-radius: 4px;
+          background: var(--x-code-bg);
+          overflow-x: auto;
+          font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
+          font-size: 12px;
+          line-height: 1.45;
+        }
+        .prose pre code { padding: 0; background: none; font-size: inherit; }
+        .prose blockquote {
+          margin: 0 0 7px;
+          padding: 2px 0 2px 10px;
+          border-left: 3px solid var(--x-border);
+          color: var(--x-muted);
+        }
+        .prose table {
+          display: block;
+          margin: 0 0 7px;
+          border-collapse: collapse;
+          overflow-x: auto;
+          font-size: 12px;
+        }
+        .prose th, .prose td { padding: 3px 8px; border: 1px solid var(--x-border); text-align: left; }
+        .prose th { background: var(--x-subtle); font-weight: 600; }
+        .prose img { max-width: 100%; height: auto; }
+        .prose a { color: var(--x-accent); text-decoration: none; }
+        .prose a:hover { text-decoration: underline; }
+        .prose hr { margin: 12px 0; border: 0; border-top: 1px solid var(--x-border); }
+        .prose .katex-display, .prose mjx-container[display="true"] { margin: 6px 0 !important; }
+
+        .section {
+          margin-top: 12px;
+          padding-top: 10px;
+          border-top: 1px solid var(--x-border);
+        }
+        .section-title, .block-title {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin: 0 0 5px;
+          font-size: 11px;
+          font-weight: 600;
+          line-height: 1.5;
+          color: var(--vscode-editor-foreground, #cccccc);
+          opacity: 0.72;
+        }
+        .section-title::before, .block-title::before {
+          content: "";
+          width: 3px;
+          height: 10px;
+          border-radius: 1px;
+          background: var(--vscode-focusBorder, var(--x-accent));
+        }
+        .section-title .count { font-weight: 400; color: var(--x-muted); }
+
+        .io-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+          gap: 10px 22px;
+        }
+        .io-block { min-width: 0; }
+
+        .samples {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+          gap: 8px;
+        }
+        .sample {
+          min-width: 0;
+          border: 1px solid var(--x-border);
+          border-radius: 4px;
+          overflow: hidden;
+        }
+        .sample-grid { display: grid; grid-template-columns: 1fr 1fr; }
+        .sample-col { min-width: 0; }
+        .sample-col + .sample-col { border-left: 1px solid var(--x-border); }
+        .sample-label {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          padding: 2px 7px;
+          background: var(--x-subtle);
+          color: var(--x-muted);
+          font-size: 10.5px;
+          line-height: 1.6;
+        }
+        .sample-pre {
+          margin: 0;
+          padding: 6px 8px;
+          background: var(--vscode-editor-background, #1e1e1e);
+          color: var(--vscode-editor-foreground, #cccccc);
+          font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
+          font-size: 12px;
+          line-height: 1.45;
+          white-space: pre-wrap;
+          word-break: break-word;
+          overflow-x: auto;
+        }
+        .copy {
+          padding: 0 3px;
+          border: 0;
+          border-radius: 2px;
+          background: transparent;
+          color: var(--x-muted);
+          font-family: inherit;
+          font-size: 10.5px;
+          line-height: 1.6;
+          cursor: pointer;
+        }
+        .copy:hover { color: var(--vscode-editor-foreground, #cccccc); background: var(--x-code-bg); }
+        .copy.copied { color: var(--vscode-testing-iconPassed, #73c991); }
+        .empty { color: var(--x-muted); }
+
+        @media (max-width: 620px) {
+          .topbar { grid-template-columns: minmax(0, 1fr); padding: 8px 12px; }
+          .actions { justify-content: flex-start; }
+          main { padding: 11px 12px 32px; }
+        }
+        @media (max-width: 520px) {
+          /* 窄面板（与代码并排）只保留主按钮文字，其余操作收成图标，避免吸顶栏换行 */
+          .action:not(.primary) span { display: none; }
+          .action:not(.primary) { padding: 0 6px; }
+          .badge.tag { display: none; }
+        }
+        @media (max-width: 420px) {
+          .sample-grid { grid-template-columns: 1fr; }
+          .sample-col + .sample-col { border-left: 0; border-top: 1px solid var(--x-border); }
+        }
       </style>
       <script>
         window.MathJax = {
@@ -905,30 +1197,67 @@ function renderProblemHtml(problem, baseUrl, workspaceState = {}, _user = null) 
       <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     </head>
     <body>
-      <h1>${escapeHtml(problem.display_id)} ${escapeHtml(problem.title)}</h1>
-      <div class="actions">
-        ${renderActionButton("startWork", workspaceState.hasWorkspace ? "continueWork" : "startWork", actionLabel, "primary")}
-        ${workspaceState.hasWorkspace ? renderActionButton("switchLanguage", "language", "切换代码语言") : ""}
-        ${problem.can_download_test_case !== false ? renderActionButton("downloadTests", "downloadTests", "下载数据") : ""}
-      </div>
-      <div class="meta">
-        ${progressBadge}
-        <span class="pill">${escapeHtml(problem.difficulty || "未知")}</span>
-      </div>
-      <section class="panel">${description}</section>
-      <section class="panel">
-        <h2>输入描述</h2>
-        ${inputDescription}
-        <h2>输出描述</h2>
-        ${outputDescription}
-      </section>
-      ${samples ? `<section class="panel"><h2>样例</h2>${samples}</section>` : ""}
-      ${hint ? `<section class="panel"><h2>提示</h2>${hint}</section>` : ""}
+      <header class="topbar">
+        <div class="title-block">
+          <h1><span class="pid">${escapeHtml(problem.display_id || "")}</span>${escapeHtml(problem.title || "")}</h1>
+          ${badges.length ? `<div class="badges">${badges.join("")}</div>` : ""}
+        </div>
+        <div class="actions">${actions}</div>
+      </header>
+      <main>
+        <article class="prose">${description || '<p class="empty">暂无题面描述。</p>'}</article>
+        ${ioBlocks.length ? `<section class="section io-grid">${ioBlocks.join("")}</section>` : ""}
+        ${samples ? `<section class="section"><h2 class="section-title">样例 <span class="count">${problem.samples.length}</span></h2><div class="samples">${samples}</div></section>` : ""}
+        ${hint ? `<section class="section"><h2 class="section-title">提示</h2><div class="prose compact">${hint}</div></section>` : ""}
+      </main>
       <script>
         const vscode = acquireVsCodeApi();
         document.querySelectorAll('[data-command]').forEach((button) => {
           button.addEventListener('click', () => {
             vscode.postMessage({ command: button.getAttribute('data-command') });
+          });
+        });
+
+        function fallbackCopy(text) {
+          const area = document.createElement('textarea');
+          area.value = text;
+          area.setAttribute('readonly', '');
+          area.style.position = 'fixed';
+          area.style.top = '-1000px';
+          area.style.opacity = '0';
+          document.body.appendChild(area);
+          area.select();
+          let copied = false;
+          try {
+            copied = document.execCommand('copy');
+          } catch (error) {
+            copied = false;
+          }
+          document.body.removeChild(area);
+          return copied;
+        }
+
+        document.querySelectorAll('[data-copy-target]').forEach((button) => {
+          button.addEventListener('click', async () => {
+            const target = document.getElementById(button.getAttribute('data-copy-target'));
+            if (!target) {
+              return;
+            }
+            const text = target.textContent || '';
+            let copied = false;
+            try {
+              await navigator.clipboard.writeText(text);
+              copied = true;
+            } catch (error) {
+              copied = fallbackCopy(text);
+            }
+            const original = button.textContent;
+            button.textContent = copied ? '已复制' : '复制失败';
+            button.classList.toggle('copied', copied);
+            setTimeout(() => {
+              button.textContent = original;
+              button.classList.remove('copied');
+            }, 1200);
           });
         });
       </script>
@@ -1581,32 +1910,32 @@ function getSubmissionStatusPresentation(result) {
     'compile error': {
       tone: "danger",
       title: "编译失败",
-      explanation: "无法编译您的源代码，点击下方链接查看编译器输出或原始判题详情。"
+      explanation: "无法编译您的源代码，请查看下方编译输出。"
     },
     ce: {
       tone: "danger",
       title: "编译失败",
-      explanation: "无法编译您的源代码，点击下方链接查看编译器输出或原始判题详情。"
+      explanation: "无法编译您的源代码，请查看下方编译输出。"
     },
     accepted: {
       tone: "success",
       title: "答案正确",
-      explanation: "你的解题方法是正确的。"
+      explanation: "判题已通过，这一题拿下了！继续保持。"
     },
     ac: {
       tone: "success",
       title: "答案正确",
-      explanation: "你的解题方法是正确的。"
+      explanation: "判题已通过，这一题拿下了！继续保持。"
     },
     'wrong answer': {
-      tone: "danger",
-      title: "答案错误",
-      explanation: "你的程序输出结果与判题程序的答案不符。"
+      tone: "warning",
+      title: "答案还没对上",
+      explanation: "先看下面第一个没通过的测试点，对着输入和期望输出比一比。"
     },
     wa: {
-      tone: "danger",
-      title: "答案错误",
-      explanation: "你的程序输出结果与判题程序的答案不符。"
+      tone: "warning",
+      title: "答案还没对上",
+      explanation: "先看下面第一个没通过的测试点，对着输入和期望输出比一比。"
     },
     'runtime error': {
       tone: "danger",
@@ -1652,7 +1981,7 @@ function getSubmissionStatusPresentation(result) {
   return mapping[normalized] || {
     tone: ACCEPTED_RESULTS.has(label) ? "success" : "warning",
     title: label || "评测结果",
-    explanation: ACCEPTED_RESULTS.has(label) ? "你的解题方法是正确的。" : "请结合下面的错误信息和原始判题详情继续排查。"
+    explanation: ACCEPTED_RESULTS.has(label) ? "" : "请结合下面的错误信息继续排查。"
   };
 }
 
@@ -1720,21 +2049,6 @@ function tryPickDiagnosticField(source, candidateKeys) {
   return "";
 }
 
-function stripPickedDiagnosticFields(source, pickedValues) {
-  if (!source || typeof source !== "object" || Array.isArray(source)) {
-    return source;
-  }
-  const clone = {};
-  for (const [key, value] of Object.entries(source)) {
-    const normalized = asDiagnosticText(value);
-    if (pickedValues.has(normalized) && normalized) {
-      continue;
-    }
-    clone[key] = value;
-  }
-  return clone;
-}
-
 function extractSubmissionDiagnostics(result) {
   const stats = result && result.statistic_info && typeof result.statistic_info === "object"
     ? result.statistic_info
@@ -1761,66 +2075,14 @@ function extractSubmissionDiagnostics(result) {
   const runtimeOutput = tryPickDiagnosticField(infoObject, [
     "stderr",
     "runtime_error",
-    "runtime_output",
-    "output",
-    "stdout"
+    "runtime_output"
   ]);
-
-  const pickedValues = new Set([compileOutput, errorSummary, runtimeOutput].filter(Boolean));
-  const detailObject = infoObject ? stripPickedDiagnosticFields(infoObject, pickedValues) : null;
-  const systemDetails = detailObject && Object.keys(detailObject).length
-    ? asDiagnosticText(detailObject)
-    : "";
 
   return {
     compileOutput,
     errorSummary,
-    runtimeOutput,
-    systemDetails,
-    rawDetails: result && result.info
-      ? asDiagnosticText(result.info)
-      : ""
+    runtimeOutput
   };
-}
-
-function buildLocalFailureDiagnostics(report) {
-  if (!report || !report.failed) {
-    return "";
-  }
-  const failedCases = (report.results || []).filter((item) => !item.passed).slice(0, 3);
-  if (!failedCases.length) {
-    return `本地测试失败：${String(report.failed)} 个测试点失败。`;
-  }
-  return [
-    `本地测试失败：${String(report.failed)} 个测试点失败，${String(report.passed || 0)}/${String(report.total || 0)} 通过。`,
-    ...failedCases.map((item) => [
-      `测试点 ${item.name}`,
-      `期望输出:\n${item.expected || ""}`,
-      `实际输出:\n${item.actual || ""}`,
-      item.stderr ? `错误输出:\n${item.stderr}` : ""
-    ].filter(Boolean).join("\n"))
-  ].join("\n\n");
-}
-
-function buildSubmissionFailureDiagnostics(result) {
-  if (!result || ACCEPTED_RESULTS.has(result.result_label)) {
-    return "";
-  }
-  const normalizedLabel = String(result.result_label || "").trim().toLowerCase();
-  if (normalizedLabel === "pending" || normalizedLabel === "judging") {
-    return "";
-  }
-  const status = getSubmissionStatusPresentation(result);
-  const diagnostics = extractSubmissionDiagnostics(result);
-  return [
-    `在线评测结果：${result.result_label || "未知"}`,
-    `错误类型：${status.title}`,
-    status.explanation ? `说明：${status.explanation}` : "",
-    diagnostics.errorSummary ? `错误摘要：\n${diagnostics.errorSummary}` : "",
-    diagnostics.compileOutput ? `编译输出：\n${diagnostics.compileOutput}` : "",
-    diagnostics.runtimeOutput ? `运行输出：\n${diagnostics.runtimeOutput}` : "",
-    diagnostics.systemDetails ? `系统详情：\n${diagnostics.systemDetails}` : ""
-  ].filter(Boolean).join("\n\n");
 }
 
 function renderDiagnosticBlock(title, content, tone = "neutral", expanded = false) {
@@ -1834,47 +2096,69 @@ function renderDiagnosticBlock(title, content, tone = "neutral", expanded = fals
     </details>`;
 }
 
-function renderSubmissionResultSection(result, baseUrl) {
-  const stats = result.statistic_info || {};
+function renderSubmissionResultSection(result) {
   const status = getSubmissionStatusPresentation(result);
   const accepted = ACCEPTED_RESULTS.has(result.result_label);
+  const pending = isPendingSubmissionResult(result);
+  // 结果卡已经给出结论；通过或仍在判题时没有可补充的详情。
+  if (accepted || pending) {
+    return "";
+  }
   const diagnostics = extractSubmissionDiagnostics(result);
-  const shouldExpandCompileOutput = status.title === "编译失败";
-  const shouldExpandRuntimeOutput = !accepted && !shouldExpandCompileOutput && Boolean(diagnostics.runtimeOutput);
-  const shouldExpandSystemDetails = !accepted && !shouldExpandCompileOutput && !shouldExpandRuntimeOutput && Boolean(diagnostics.systemDetails);
-  const rawDetails = diagnostics.rawDetails
-    ? `<details><summary>查看原始判题详情</summary><pre>${escapeHtml(diagnostics.rawDetails)}</pre></details>`
-    : "";
+  const variant = getSubmissionVisualVariant(result);
+  const isCompileError = variant === "compile";
+  const compileOutput = isCompileError ? diagnostics.compileOutput || diagnostics.errorSummary : "";
+  const runtimeOutput = isCompileError ? "" : diagnostics.runtimeOutput;
+  const failedCases = getOnlineFailedCases(result);
+  const shownCases = failedCases.slice(0, 3);
+  const blocks = [];
+  if (compileOutput) {
+    blocks.push(renderDiagnosticBlock("编译输出", compileOutput, "danger", true));
+  } else if (diagnostics.errorSummary) {
+    blocks.push(`<div class="callout danger"><strong>错误摘要</strong><pre>${escapeHtml(diagnostics.errorSummary)}</pre></div>`);
+  }
+  if (runtimeOutput && runtimeOutput !== diagnostics.errorSummary) {
+    blocks.push(renderDiagnosticBlock("错误输出", runtimeOutput, "danger", true));
+  }
+  if (shownCases.length) {
+    // WA 用低饱和琥珀，其余失败类型仍用红色，避免弱化 CE/RE/TLE 的严重程度。
+    const caseBadgeTone = variant === "wrong-answer" ? "warning" : "danger";
+    const caseBadges = shownCases.map((item) => {
+      const text = [
+        `测试点 ${item.caseId || "?"}`,
+        item.label,
+        item.time,
+        item.memory
+      ].filter(Boolean).join(" · ");
+      return `<span class="badge ${caseBadgeTone}">${escapeHtml(text)}</span>`;
+    });
+    blocks.push(`
+        <div class="subsection-title">未通过的测试点${failedCases.length > shownCases.length ? `（共 ${escapeHtml(String(failedCases.length))} 个，显示前 ${shownCases.length} 个）` : ""}</div>
+        <div class="badges">${caseBadges.join("")}</div>`);
+  }
+  if (!blocks.length) {
+    return "";
+  }
   return `
-      <section class="panel">
-        <h2>在线评测详情</h2>
-        <div class="pill-row">
-          <span class="pill">${escapeHtml(result.language)}</span>
-          <span class="pill">提交 #${escapeHtml(String(result.id))}</span>
-        </div>
-        <div class="facts">
-          <div class="fact"><span class="fact-label">运行时间</span><strong>${escapeHtml(String(stats.time_cost || "无"))}</strong></div>
-          <div class="fact"><span class="fact-label">内存占用</span><strong>${escapeHtml(String(stats.memory_cost || "无"))}</strong></div>
-          <div class="fact"><span class="fact-label">得分</span><strong>${escapeHtml(String(stats.score || "无"))}</strong></div>
-        </div>
-        ${!accepted && diagnostics.errorSummary ? `<div class="callout danger"><strong>错误摘要</strong><pre>${escapeHtml(diagnostics.errorSummary)}</pre></div>` : ""}
-        ${status.title === "编译失败" ? renderDiagnosticBlock("编译输出", diagnostics.compileOutput || diagnostics.errorSummary, "danger", shouldExpandCompileOutput) : ""}
-        ${status.title !== "编译失败" && diagnostics.runtimeOutput ? renderDiagnosticBlock("错误输出", diagnostics.runtimeOutput, "warning", shouldExpandRuntimeOutput) : ""}
-        ${diagnostics.systemDetails ? renderDiagnosticBlock("系统返回详情", diagnostics.systemDetails, "neutral", shouldExpandSystemDetails) : ""}
-        ${!accepted && !diagnostics.errorSummary && !diagnostics.compileOutput && !diagnostics.runtimeOutput && !diagnostics.systemDetails ? '<div class="callout warning">站点没有返回更具体的失败原因。可以结合本地测试和原始判题详情继续排查。</div>' : ""}
-        ${rawDetails}
+      <section class="section">
+        <h2 class="section-title">失败详情</h2>
+        ${blocks.join("")}
       </section>`;
 }
 
-function renderLocalReportSection(report, baseUrl) {
+function renderLocalReportSection(report) {
   const failedCases = (report.results || []).filter((item) => !item.passed);
+  // 全部通过时顶部结果卡已给出结论，这里不再重复罗列测试点。
+  if (!failedCases.length) {
+    return "";
+  }
   const renderCaseBlock = (item) => `
-    <div class="case-block fail-case">
+    <div class="case-block">
       <div class="case-header">
         <strong>测试点 ${escapeHtml(item.name)}</strong>
-        <span class="pill ${item.passed ? "pill-success" : "pill-danger"}">${item.passed ? "通过" : "失败"}</span>
-        <span class="pill">退出码 ${escapeHtml(String(item.exitCode))}</span>
+        ${item.exitCode !== 0 ? `<span class="badge warning">退出码 ${escapeHtml(String(item.exitCode))}</span>` : ""}
       </div>
+      ${item.input ? `<div class="case-input"><h4>输入</h4><pre>${escapeHtml(item.input)}</pre></div>` : ""}
       <div class="case-grid">
         <div>
           <h4>期望输出</h4>
@@ -1885,22 +2169,15 @@ function renderLocalReportSection(report, baseUrl) {
           <pre>${escapeHtml(item.actual || "")}</pre>
         </div>
       </div>
-      ${item.stderr ? `<div><h4>错误输出</h4><pre>${escapeHtml(item.stderr)}</pre></div>` : ""}
+      ${item.stderr ? `<div class="case-stderr"><h4>错误输出</h4><pre>${escapeHtml(item.stderr)}</pre></div>` : ""}
     </div>`;
-  const failedBlocks = failedCases.map((item) => renderCaseBlock(item)).join("");
-  const allBlocks = (report.results || []).map((item) => renderCaseBlock(item)).join("");
+  // 只展示失败点：第一个失败点完整展开（输入/期望/实际/错误），其余折叠。
+  const [firstFailure, ...restFailures] = failedCases;
   return `
-      <section class="panel">
-        <h2>本地测试详情</h2>
-        <div class="pill-row">
-          <span class="pill">${escapeHtml(report.language || "未知语言")}</span>
-          <span class="pill ${report.failed === 0 ? "pill-success" : "pill-danger"}">${escapeHtml(String(report.passed || 0))}/${escapeHtml(String(report.total || 0))} 通过</span>
-        </div>
-        ${report.failed > 0 ? `<h3>失败测试点</h3>${failedBlocks}` : ""}
-        <details class="all-cases-toggle" ${report.failed === 0 ? "open" : ""}>
-          <summary>${report.failed > 0 ? `显示全部测试点（${escapeHtml(String(report.total || 0))}）` : `查看全部测试点（${escapeHtml(String(report.total || 0))}）`}</summary>
-          ${allBlocks}
-        </details>
+      <section class="section">
+        <h2 class="section-title">本地测试失败详情</h2>
+        ${renderCaseBlock(firstFailure)}
+        ${restFailures.length ? `<details class="more-failures"><summary>其余失败点（${escapeHtml(String(restFailures.length))}）</summary>${restFailures.map((item) => renderCaseBlock(item)).join("")}</details>` : ""}
       </section>`;
 }
 
@@ -1910,17 +2187,18 @@ function getLocalResultPresentation(report) {
   }
   if (report.failed === 0) {
     return {
+      source: "local",
       tone: "success",
-      eyebrow: "本地测试",
       headline: "全部通过",
-      message: `共 ${escapeHtml(String(report.total || 0))} 个测试点，当前本地结果稳定。`
+      message: `共 ${escapeHtml(String(report.total || 0))} 个测试点，全部通过。`
     };
   }
   return {
-    tone: "danger",
-    eyebrow: "本地测试",
-    headline: `${escapeHtml(String(report.failed || 0))} 个测试点失败`,
-    message: `已通过 ${escapeHtml(String(report.passed || 0))}/${escapeHtml(String(report.total || 0))}，先看下面的失败详情。`
+    source: "local",
+    tone: "warning",
+    variant: "wrong-answer",
+    headline: `还有 ${escapeHtml(String(report.failed || 0))} 个测试点没通过`,
+    message: `已通过 ${escapeHtml(String(report.passed || 0))}/${escapeHtml(String(report.total || 0))}。先看下面第一个没通过的点，对着输入和期望输出比一比。`
   };
 }
 
@@ -1931,69 +2209,175 @@ function getSubmissionResultPresentationForSpotlight(result) {
   const status = getSubmissionStatusPresentation(result);
   const variant = getSubmissionVisualVariant(result);
   return {
+    source: "online",
     tone: status.tone,
     variant,
-    eyebrow: "在线评测",
     headline: escapeHtml(status.title),
-    message: escapeHtml(status.explanation),
-    statusLabel: escapeHtml(result.result_label || "未知")
+    message: escapeHtml(status.explanation)
   };
 }
 
+/** 判题机逐测试点状态码 → 简短中文标签。 */
+const JUDGE_CASE_STATUS_LABELS = {
+  "-1": "答案不一致",
+  "1": "运行超时",
+  "2": "运行超时",
+  "3": "内存超限",
+  "4": "运行时错误",
+  "5": "系统错误"
+};
+
+function formatTimeCost(value) {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+  const ms = Number(value);
+  if (!Number.isFinite(ms) || ms < 0) {
+    return "";
+  }
+  return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`;
+}
+
+function formatMemoryCost(value) {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+  // 后端 memory / memory_cost 的单位是字节（ru_maxrss * 1024）。
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return "";
+  }
+  return bytes >= 1024 * 1024
+    ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    : `${Math.round(bytes / 1024)} KB`;
+}
+
+/** 从判题机返回的逐测试点数据中提取失败点摘要（最多展示 3 个）。 */
+function getOnlineFailedCases(result) {
+  const info = result && result.info;
+  if (!info || typeof info !== "object" || !Array.isArray(info.data)) {
+    return [];
+  }
+  return info.data
+    .filter((item) => item && typeof item === "object" && Number(item.result) !== 0)
+    .map((item) => ({
+      caseId: item.test_case,
+      label: JUDGE_CASE_STATUS_LABELS[String(Number(item.result))] || "未通过",
+      time: formatTimeCost(item.cpu_time),
+      memory: formatMemoryCost(item.memory)
+    }));
+}
+
 function renderResultSpotlight(viewModel) {
-  const { problemRef, localReport, submissionResult } = viewModel;
-  const primary = getLocalResultPresentation(localReport) || getSubmissionResultPresentationForSpotlight(submissionResult);
+  const { localReport, submissionResult, focusMode } = viewModel;
+  const onlinePresentation = getSubmissionResultPresentationForSpotlight(submissionResult);
+  const localPresentation = getLocalResultPresentation(localReport);
+  // 在线评测是最终判定；只有在线仍在等待时，才让本地测试承担主结论。
+  const onlinePending = isPendingSubmissionResult(submissionResult);
+  const primary = (!onlinePending && onlinePresentation) || localPresentation || onlinePresentation;
   if (!primary) {
     return `
-      <section class="spotlight spotlight-empty panel">
-        <div class="spotlight-copy">
-          <div class="spotlight-eyebrow">当前题结果</div>
-          <h2>还没有结果</h2>
+      <section class="verdict verdict-empty">
+        <div class="verdict-copy">
+          <div class="verdict-headline">还没有结果</div>
           <p>先运行一次本地测试或提交代码，结果报表才会出现可读的结果卡片和详情。</p>
         </div>
       </section>`;
   }
-  const accent = primary.tone === "success"
-    ? "spotlight-success"
-    : primary.variant
-      ? `spotlight-${primary.variant}`
-      : (primary.tone === "danger" ? "spotlight-danger" : "spotlight-warning");
-  const celebration = primary.tone === "success"
-    ? '<div class="spotlight-badge">AC</div><div class="spotlight-confetti"><span></span><span></span><span></span><span></span><span></span></div><div class="spotlight-rays"></div>'
-    : primary.tone === "danger"
-      ? `<div class="spotlight-badge">${primary.variant === "compile" ? "CE" : primary.variant === "wrong-answer" ? "WA" : primary.variant === "runtime" ? "RE" : primary.variant === "timeout" ? "TLE" : primary.variant === "memory" ? "MLE" : "FAIL"}</div><div class="spotlight-signal ${primary.variant || "generic"}"></div>`
-      : '<div class="spotlight-badge">INFO</div>';
+  const tone = primary.tone === "success" ? "success" : primary.tone === "danger" ? "danger" : "warning";
+  const variant = primary.variant || "";
+  const code = primary.source === "local"
+    ? (tone === "success" ? "PASS" : "FAIL")
+    : tone === "success"
+      ? "AC"
+      : variant === "compile"
+        ? "CE"
+        : variant === "wrong-answer"
+          ? "WA"
+          : variant === "runtime"
+            ? "RE"
+            : variant === "timeout"
+              ? "TLE"
+              : variant === "memory"
+                ? "MLE"
+                : tone === "danger" ? "FAIL" : "INFO";
+  const sourceLabel = primary.source === "local" ? "本地测试" : "在线评测";
+  const chips = [];
+  if (primary.source === "online" && localReport) {
+    chips.push(`<span class="badge ${localReport.failed === 0 ? "success" : "warning"}">本地 ${escapeHtml(String(localReport.passed || 0))}/${escapeHtml(String(localReport.total || 0))}</span>`);
+  } else if (primary.source === "local" && submissionResult) {
+    const status = getSubmissionStatusPresentation(submissionResult);
+    const onlineTone = onlinePending ? "warning" : status.tone;
+    chips.push(`<span class="badge ${onlineTone}">在线 ${escapeHtml(status.title)}</span>`);
+  }
+  const localLanguage = localReport && localReport.language ? String(localReport.language) : "";
+  const onlineLanguage = submissionResult && submissionResult.language ? String(submissionResult.language) : "";
+  if (localLanguage && onlineLanguage && localLanguage !== onlineLanguage) {
+    chips.push(`<span class="badge">本地 ${escapeHtml(localLanguage)} · 在线 ${escapeHtml(onlineLanguage)}</span>`);
+  } else if (localLanguage || onlineLanguage) {
+    chips.push(`<span class="badge">${escapeHtml(onlineLanguage || localLanguage)}</span>`);
+  }
+  if (submissionResult && submissionResult.id) {
+    // 提交号是随机十六进制串，完整展示会挤占结果卡，截断后用 title 保留全文。
+    const fullId = String(submissionResult.id);
+    const shortId = fullId.length > 10 ? `${fullId.slice(0, 8)}…` : fullId;
+    chips.push(`<span class="badge" title="${escapeHtml(fullId)}">#${escapeHtml(shortId)}</span>`);
+  }
+  if (submissionResult && !onlinePending) {
+    const stats = submissionResult.statistic_info && typeof submissionResult.statistic_info === "object"
+      ? submissionResult.statistic_info
+      : {};
+    const time = formatTimeCost(stats.time_cost);
+    const memory = formatMemoryCost(stats.memory_cost);
+    if (time) {
+      chips.push(`<span class="badge">${time}</span>`);
+    }
+    if (memory) {
+      chips.push(`<span class="badge">${memory}</span>`);
+    }
+    const isCompileError = getSubmissionVisualVariant(submissionResult) === "compile";
+    if (Object.prototype.hasOwnProperty.call(stats, "score") && stats.score !== null && stats.score !== "" && !(isCompileError && Number(stats.score) === 0)) {
+      chips.push(`<span class="badge">${escapeHtml(String(stats.score))} 分</span>`);
+    }
+  }
+  // 在线 AC 才做完整庆祝；本地全过、历史回看只保留静态成功样式（不重放 🎉 与动效）。
+  const isHistory = focusMode === "history-submission";
+  const celebrated = primary.source === "online" && variant === "accepted";
+  const showEmoji = celebrated && !isHistory;
+  const showMessage = Boolean(primary.message);
+  const staticClass = isHistory ? " verdict-static" : "";
   return `
-    <section class="spotlight ${accent}">
-      <div class="spotlight-copy">
-        <div class="spotlight-eyebrow">${primary.eyebrow}</div>
-        <h2>${primary.headline}</h2>
-        <p>${primary.message}</p>
-        <div class="spotlight-meta">
-          ${localReport ? `<span class="pill ${localReport.failed === 0 ? "pill-success" : "pill-danger"}">本地 ${escapeHtml(String(localReport.passed || 0))}/${escapeHtml(String(localReport.total || 0))}</span>` : ""}
-          ${submissionResult ? `<span class="pill ${ACCEPTED_RESULTS.has(submissionResult.result_label) ? "pill-success" : "pill-danger"}">在线 ${escapeHtml(submissionResult.result_label || "未知")}</span>` : ""}
-        </div>
+    <section class="verdict verdict-${tone}${variant ? ` verdict-${variant}` : ""}${staticClass}" role="status" aria-live="polite">
+      <span class="verdict-code">${code}</span>
+      <div class="verdict-copy">
+        <div class="verdict-headline"><span class="verdict-source">${sourceLabel}</span>${primary.headline}${showEmoji ? '<span class="verdict-emoji" aria-hidden="true">🎉</span>' : ""}</div>
+        ${showMessage ? `<p class="verdict-message">${primary.message}</p>` : ""}
       </div>
-      <div class="spotlight-art" aria-hidden="true">
-        ${celebration}
-      </div>
+      ${chips.length ? `<div class="verdict-meta">${chips.join("")}</div>` : ""}
     </section>`;
 }
 
-function renderResultPanelHistoryTools(problemRef, focusMode, historyCount, historyNavigation) {
-  if (!problemRef || !(historyCount > 0 || focusMode === "history-submission")) {
+function renderResultPanelHistoryBar(focusMode, historyCount, historyNavigation) {
+  if (focusMode !== "history-submission") {
     return "";
   }
+  const buttons = [
+    renderCompactActionButton("showLatestResult", "showResults", "最新结果")
+  ];
+  if (historyNavigation && historyNavigation.newer) {
+    buttons.push(renderCompactActionButton("showNewerHistoryResult", "showResults", "上一条"));
+  }
+  if (historyNavigation && historyNavigation.older) {
+    buttons.push(renderCompactActionButton("showOlderHistoryResult", "showResults", "下一条"));
+  }
+  if (historyCount > 1) {
+    buttons.push(renderCompactActionButton("pickHistoryResult", "showResults", "选择历史"));
+  }
   return `
-    <section class="panel">
-      <h2>历史结果</h2>
-      <div class="actions result-actions">
-        ${focusMode === "history-submission" ? renderActionButton("showLatestResult", "showResults", "当前题最新结果", "secondary") : ""}
-        ${focusMode === "history-submission" && historyNavigation && historyNavigation.newer ? renderActionButton("showNewerHistoryResult", "showResults", "上一条历史", "secondary") : ""}
-        ${focusMode === "history-submission" && historyNavigation && historyNavigation.older ? renderActionButton("showOlderHistoryResult", "showResults", "下一条历史", "secondary") : ""}
-        ${historyCount > 0 ? renderActionButton("pickHistoryResult", "showResults", `历史提交结果${historyCount > 1 ? ` (${escapeHtml(String(historyCount))})` : ""}`, "secondary") : ""}
-      </div>
-    </section>`;
+    <div class="history-bar">
+      <span class="history-label"><span class="badge warning">历史</span>共 ${escapeHtml(String(historyCount))} 条提交记录，当前不是最新结果</span>
+      <div class="actions">${buttons.join("")}</div>
+    </div>`;
 }
 function buildResultProblemRefFromMetadata(metadata) {
   if (!metadata || !metadata.problemId) {
@@ -2136,118 +2520,442 @@ function renderResultPanelHtml(viewModel) {
   const titleLine = problemRef
     ? `${escapeHtml(problemRef.displayId || "")} ${escapeHtml(problemRef.title || "")}`.trim()
     : "当前题目";
-  const modeBanner = focusMode === "history-submission"
-    ? '<div class="callout warning">正在查看历史提交记录（非最新结果）</div>'
-    : "";
+  const actions = [
+    renderCompactActionButton("runTests", "runTests", "本地测试"),
+    renderCompactActionButton("submit", "submit", "提交"),
+    focusMode !== "history-submission" && historyCount > 1
+      ? renderCompactActionButton("pickHistoryResult", "showResults", `历史 (${historyCount})`)
+      : ""
+  ].filter(Boolean).join("");
   return `<!DOCTYPE html>
   <html>
     <head>
       <meta charset="UTF-8" />
       <style>
-        body { font-family: Georgia, 'Times New Roman', serif; padding: 24px; background: linear-gradient(180deg, #f3efe3 0%, #f7f7f2 100%); color: #17312f; }
-        h1, h2, h3, h4 { color: #0b5d5b; }
-        .subtitle { color: #486563; margin-top: -8px; margin-bottom: 16px; }
-        .actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 8px; align-items: stretch; }
-        .action-button { border: 0; border-radius: 20px; padding: 12px 10px; background: #0b5d5b; color: #f7f7f2; cursor: pointer; font-size: 14px; }
-        .action-button.secondary { background: #d7ebe5; color: #17312f; }
-        .icon-button { min-height: 82px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; line-height: 1; box-shadow: 0 4px 16px rgba(11, 93, 91, 0.08); border: 1px solid rgba(11, 93, 91, 0.08); }
-        .icon-button.primary { background: #0b5d5b; color: #f7f7f2; }
-        .icon-button:hover { transform: translateY(-1px); }
-        .action-button-icon { display: inline-flex; width: 24px; height: 24px; }
-        .action-button-icon svg { width: 24px; height: 24px; display: block; }
-        .action-button-label { font-size: 12px; line-height: 1.2; font-weight: 600; text-align: center; }
-        .pill { display: inline-block; background: #d7ebe5; border-radius: 999px; padding: 6px 12px; margin-right: 8px; margin-bottom: 8px; }
-        .pill-row { margin: 8px 0 2px; }
-        .pill-success { background: #d9efe1; color: #145a32; }
-        .pill-danger { background: #f7dddb; color: #8f2d21; }
-        .pill-warning { background: #fff1cf; color: #7d5a00; }
-        .panel { background: rgba(255,255,255,0.78); border: 1px solid #d5ddd4; border-radius: 16px; padding: 18px; margin-bottom: 18px; }
-        .spotlight { position: relative; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(180px, 0.9fr); gap: 18px; border-radius: 24px; padding: 24px; margin-bottom: 18px; border: 1px solid transparent; }
-        .spotlight-success { background: radial-gradient(circle at top left, rgba(255,255,255,0.96), rgba(225,246,230,0.98) 48%, rgba(191,233,205,0.98)); border-color: #b6dcc2; box-shadow: 0 20px 50px rgba(33, 111, 67, 0.14); }
-        .spotlight-danger { background: radial-gradient(circle at top left, rgba(255,255,255,0.92), rgba(252,232,228,0.98) 55%, rgba(244,203,196,0.98)); border-color: #e8c1bc; box-shadow: 0 20px 50px rgba(141, 45, 33, 0.10); }
-        .spotlight-warning { background: radial-gradient(circle at top left, rgba(255,255,255,0.92), rgba(255,244,219,0.98) 55%, rgba(247,226,166,0.98)); border-color: #efd48e; box-shadow: 0 20px 50px rgba(125, 90, 0, 0.10); }
-        .spotlight-compile { background: radial-gradient(circle at top left, rgba(255,255,255,0.94), rgba(252,233,228,0.98) 48%, rgba(240,193,181,0.98)); border-color: #e7bbb2; }
-        .spotlight-wrong-answer { background: radial-gradient(circle at top left, rgba(255,255,255,0.94), rgba(251,239,228,0.98) 48%, rgba(239,212,182,0.98)); border-color: #e5c8a2; }
-        .spotlight-runtime { background: radial-gradient(circle at top left, rgba(255,255,255,0.94), rgba(248,232,236,0.98) 48%, rgba(228,191,202,0.98)); border-color: #debac5; }
-        .spotlight-timeout { background: radial-gradient(circle at top left, rgba(255,255,255,0.94), rgba(255,242,220,0.98) 48%, rgba(244,219,169,0.98)); border-color: #e8d099; }
-        .spotlight-memory { background: radial-gradient(circle at top left, rgba(255,255,255,0.94), rgba(239,236,252,0.98) 48%, rgba(207,199,239,0.98)); border-color: #c8c1e4; }
-        .spotlight-system { background: radial-gradient(circle at top left, rgba(255,255,255,0.94), rgba(242,242,242,0.98) 48%, rgba(222,222,222,0.98)); border-color: #d0d0d0; }
-        .spotlight-empty { padding: 24px; }
-        .spotlight-copy { position: relative; z-index: 1; }
-        .spotlight-eyebrow { font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: #486563; margin-bottom: 10px; }
-        .spotlight h2 { font-size: 34px; line-height: 1.05; margin: 0 0 10px; color: #114744; }
-        .spotlight p { font-size: 16px; line-height: 1.6; margin: 0 0 16px; max-width: 42rem; }
-        .spotlight-meta { display: flex; flex-wrap: wrap; gap: 8px; }
-        .spotlight-art { position: relative; min-height: 160px; display: flex; align-items: center; justify-content: center; }
-        .spotlight-badge { width: 128px; height: 128px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 800; letter-spacing: 0.08em; color: #fff; background: rgba(11, 93, 91, 0.92); box-shadow: 0 14px 30px rgba(11, 93, 91, 0.16); }
-        .spotlight-danger .spotlight-badge { background: rgba(143, 45, 33, 0.92); }
-        .spotlight-warning .spotlight-badge { background: rgba(125, 90, 0, 0.92); }
-        .spotlight-confetti span { position: absolute; width: 18px; height: 18px; border-radius: 4px; opacity: 0.9; }
-        .spotlight-confetti span:nth-child(1) { top: 18px; right: 24px; background: #0b5d5b; transform: rotate(18deg); }
-        .spotlight-confetti span:nth-child(2) { bottom: 18px; left: 24px; background: #7fc89a; transform: rotate(-22deg); }
-        .spotlight-confetti span:nth-child(3) { top: 54px; left: 18px; background: #c9a227; transform: rotate(34deg); }
-        .spotlight-confetti span:nth-child(4) { bottom: 44px; right: 12px; background: #e67e22; transform: rotate(10deg); }
-        .spotlight-confetti span:nth-child(5) { top: 10px; left: 52px; background: #2ecc71; transform: rotate(-18deg); }
-        .spotlight-rays { position: absolute; inset: 6px; border-radius: 50%; background: repeating-conic-gradient(from 0deg, rgba(255,255,255,0.0) 0deg 10deg, rgba(255,255,255,0.22) 10deg 16deg); filter: blur(0.5px); }
-        .spotlight-signal { position: absolute; inset: 20px; border-radius: 24px; border: 2px dashed rgba(143, 45, 33, 0.22); }
-        .spotlight-signal.compile { border-color: rgba(143, 45, 33, 0.30); }
-        .spotlight-signal.wrong-answer { border-color: rgba(156, 98, 32, 0.32); }
-        .spotlight-signal.runtime { border-color: rgba(138, 57, 96, 0.30); }
-        .spotlight-signal.timeout { border-color: rgba(160, 120, 28, 0.30); }
-        .spotlight-signal.memory { border-color: rgba(94, 79, 168, 0.28); }
-        .overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
-        .overview-card { border-radius: 16px; padding: 14px 16px; border: 1px solid #dde4da; background: #f8faf7; display: flex; flex-direction: column; gap: 6px; }
-        .overview-card.success { background: #eef9f1; border-color: #cbe3d2; }
-        .overview-card.danger { background: #fcedeb; border-color: #ebc4bf; }
-        .overview-card.compile { background: #fbeae7; border-color: #e7bbb2; }
-        .overview-card.wrong-answer { background: #fcf1e6; border-color: #e6c9a9; }
-        .overview-card.runtime { background: #f8ecef; border-color: #debbc6; }
-        .overview-card.timeout { background: #fff3df; border-color: #edd39d; }
-        .overview-card.memory { background: #f0edfb; border-color: #d0c8ec; }
-        .overview-card.system { background: #f1f1f1; border-color: #dadada; }
-        .overview-label { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #58716e; }
-        .detail-banner { display: flex; flex-direction: column; gap: 6px; border-radius: 14px; padding: 14px 16px; margin-bottom: 12px; }
-        .detail-banner.success { background: #eaf6ee; border: 1px solid #c8e3d0; }
-        .detail-banner.danger { background: #fae8e6; border: 1px solid #e8c1bc; }
-        .detail-banner.warning { background: #fff4db; border: 1px solid #f0d188; }
-        .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 14px 0; }
-        .fact { background: #f6f8f5; border: 1px solid #dde4da; border-radius: 12px; padding: 12px; }
-        .fact-label { display: block; color: #58716e; font-size: 12px; margin-bottom: 6px; }
-        .callout { border-radius: 12px; padding: 12px 14px; margin: 14px 0; }
-        .callout.success { background: #ebf7ef; border: 1px solid #c8e3d0; }
-        .callout.warning { background: #fff4db; border: 1px solid #f0d188; }
-        .callout.danger { background: #fbe8e6; border: 1px solid #e8c1bc; }
-        .diagnostic-block { border-radius: 14px; padding: 14px; margin: 14px 0; border: 1px solid #dde4da; background: #f8faf7; }
-        .diagnostic-danger { background: #fbebea; border-color: #e7c0bc; }
-        .diagnostic-warning { background: #fff5df; border-color: #f0d188; }
-        .diagnostic-neutral { background: #f6f8f5; border-color: #dde4da; }
-        .diagnostic-block summary { cursor: pointer; font-weight: 700; color: #17312f; }
-        .diagnostic-block[open] summary { margin-bottom: 10px; }
-        .case-block { background: #fbfbf8; border: 1px solid #e1e6de; border-radius: 14px; padding: 14px; margin-bottom: 14px; }
-        .case-header { margin-bottom: 10px; }
-        .case-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-        .all-cases-toggle { margin-top: 16px; }
-        .all-cases-toggle summary { cursor: pointer; font-weight: 700; color: #17312f; margin-bottom: 12px; }
-        pre { white-space: pre-wrap; background: #132322; color: #f6f3ea; padding: 12px; border-radius: 12px; overflow: auto; margin: 0; }
-        a { color: #9a3b2f; }
-        details { margin-top: 14px; }
-        summary { cursor: pointer; font-weight: 600; }
+        :root {
+          --x-border: var(--vscode-panel-border, rgba(128, 128, 128, 0.28));
+          --x-muted: var(--vscode-descriptionForeground, #8b949e);
+          --x-accent: var(--vscode-textLink-foreground, #4daafc);
+          --x-code-bg: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.12));
+          --x-subtle: rgba(128, 128, 128, 0.07);
+          --x-success: var(--vscode-testing-iconPassed, var(--vscode-charts-green, #73c991));
+          --x-danger: var(--vscode-testing-iconFailed, var(--vscode-errorForeground, #f48771));
+          --x-warning: var(--vscode-editorWarning-foreground, #cca700);
+        }
+        * { box-sizing: border-box; }
+        body {
+          margin: 0;
+          font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+          font-size: 13px;
+          line-height: 1.55;
+          color: var(--vscode-editor-foreground, #cccccc);
+          background: var(--vscode-editor-background, #1e1e1e);
+          -webkit-font-smoothing: antialiased;
+        }
+
+        .topbar {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: start;
+          gap: 6px 14px;
+          padding: 8px 16px 9px;
+          background: var(--vscode-editor-background, #1e1e1e);
+          border-bottom: 1px solid var(--x-border);
+        }
+        .title-block { min-width: 0; }
+        h1 { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.4; }
+        .pid {
+          margin-right: 6px;
+          font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
+          font-size: 12px;
+          color: var(--x-muted);
+        }
+
+        .actions { display: flex; flex-wrap: wrap; gap: 4px; }
+        .topbar .actions { justify-content: flex-end; }
+        .action {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          height: 24px;
+          padding: 0 8px;
+          border: 1px solid transparent;
+          border-radius: 3px;
+          background: var(--vscode-button-secondaryBackground, #3a3d41);
+          color: var(--vscode-button-secondaryForeground, #cccccc);
+          font-family: inherit;
+          font-size: 11px;
+          line-height: 1;
+          white-space: nowrap;
+          cursor: pointer;
+        }
+        .action svg { width: 13px; height: 13px; flex: none; }
+        .action:hover { background: var(--vscode-button-secondaryHoverBackground, #45494e); }
+        .action.primary {
+          background: var(--vscode-button-background, #0e639c);
+          color: var(--vscode-button-foreground, #ffffff);
+        }
+        .action.primary:hover { background: var(--vscode-button-hoverBackground, #1177bb); }
+
+        main { max-width: 980px; padding: 13px 16px 40px; }
+
+        /* 结果横幅：替代旧的大号渐变 spotlight，只保留状态、结论和计数 */
+        .verdict {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 9px 11px;
+          border: 1px solid var(--x-border);
+          border-left: 3px solid var(--x-muted);
+          border-radius: 4px;
+          background: var(--x-subtle);
+        }
+        .verdict-success { border-left-color: var(--x-success); background: color-mix(in srgb, var(--x-success) 8%, transparent); }
+        .verdict-danger { border-left-color: var(--x-danger); background: color-mix(in srgb, var(--x-danger) 8%, transparent); }
+        .verdict-warning { border-left-color: var(--x-warning); background: color-mix(in srgb, var(--x-warning) 8%, transparent); }
+        .verdict-compile { border-left-color: var(--x-danger); }
+        .verdict-wrong-answer { border-left-color: var(--x-warning); }
+        .verdict-runtime { border-left-color: var(--x-danger); }
+        .verdict-timeout { border-left-color: var(--x-warning); }
+        .verdict-memory { border-left-color: var(--x-accent); }
+        .verdict-system { border-left-color: var(--x-muted); }
+        .verdict-empty { border-left-color: var(--x-muted); }
+        .verdict-code {
+          flex: none;
+          min-width: 38px;
+          padding: 2px 6px;
+          border-radius: 3px;
+          background: var(--x-code-bg);
+          color: var(--x-muted);
+          font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
+          font-size: 11px;
+          font-weight: 700;
+          line-height: 1.6;
+          text-align: center;
+          letter-spacing: 0.04em;
+        }
+        .verdict-success .verdict-code { color: var(--x-success); background: color-mix(in srgb, var(--x-success) 15%, transparent); }
+        .verdict-danger .verdict-code { color: var(--x-danger); background: color-mix(in srgb, var(--x-danger) 15%, transparent); }
+        .verdict-warning .verdict-code { color: var(--x-warning); background: color-mix(in srgb, var(--x-warning) 15%, transparent); }
+        .verdict-copy { min-width: 0; }
+        .verdict-source { margin-right: 6px; color: var(--x-muted); font-size: 11.5px; font-weight: 400; }
+        .verdict-headline { font-size: 13.5px; font-weight: 600; line-height: 1.4; }
+        .verdict p { margin: 2px 0 0; color: var(--x-muted); font-size: 12px; line-height: 1.5; }
+        .verdict-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; margin-left: auto; }
+
+        /* AC 庆祝态：只用于在线 Accepted。一次性入场/扫光，不影响持续阅读。 */
+        .verdict-accepted {
+          position: relative;
+          overflow: hidden;
+          align-items: center;
+          gap: 14px;
+          padding: 14px 16px;
+          border-color: color-mix(in srgb, var(--x-success) 34%, var(--x-border));
+          border-left-width: 4px;
+          border-radius: 6px;
+          background:
+            radial-gradient(120% 170% at 0% 0%,
+              color-mix(in srgb, var(--x-success) 18%, transparent) 0,
+              color-mix(in srgb, var(--x-success) 5%, transparent) 45%,
+              transparent 72%),
+            color-mix(in srgb, var(--x-success) 6%, var(--vscode-editor-background, #1e1e1e));
+          box-shadow:
+            0 0 0 1px color-mix(in srgb, var(--x-success) 10%, transparent),
+            0 6px 18px -14px color-mix(in srgb, var(--x-success) 80%, transparent);
+          animation: x-ac-in 300ms ease-out 1 both;
+        }
+        .verdict-accepted > * { position: relative; z-index: 1; }
+        .verdict-accepted::after {
+          content: "";
+          position: absolute;
+          z-index: 0;
+          top: 0;
+          bottom: 0;
+          left: -45%;
+          width: 36%;
+          background: linear-gradient(100deg,
+            transparent,
+            color-mix(in srgb, var(--vscode-editor-foreground, #ffffff) 9%, transparent) 50%,
+            transparent);
+          transform: skewX(-18deg);
+          animation: x-ac-sheen 800ms ease-out 150ms 1 both;
+          pointer-events: none;
+        }
+        .verdict-accepted .verdict-code {
+          min-width: 48px;
+          padding: 5px 9px;
+          border-radius: 5px;
+          background: linear-gradient(180deg,
+            color-mix(in srgb, var(--x-success) 24%, var(--vscode-editor-background, #1e1e1e)),
+            color-mix(in srgb, var(--x-success) 10%, var(--vscode-editor-background, #1e1e1e)));
+          color: var(--x-success);
+          font-size: 18px;
+          line-height: 1.15;
+          letter-spacing: 0.05em;
+          box-shadow: 0 0 0 1px color-mix(in srgb, var(--x-success) 42%, transparent);
+          animation: x-ac-pop 380ms cubic-bezier(0.2, 0.9, 0.3, 1.2) 60ms 1 both;
+        }
+        .verdict-accepted .verdict-headline {
+          font-size: 16px;
+          font-weight: 700;
+          letter-spacing: -0.01em;
+          animation: x-ac-rise 320ms ease-out 100ms 1 both;
+        }
+        .verdict-accepted .verdict-message {
+          margin-top: 4px;
+          font-size: 12.5px;
+          animation: x-ac-rise 340ms ease-out 160ms 1 both;
+        }
+        .verdict-accepted .verdict-meta { animation: x-ac-rise 340ms ease-out 200ms 1 both; }
+        .verdict-emoji {
+          display: inline-block;
+          margin-left: 6px;
+          font-size: 16px;
+          line-height: 1;
+          vertical-align: -1px;
+          animation: x-ac-pop 420ms cubic-bezier(0.2, 0.9, 0.3, 1.3) 220ms 1 both;
+        }
+        @keyframes x-ac-in {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: none; }
+        }
+        @keyframes x-ac-pop {
+          0% { opacity: 0; transform: scale(0.72); }
+          62% { opacity: 1; transform: scale(1.06); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes x-ac-rise {
+          from { opacity: 0; transform: translateY(3px); }
+          to { opacity: 1; transform: none; }
+        }
+        @keyframes x-ac-sheen {
+          0% { opacity: 0; transform: translateX(0) skewX(-18deg); }
+          22% { opacity: 0.8; }
+          100% { opacity: 0; transform: translateX(440%) skewX(-18deg); }
+        }
+        /* 历史提交只保留静态庆祝样式，不重放动效 */
+        .verdict-static,
+        .verdict-static::after,
+        .verdict-static .verdict-code,
+        .verdict-static .verdict-headline,
+        .verdict-static .verdict-message,
+        .verdict-static .verdict-meta,
+        .verdict-static .verdict-emoji { animation: none !important; }
+        .verdict-static::after { display: none; }
+
+        /* WA / 本地未通过：低饱和琥珀 + 中性底，去掉红色警报感 */
+        .verdict-wrong-answer {
+          padding: 10px 12px;
+          border-color: color-mix(in srgb, var(--x-warning) 24%, var(--x-border));
+          border-left-color: color-mix(in srgb, var(--x-warning) 68%, var(--x-border));
+          background:
+            linear-gradient(90deg,
+              color-mix(in srgb, var(--x-warning) 7%, transparent),
+              transparent 70%),
+            var(--x-subtle);
+          box-shadow: none;
+        }
+        .verdict-wrong-answer .verdict-code {
+          color: color-mix(in srgb, var(--x-warning) 72%, var(--vscode-editor-foreground, #cccccc));
+          background: color-mix(in srgb, var(--x-warning) 12%, transparent);
+        }
+        .verdict-wrong-answer .verdict-headline { font-size: 14px; }
+        .verdict-wrong-answer .verdict-message { color: var(--x-muted); }
+        .verdict-wrong-answer .badge.danger {
+          color: color-mix(in srgb, var(--x-warning) 72%, var(--vscode-editor-foreground, #cccccc));
+          border-color: color-mix(in srgb, var(--x-warning) 36%, var(--x-border));
+          background: color-mix(in srgb, var(--x-warning) 9%, transparent);
+        }
+        /* 失败详情跟随 WA 降级，避免卡片温和、下方又满屏红色 */
+        .verdict-wrong-answer ~ .section .section-title::before {
+          background: color-mix(in srgb, var(--x-warning) 62%, var(--x-border));
+        }
+        .verdict-wrong-answer ~ .section .badge.danger {
+          color: color-mix(in srgb, var(--x-warning) 72%, var(--vscode-editor-foreground, #cccccc));
+          border-color: color-mix(in srgb, var(--x-warning) 34%, transparent);
+          background: color-mix(in srgb, var(--x-warning) 8%, transparent);
+        }
+        .verdict-wrong-answer ~ .section .callout.danger,
+        .verdict-wrong-answer ~ .section .diagnostic-danger {
+          border-left-color: color-mix(in srgb, var(--x-warning) 65%, var(--x-border));
+          background: color-mix(in srgb, var(--x-warning) 5%, transparent);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .verdict-accepted,
+          .verdict-accepted::after,
+          .verdict-accepted .verdict-code,
+          .verdict-accepted .verdict-headline,
+          .verdict-accepted .verdict-message,
+          .verdict-accepted .verdict-meta,
+          .verdict-emoji { animation: none !important; }
+          .verdict-accepted::after { display: none; }
+        }
+
+        .section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--x-border); }
+        .section-title {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin: 0 0 5px;
+          font-size: 11px;
+          font-weight: 600;
+          line-height: 1.5;
+          color: var(--vscode-editor-foreground, #cccccc);
+          opacity: 0.72;
+        }
+        .section-title::before {
+          content: "";
+          width: 3px;
+          height: 10px;
+          border-radius: 1px;
+          background: var(--vscode-focusBorder, var(--x-accent));
+        }
+        .subsection-title { margin: 9px 0 4px; color: var(--x-muted); font-size: 11px; font-weight: 600; }
+
+        .badges { display: flex; flex-wrap: wrap; gap: 3px 5px; margin: 0 0 5px; }
+        .badge {
+          display: inline-block;
+          padding: 0 5px;
+          border: 1px solid var(--x-border);
+          border-radius: 3px;
+          background: var(--x-subtle);
+          color: var(--x-muted);
+          font-size: 10.5px;
+          line-height: 1.65;
+          white-space: nowrap;
+        }
+        .badge.success { color: var(--x-success); border-color: color-mix(in srgb, var(--x-success) 45%, transparent); background: color-mix(in srgb, var(--x-success) 10%, transparent); }
+        .badge.danger { color: var(--x-danger); border-color: color-mix(in srgb, var(--x-danger) 45%, transparent); background: color-mix(in srgb, var(--x-danger) 10%, transparent); }
+        .badge.warning { color: var(--x-warning); border-color: color-mix(in srgb, var(--x-warning) 45%, transparent); background: color-mix(in srgb, var(--x-warning) 10%, transparent); }
+
+        .callout {
+          margin: 9px 0 0;
+          padding: 6px 10px;
+          border-left: 3px solid var(--x-muted);
+          border-radius: 0 3px 3px 0;
+          background: var(--x-subtle);
+        }
+        .callout strong { display: block; margin-bottom: 3px; font-size: 11px; }
+        .callout.success { border-left-color: var(--x-success); background: color-mix(in srgb, var(--x-success) 8%, transparent); }
+        .callout.warning { border-left-color: var(--x-warning); background: color-mix(in srgb, var(--x-warning) 8%, transparent); }
+        .callout.danger { border-left-color: var(--x-danger); background: color-mix(in srgb, var(--x-danger) 8%, transparent); }
+        .callout pre { margin: 3px 0 0; }
+
+        .diagnostic-block {
+          margin: 8px 0 0;
+          border: 1px solid var(--x-border);
+          border-left: 3px solid var(--x-border);
+          border-radius: 4px;
+          background: var(--x-subtle);
+          overflow: hidden;
+        }
+        .diagnostic-danger { border-left-color: var(--x-danger); }
+        .diagnostic-warning { border-left-color: var(--x-warning); }
+        .diagnostic-block summary { padding: 5px 9px; cursor: pointer; font-size: 12px; font-weight: 600; }
+        .diagnostic-block[open] summary { border-bottom: 1px solid var(--x-border); }
+        .diagnostic-block pre { margin: 0; padding: 7px 9px; border-radius: 0; background: var(--x-code-bg); max-height: 360px; }
+        .callout pre { max-height: 200px; }
+
+        /* 历史提交导航：合并提示与按钮，避免单独占一个区块 */
+        .history-bar {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 6px 10px;
+          margin-top: 10px;
+          padding: 5px 9px;
+          border: 1px solid var(--x-border);
+          border-left: 3px solid var(--x-warning);
+          border-radius: 4px;
+          background: color-mix(in srgb, var(--x-warning) 8%, transparent);
+        }
+        .history-label { flex: 1 1 auto; min-width: 0; color: var(--x-muted); font-size: 11.5px; }
+        .history-label .badge { margin-right: 6px; }
+        .history-bar .actions { flex: none; }
+
+        pre {
+          margin: 0;
+          padding: 7px 9px;
+          border-radius: 3px;
+          background: var(--x-code-bg);
+          color: var(--vscode-editor-foreground, #cccccc);
+          font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, monospace);
+          font-size: 12px;
+          line-height: 1.45;
+          white-space: pre-wrap;
+          word-break: break-word;
+          overflow: auto;
+        }
+        a { color: var(--x-accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .case-block {
+          margin: 8px 0 0;
+          border: 1px solid var(--x-border);
+          border-radius: 4px;
+          overflow: hidden;
+        }
+        .case-header {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 5px;
+          padding: 4px 8px;
+          background: var(--x-subtle);
+          font-size: 11.5px;
+        }
+        .case-header strong { font-weight: 600; }
+        .case-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+        .case-grid > div { min-width: 0; padding: 6px 8px; }
+        .case-grid > div + div { border-left: 1px solid var(--x-border); }
+        .case-grid pre { max-height: 240px; }
+        .case-input { padding: 6px 8px; border-bottom: 1px solid var(--x-border); }
+        .case-input pre { max-height: 180px; }
+        .case-grid h4, .case-stderr h4, .case-input h4 {
+          margin: 0 0 3px;
+          color: var(--x-muted);
+          font-size: 10.5px;
+          font-weight: 600;
+        }
+        .case-stderr { padding: 6px 8px; border-top: 1px solid var(--x-border); }
+        .more-failures { margin-top: 9px; }
+        .more-failures > summary { cursor: pointer; color: var(--x-accent); font-size: 11.5px; }
+        summary { cursor: pointer; }
+
         @media (max-width: 720px) {
-          .spotlight { grid-template-columns: 1fr; }
-          .spotlight h2 { font-size: 28px; }
-          .spotlight-art { min-height: 120px; }
-          .spotlight-badge { width: 104px; height: 104px; font-size: 22px; }
+          .topbar { grid-template-columns: minmax(0, 1fr); padding: 8px 12px; }
+          .topbar .actions { justify-content: flex-start; }
+          main { padding: 11px 12px 32px; }
+          .verdict { flex-wrap: wrap; }
+          .verdict-meta { flex-basis: 100%; justify-content: flex-start; margin-left: 0; }
+          .case-grid > div + div { border-left: 0; border-top: 1px solid var(--x-border); }
+        }
+        @media (max-width: 480px) {
+          .verdict-accepted { padding: 12px 12px; gap: 10px; }
+          .verdict-accepted .verdict-code { min-width: 42px; padding: 4px 8px; font-size: 16px; }
+          .verdict-accepted .verdict-headline { font-size: 15px; }
+          .verdict-emoji { margin-left: 4px; font-size: 14px; }
+          .verdict-wrong-answer { padding: 9px 10px; }
         }
       </style>
     </head>
     <body>
-      <h1>XMUOJ 当前题结果报表</h1>
-      <p class="subtitle">${titleLine || "当前题目"}</p>
-      ${modeBanner}
-      ${renderResultSpotlight(viewModel)}
-      ${localReport ? renderLocalReportSection(localReport, localReport.baseUrl || (problemRef ? problemRef.baseUrl : "") || "") : ""}
-      ${submissionResult ? renderSubmissionResultSection(submissionResult, submissionResult.baseUrl || (problemRef ? problemRef.baseUrl : "") || "") : ""}
-      ${renderResultPanelHistoryTools(problemRef, focusMode, historyCount, historyNavigation)}
+      <header class="topbar">
+        <div class="title-block">
+          <h1><span class="pid">结果</span>${titleLine || "当前题目"}</h1>
+        </div>
+        <div class="actions">${actions}</div>
+      </header>
+      <main>
+        ${renderResultSpotlight(viewModel)}
+        ${renderResultPanelHistoryBar(focusMode, historyCount, historyNavigation)}
+        ${localReport ? renderLocalReportSection(localReport) : ""}
+        ${submissionResult ? renderSubmissionResultSection(submissionResult) : ""}
+      </main>
       <script>
         const vscode = acquireVsCodeApi();
         document.querySelectorAll('[data-command]').forEach((button) => {
@@ -2279,14 +2987,20 @@ function updateStatusBars(state, userStatusBar, contestStatusBar, client) {
 // 只要 label 非空且不在该集合里，才视为终态（相比旧实现的硬编码 Pending/Judging 更保守，
 // 避免 Queued/Running 等新状态被误判为已出结果）。
 const PENDING_SUBMISSION_STATES = new Set([
-  "Pending",
-  "Judging",
-  "Queued",
-  "Waiting",
-  "Running",
-  "Compiling",
-  "Pending Judging"
+  "pending",
+  "judging",
+  "queued",
+  "waiting",
+  "running",
+  "compiling",
+  "pending judging"
 ]);
+
+/** 后端 label 大小写不稳定，统一按小写判断是否仍在等待判题。 */
+function isPendingSubmissionResult(result) {
+  const label = String(result && result.result_label ? result.result_label : "").trim().toLowerCase();
+  return Boolean(label) && PENDING_SUBMISSION_STATES.has(label);
+}
 const SUBMISSION_WAIT_TIMEOUT_MS = 120 * 1000;
 
 /**
@@ -2313,7 +3027,7 @@ async function waitForSubmission(client, submissionId) {
           }
           const result = await client.getSubmission(submissionId);
           const label = String((result && result.result_label) || "").trim();
-          if (label && !PENDING_SUBMISSION_STATES.has(label)) {
+          if (label && !PENDING_SUBMISSION_STATES.has(label.toLowerCase())) {
             return result;
           }
           const waitedSeconds = Math.round((Date.now() - started) / 1000);

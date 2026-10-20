@@ -6,6 +6,16 @@ function normalizeOutput(output) {
   return String(output || "").replace(/\r\n/g, "\n").trimEnd();
 }
 
+const MAX_REPORT_TEXT_CHARS = 8000;
+
+function truncateReportText(text) {
+  const value = String(text || "");
+  if (value.length <= MAX_REPORT_TEXT_CHARS) {
+    return value;
+  }
+  return `${value.slice(0, MAX_REPORT_TEXT_CHARS)}\n…（已截断，完整内容见测试数据文件）`;
+}
+
 function runProcess(command, args, { cwd, input, timeoutMs = 10000 } = {}) {
   return new Promise((resolve) => {
     const child = spawn(command, args, { cwd, stdio: "pipe" });
@@ -124,6 +134,8 @@ async function runLocalCases({ sourcePath, language, caseDir, outputChannel }) {
       name: casePair.name,
       passed,
       exitCode: run.exitCode,
+      // 只有失败点需要输入用于复现；截断避免报告持久化到 globalState 时过大。
+      input: passed ? "" : truncateReportText(input),
       expected,
       actual: run.stdout,
       stdout: run.stdout,
