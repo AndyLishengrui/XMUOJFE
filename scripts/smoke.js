@@ -10,7 +10,7 @@
 const path = require("path");
 const Module = require("module");
 
-const EXPECTED_MIN_COMMANDS = 40;
+const EXPECTED_MIN_COMMANDS = 50;
 
 // ---- vscode mock ----------------------------------------------------------
 class Disposable {
@@ -253,7 +253,20 @@ async function main() {
     if (registeredCommands.length < EXPECTED_MIN_COMMANDS) {
       throw new Error(`命令注册数量异常：期望 >= ${EXPECTED_MIN_COMMANDS}，实际 ${registeredCommands.length}`);
     }
-    const requiredCommands = ["xmuoj.login", "xmuoj.submitCurrentFile", "xmuoj.startWorkingOnProblem", "xmuoj.openOnlineProblem", "xmuoj.quickStart"];
+    const requiredCommands = [
+      "xmuoj.login",
+      "xmuoj.submitCurrentFile",
+      "xmuoj.startWorkingOnProblem",
+      "xmuoj.openOnlineProblem",
+      "xmuoj.quickStart",
+      "xmuoj.search",
+      "xmuoj.migrateWorkspaces",
+      "xmuoj.rollbackWorkspaceMigration",
+      "xmuoj.rebuildWorkspaceIndex",
+      "xmuoj.openSettings",
+      "xmuoj.openRecentProblem",
+      "xmuoj.forgetContestPassword"
+    ];
     for (const id of requiredCommands) {
       if (!registeredCommands.some((entry) => entry.id === id)) {
         throw new Error(`缺少必需命令：${id}`);

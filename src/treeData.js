@@ -3,7 +3,13 @@ const path = require("path");
 const vscode = require("vscode");
 
 const { findExistingProblemWorkspace } = require("./problemWorkspace");
-
+const store = require("./workspaceStore");
+const {
+  buildProblemProgressKey,
+  resolveProblemProgress,
+  getProblemProgressSummary,
+  normalizeContestStatus
+} = require("./progress");
 
 function isProblemColorizationEnabled() {
   return Boolean(vscode.workspace.getConfiguration("xmuoj").get("colorizeProblems", true));
@@ -13,29 +19,22 @@ function normalizeBaseUrlForKey(baseUrl) {
   return String(baseUrl || "").trim().replace(/\/+$/, "");
 }
 
-function normalizeProgressScope(scope) {
-  if (!scope) {
-    return "global";
-  }
-  const value = String(scope).trim();
-  if (!value) {
-    return "global";
-  }
-  try {
-    return path.resolve(value);
-  } catch (_error) {
-    return value;
-  }
-}
-
 function resolveProblemProgressScope() {
   const configuredRoot = String(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "").trim();
   if (configuredRoot) {
-    return normalizeProgressScope(configuredRoot);
+    try {
+      return path.resolve(configuredRoot);
+    } catch (_error) {
+      return configuredRoot;
+    }
   }
   const folders = vscode.workspace.workspaceFolders || [];
   if (folders.length && folders[0] && folders[0].uri && folders[0].uri.fsPath) {
-    return normalizeProgressScope(folders[0].uri.fsPath);
+    try {
+      return path.resolve(folders[0].uri.fsPath);
+    } catch (_error) {
+      return folders[0].uri.fsPath;
+    }
   }
   return "global";
 }
@@ -50,6 +49,7 @@ function makeThemeIcon(iconId, colorId) {
 function getActionIcon(command) {
   const mapping = {
     "xmuoj.quickStart": "rocket",
+    "xmuoj.search": "search",
     "xmuoj.login": "account",
     "xmuoj.logout": "sign-out",
     "xmuoj.browseContests": "search",
@@ -70,7 +70,9 @@ function getActionIcon(command) {
     "xmuoj.revealContestWorkspace": "link-external",
     "xmuoj.revealProblemsetWorkspace": "link-external",
     "xmuoj.removeContestWorkspaceSelection": "close",
-    "xmuoj.initContestWorkspace": "new-folder"
+    "xmuoj.initContestWorkspace": "new-folder",
+    "xmuoj.openRecentProblem": "history",
+    "xmuoj.removeRecentProblem": "close"
   };
   return makeThemeIcon(mapping[command] || "chevron-right");
 }
@@ -94,32 +96,8 @@ function getProgressPresentation(progress) {
   return { summary: "未开始", badge: "TODO", iconId: "circle-large-outline", colorId: "disabledForeground" };
 }
 
-function normalizeContestStatus(status) {
-  const raw = String(status || "").trim();
-  const lower = raw.toLowerCase();
-  if (raw === "-1") {
-    return { key: "ended", label: "结束" };
-  }
-  if (raw === "0") {
-    return { key: "running", label: "进行中" };
-  }
-  if (raw === "1") {
-    return { key: "pending", label: "准备中" };
-  }
-  if (["ended", "end", "finished", "closed", "over", "结束", "已结束"].includes(lower) || ["结束", "已结束"].includes(raw)) {
-    return { key: "ended", label: "结束" };
-  }
-  if (["pending", "preparing", "scheduled", "not_started", "not-started", "准备中", "未开始"].includes(lower) || ["准备中", "未开始"].includes(raw)) {
-    return { key: "pending", label: "准备中" };
-  }
-  if (["running", "active", "started", "ongoing", "live", "进行中", "已开始"].includes(lower) || ["进行中", "已开始"].includes(raw)) {
-    return { key: "running", label: "进行中" };
-  }
-  return { key: raw ? lower : "unknown", label: raw || "未知" };
-}
-
 function getContestStatusSummary(contest) {
-  const status = normalizeContestStatus(contest && contest.status ? contest.status : "");
+  const status = normalizeContestStatus(contest ? contest.status : "");
   if (status.key === "ended") {
     return "已结束 · 仅本地测评";
   }
@@ -129,7 +107,14 @@ function getContestStatusSummary(contest) {
   if (status.key === "running") {
     return "进行中";
   }
+  if (!contest || contest.status === undefined || contest.status === null) {
+    return "本地目录";
+  }
   return `状态未知（原始值：${status.label}）`;
+}
+
+function formatProgressDescription(progress, fallback = "未开始") {
+  return getProblemProgressSummary(progress) || fallback;
 }
 
 class InfoTreeItem extends vscode.TreeItem {
@@ -152,19 +137,10 @@ class SectionTreeItem extends vscode.TreeItem {
   }
 }
 
-class GroupTreeItem extends vscode.TreeItem {
-  constructor(id, label, description, iconId = "list-unordered", collapsed = false, contextValue = "group") {
-    super(label, collapsed ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.Expanded);
-    this.id = id;
-    this.description = description;
-    this.contextValue = contextValue;
-    this.iconPath = makeThemeIcon(iconId, "descriptionForeground");
-  }
-}
-
 class ActionTreeItem extends vscode.TreeItem {
   constructor(label, description, command, argumentsList = [], options = {}) {
     super(label, vscode.TreeItemCollapsibleState.None);
+    this.id = options.id;
     this.description = options.showDescription ? description : undefined;
     this.tooltip = description ? `${label}\n${description}` : label;
     this.contextValue = "action";
@@ -180,6 +156,7 @@ class ActionTreeItem extends vscode.TreeItem {
 class ProblemTreeItem extends vscode.TreeItem {
   constructor(problem, progress, command = "xmuoj.openProblem", argumentsList = [problem], contextValue = "problem", options = {}) {
     super(`${problem.display_id} ${problem.title}`, options.collapsible === false ? vscode.TreeItemCollapsibleState.None : vscode.TreeItemCollapsibleState.Collapsed);
+    this.id = options.id;
     this.problem = problem;
     this.baseUrl = options.baseUrl;
     this.contest = options.contest || null;
@@ -199,9 +176,54 @@ class ProblemTreeItem extends vscode.TreeItem {
   }
 }
 
+class RecentProblemTreeItem extends vscode.TreeItem {
+  constructor(entry, progress) {
+    super(`${entry.displayId || entry.display_id || entry.problemId} ${entry.title || ""}`.trim(), vscode.TreeItemCollapsibleState.None);
+    this.id = `recent::${entry.identity}`;
+    this.entry = entry;
+    this.problem = entry.problem || {
+      id: entry.problemId,
+      display_id: entry.displayId || entry.display_id,
+      title: entry.title
+    };
+    this.baseUrl = entry.baseUrl;
+    this.contextValue = "recentProblem";
+    const presentation = getProgressPresentation(progress);
+    const source = entry.contestTitle || "公共题库";
+    this.description = `${source} · ${formatProgressDescription(progress)}`;
+    this.tooltip = `${this.label}\n${source}\n状态：${presentation.summary}`;
+    this.iconPath = new vscode.ThemeIcon(
+      presentation.iconId,
+      isProblemColorizationEnabled() ? new vscode.ThemeColor(presentation.colorId) : undefined
+    );
+    this.command = {
+      command: "xmuoj.openRecentProblem",
+      title: "打开最近题目",
+      arguments: [entry]
+    };
+  }
+}
+
+class ContestTreeItem extends vscode.TreeItem {
+  constructor(entry, isActive) {
+    super(entry.contest.title || `实验 ${entry.contest.id}`, vscode.TreeItemCollapsibleState.Collapsed);
+    this.id = `contest::${entry.key}`;
+    this.entry = entry;
+    this.contest = entry.contest;
+    this.baseUrl = entry.baseUrl;
+    this.contextValue = "contestWorkspace";
+    const statusSummary = getContestStatusSummary(entry.contest);
+    const problemCount = (entry.problems || []).length;
+    this.description = `${isActive ? "当前实验 · " : ""}${statusSummary} · ${problemCount} 题${entry.scanned ? " · 本地" : ""}`;
+    this.tooltip = `${this.label}\n${statusSummary}\n${problemCount} 道题${entry.scanned ? "\n来自本地目录扫描" : ""}`;
+    this.iconPath = makeThemeIcon(isActive ? "target" : "repo", isActive ? "charts.blue" : undefined);
+  }
+}
+
 class WorkspaceEntryTreeItem extends vscode.TreeItem {
   constructor(entry, rootDir, activeFilePath) {
     super(entry.name, entry.isDirectory ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None);
+    this.id = `file::${entry.fullPath}`;
     this.entry = entry;
     this.rootDir = rootDir;
     this.isActive = !entry.isDirectory && activeFilePath && path.resolve(entry.fullPath) === path.resolve(activeFilePath);
@@ -244,10 +266,10 @@ class ProblemTreeDataProvider {
     if (element instanceof SectionTreeItem) {
       return this.getSectionChildren(element.id);
     }
-    if (element instanceof GroupTreeItem) {
-      return this.getGroupChildren(element.id);
+    if (element instanceof ContestTreeItem) {
+      return this.getContestChildren(element.entry);
     }
-    if (element instanceof ProblemTreeItem) {
+    if (element instanceof ProblemTreeItem || element instanceof RecentProblemTreeItem) {
       return this.getProblemWorkspaceChildren(element);
     }
     if (element instanceof WorkspaceEntryTreeItem) {
@@ -257,215 +279,167 @@ class ProblemTreeDataProvider {
   }
 
   getRootSections() {
-    const sections = [
-      new SectionTreeItem("quick", "设置", undefined, this.state.user ? "home" : "account"),
-      new SectionTreeItem("contests", "实验题库", this.state.openContestWorkspaces && this.state.openContestWorkspaces.length ? `${this.state.openContestWorkspaces.length} 场` : undefined, "repo"),
-      new SectionTreeItem("problemset", "公共题库", this.state.problemsetSelections && this.state.problemsetSelections.length ? `${this.state.problemsetSelections.length} 道` : undefined, "book")
+    const recentCount = (this.state.recentProblems || []).length;
+    const contests = this.getContestEntries();
+    const queueCount = (this.state.problemsetSelections || []).length;
+    return [
+      new SectionTreeItem("recent", "最近在做", recentCount ? `${recentCount} 道` : undefined, "history"),
+      new SectionTreeItem("contests", "我的实验", contests.length ? `${contests.length} 场` : undefined, "repo"),
+      new SectionTreeItem("problemset", "公共题库", queueCount ? `${queueCount} 道` : undefined, "book")
     ];
-
-    return sections;
   }
 
   getSectionChildren(sectionId) {
-    if (sectionId === "quick") {
-      return this.getQuickSectionChildren();
-    }
-    if (sectionId === "problemset") {
-      return this.getProblemsetSectionChildren();
+    if (sectionId === "recent") {
+      return this.getRecentSectionChildren();
     }
     if (sectionId === "contests") {
       return this.getContestsSectionChildren();
     }
+    if (sectionId === "problemset") {
+      return this.getProblemsetSectionChildren();
+    }
     return [];
   }
 
-  getQuickSectionChildren() {
-    const items = [];
-    if (this.state.user) {
-      items.push(new InfoTreeItem("账户设置", this.state.user.username, "account"));
-      items.push(new ActionTreeItem("退出账号", "清除当前 XMUOJ 登录状态", "xmuoj.logout"));
-    } else {
-      items.push(new ActionTreeItem("登入账号", "登录后再开始刷题", "xmuoj.login"));
+  getRecentSectionChildren() {
+    const entries = this.state.recentProblems || [];
+    if (!entries.length) {
+      return [
+        new ActionTreeItem("搜索题目开始刷题", "按题号、标题或关键词搜索在线题目与本地目录", "xmuoj.search"),
+        new InfoTreeItem("暂无最近题目", "打开任意题目后会出现在这里", "history")
+      ];
     }
-    return items;
+    return entries.map((entry) => new RecentProblemTreeItem(entry, this.getEntryProgress(entry)));
+  }
+
+  /**
+   * 合并「已加载实验」（持久化）与「扫盘得到的实验」。
+   * 扫盘条目只补题目，不覆盖服务端返回的实时题目列表。
+   */
+  getContestEntries() {
+    const byKey = new Map();
+    for (const entry of this.state.openContestWorkspaces || []) {
+      if (!entry || !entry.contest) {
+        continue;
+      }
+      const key = entry.key || `${normalizeBaseUrlForKey(entry.baseUrl)}::${entry.contest.id}`;
+      byKey.set(key, Object.assign({}, entry, { key }));
+    }
+    const index = this.state.workspaceIndex;
+    if (index && index.entries) {
+      for (const group of store.groupIndexEntriesByContest(index)) {
+        if (!group.contestId) {
+          continue;
+        }
+        const baseUrl = normalizeBaseUrlForKey(group.entries[0] && group.entries[0].baseUrl) || normalizeBaseUrlForKey(this.state.baseUrl);
+        const key = `${baseUrl}::${group.contestId}`;
+        let entry = byKey.get(key);
+        if (!entry) {
+          entry = {
+            key,
+            baseUrl,
+            contest: {
+              id: group.contestId,
+              title: group.contestTitle || `实验 ${group.contestId}`,
+              status: null
+            },
+            problems: [],
+            contestPassword: "",
+            scanned: true
+          };
+          byKey.set(key, entry);
+        }
+        for (const item of group.entries) {
+          if (!item || item.problemId === undefined || item.problemId === null) {
+            continue;
+          }
+          if ((entry.problems || []).some((problem) => String(problem.id) === String(item.problemId))) {
+            continue;
+          }
+          entry.problems = (entry.problems || []).concat([{
+            id: item.problemId,
+            display_id: item.displayId,
+            title: item.title,
+            difficulty: item.difficulty || "",
+            languages: []
+          }]);
+        }
+      }
+    }
+    return Array.from(byKey.values());
+  }
+
+  getContestsSectionChildren() {
+    const entries = this.getContestEntries();
+    const items = [new ActionTreeItem("搜索并加载实验", "按关键词搜索实验，加入下面的实验列表", "xmuoj.browseContests")];
+    if (!entries.length) {
+      items.push(new InfoTreeItem("暂无实验", "加载实验或打开题目后，磁盘上的实验会自动出现在这里", "repo"));
+      return items;
+    }
+    const activeContestId = this.state.contestWorkspace && this.state.contestWorkspace.contest
+      ? String(this.state.contestWorkspace.contest.id)
+      : null;
+    return items.concat(entries.map((entry) => new ContestTreeItem(
+      entry,
+      Boolean(activeContestId && String(entry.contest.id) === activeContestId)
+    )));
+  }
+
+  getContestChildren(entry) {
+    const problems = entry.problems || [];
+    if (!problems.length) {
+      return [new InfoTreeItem("暂无题目", "右键实验可刷新或批量创建题目目录", "list-unordered")];
+    }
+    const baseKey = `contest::${entry.key}::problem::`;
+    return problems.map((problem) => new ProblemTreeItem(
+      problem,
+      this.getProblemProgress(problem, entry.contest, entry.baseUrl),
+      "xmuoj.openContestWorkspaceProblem",
+      [{
+        baseUrl: entry.baseUrl,
+        contest: entry.contest,
+        contestPassword: entry.contestPassword,
+        problems,
+        problem
+      }],
+      "problem",
+      { baseUrl: entry.baseUrl, contest: entry.contest, id: `${baseKey}${problem.id}` }
+    ));
   }
 
   getProblemsetSectionChildren() {
     const items = [
+      new ActionTreeItem("搜索题目", "在线搜索公共题库 + 本地工作区过滤", "xmuoj.search"),
       new ActionTreeItem("进入刷题台", "搜索公开题目、编排刷题队列并连续开刷", "xmuoj.browseProblemset"),
-      new ActionTreeItem("打开题目目录", "在本地工作区根目录下打开 problemsets 文件夹", "xmuoj.revealProblemsetWorkspace")
+      new ActionTreeItem("打开题目目录", "在文件管理器中打开 root/problems", "xmuoj.revealProblemsetWorkspace")
     ];
-    if (this.state.problemsetSelections && this.state.problemsetSelections.length) {
-      items.push(new ActionTreeItem("管理队列", "从已添加题目中移除一题，或直接清空", "xmuoj.manageProblemsetSelections"));
-      items.push(new GroupTreeItem("problemset-selected", "刷题队列", `${this.state.problemsetSelections.length} 道`, "list-unordered", false));
+    const selections = this.state.problemsetSelections || [];
+    if (!selections.length) {
+      items.push(new InfoTreeItem("暂无刷题队列", "在刷题台把题目加入队列，或直接搜索题目开始", "list-unordered"));
       return items;
     }
-    items.push(new InfoTreeItem("暂无队列", "先点「进入刷题台」把公开题目加入这里，之后就能连续刷公共题库", "list-unordered"));
-    return items;
-  }
-
-  getContestsSectionChildren() {
-    const items = [
-      new ActionTreeItem("加载实验", "搜索实验并把实验加入下面的实验列表", "xmuoj.browseContests")
-    ];
-    if (this.state.openContestWorkspaces && this.state.openContestWorkspaces.length) {
-      return items.concat(this.state.openContestWorkspaces.map((item) => {
-        const isActive = Boolean(
-          this.state.contestWorkspace
-          && this.state.contestWorkspace.contest
-          && String(this.state.contestWorkspace.contest.id) === String(item.contest.id)
-          && String(this.state.baseUrl || "") === String(item.baseUrl || this.state.baseUrl || "")
-        );
-        const label = isActive ? `● ${item.contest.title}` : item.contest.title;
-        const statusSummary = getContestStatusSummary(item.contest);
-        const description = isActive
-          ? `当前实验 · ${statusSummary} · ${(item.problems || []).length} 题`
-          : `${statusSummary} · ${(item.problems || []).length} 题`;
-        return new GroupTreeItem(
-          `contest-workspace::${item.key}`,
-          label,
-          description,
-          isActive ? "target" : "repo",
-          true,
-          "contestWorkspace"
-        );
-      }));
-    }
-    items.push(new InfoTreeItem("暂无实验", "先点「加载实验」加载一场实验，下面才会出现实验列表", "repo"));
-    return items;
-  }
-
-  getCurrentSectionChildren() {
-    const items = [];
-    if (this.state.activeProblem) {
-      items.push(new InfoTreeItem("当前题", `${this.state.activeProblem.display_id} ${this.state.activeProblem.title}`, "note"));
-      items.push(new ActionTreeItem("编写代码", "创建并打开代码文件", "xmuoj.startWorkingOnProblem"));
-      items.push(new ActionTreeItem("提交评测", "提交当前题目代码", "xmuoj.submitCurrentFile"));
-    }
-    if (!this.state.activeProblem) {
-      items.push(new InfoTreeItem("提示", "先从「公共题库」或「实验题库」打开一道题，再开始作答", "lightbulb"));
-    }
-    return items;
-  }
-
-  getSubmissionProblemGroups() {
-    const groups = new Map();
-    for (const item of this.state.submissionHistory || []) {
-      const key = [item.baseUrl || "", item.contestId || "", item.problemId || item.display_id || "", item.title || ""].join("::");
-      if (!groups.has(key)) {
-        groups.set(key, []);
+    items.push(new ActionTreeItem("管理队列", "从已添加题目中移除一题，或直接清空", "xmuoj.manageProblemsetSelections"));
+    return items.concat(selections.map((item) => new ProblemTreeItem(
+      item,
+      this.getProblemProgress(item, null, item.baseUrl),
+      "xmuoj.openProblemsetProblem",
+      [item],
+      "problemsetSelection",
+      {
+        baseUrl: item.baseUrl,
+        id: `problemset::${normalizeBaseUrlForKey(item.baseUrl)}::${item.id}`
       }
-      groups.get(key).push(item);
-    }
-    return Array.from(groups.entries()).map(([key, items]) => ({ key, items }));
-  }
-
-  getVisibleSubmissionProblemGroups() {
-    const groups = this.getSubmissionProblemGroups().map(({ key, items }) => ({
-      key,
-      items: items.filter((item) => this.matchesSubmissionResultFilter(item) && this.matchesSubmissionLanguageFilter(item))
-    })).filter(({ items }) => items.length > 0);
-    if (this.state.recentSubmissionScope !== "current") {
-      return groups;
-    }
-    if (!this.state.activeProblem || !this.state.activeProblem.id) {
-      return [];
-    }
-    return groups.filter(({ items }) => {
-      const latest = items[0];
-      return String(latest.problemId || "") === String(this.state.activeProblem.id)
-        && String(latest.contestId || "") === String(this.state.activeContest ? this.state.activeContest.id : "")
-        && String(latest.baseUrl || this.state.baseUrl || "") === String(this.state.baseUrl || "");
-    });
-  }
-
-  matchesSubmissionResultFilter(item) {
-    const filter = this.state.recentSubmissionResultFilter || "all";
-    const label = String(item && item.result_label ? item.result_label : "");
-    if (filter === "all") {
-      return true;
-    }
-    if (filter === "non-ac") {
-      return label !== "Accepted" && label !== "AC";
-    }
-    if (filter === "errors-only") {
-      return ["Compile Error", "CE", "Runtime Error", "RE", "System Error", "SE", "Memory Limit Exceeded", "MLE", "Time Limit Exceeded", "TLE"].includes(label);
-    }
-    return true;
-  }
-
-  matchesSubmissionLanguageFilter(item) {
-    const filter = this.state.recentSubmissionLanguageFilter || "all";
-    if (filter === "all") {
-      return true;
-    }
-    return String(item && item.language ? item.language : "") === String(filter);
-  }
-
-  getGroupChildren(groupId) {
-    if (groupId === "problemset-selected") {
-      return (this.state.problemsetSelections || []).map((item) => new ProblemTreeItem(
-        item,
-        this.getProblemProgress(item, null, item.baseUrl),
-        "xmuoj.openProblemsetProblem",
-        [item],
-        "problemsetSelection",
-        { baseUrl: item.baseUrl }
-      ));
-    }
-    if (groupId.startsWith("contest-workspace::")) {
-      const targetKey = groupId.replace("contest-workspace::", "");
-      const entry = (this.state.openContestWorkspaces || []).find((item) => item.key === targetKey);
-      if (!entry) {
-        return [];
-      }
-      const contestTitle = entry.contest && entry.contest.title ? entry.contest.title : "未命名实验";
-      const status = normalizeContestStatus(entry.contest && entry.contest.status ? entry.contest.status : "");
-      const statusHintItems = status.key === "ended"
-        ? [new InfoTreeItem("实验状态：已结束", "当前实验已结束，不能远程提交，只能本地测评", "warning")]
-        : status.key === "pending"
-          ? [new InfoTreeItem("实验状态：准备中", "当前实验尚未开始，不能远程提交，只能本地测评", "clock")]
-          : status.key === "running"
-            ? [new InfoTreeItem("实验状态：进行中", "当前实验允许远程提交", "check")]
-            : [new InfoTreeItem(`实验状态：未知（${status.label}）`, "仅“进行中”允许远程提交；当前建议只做本地测评", "question")];
-      return statusHintItems.concat([
-        new ActionTreeItem("打开实验目录", `打开实验「${contestTitle}」在本地的 contest-<实验编号> 文件夹`, "xmuoj.revealContestWorkspace", [entry]),
-        new ActionTreeItem("批量创建题目目录", `为实验「${contestTitle}」批量创建 problem.md、.xmuoj.json 和样例文件（不含代码）`, "xmuoj.initContestWorkspace", [entry]),
-        new ActionTreeItem("刷新实验", `刷新实验「${contestTitle}」并更新题目列表`, "xmuoj.refreshContest", [entry]),
-        new ActionTreeItem("删除实验", `把实验「${contestTitle}」从实验列表中移除`, "xmuoj.removeContestWorkspaceSelection", [entry]),  
-        new GroupTreeItem(`contest-workspace-problems::${entry.key}`, "题目列表", `${(entry.problems || []).length} 道`, "list-unordered", false)
-      ]);
-    }
-    if (groupId.startsWith("contest-workspace-problems::")) {
-      const targetKey = groupId.replace("contest-workspace-problems::", "");
-      const entry = (this.state.openContestWorkspaces || []).find((item) => item.key === targetKey);
-      if (!entry) {
-        return [];
-      }
-      if (!(entry.problems || []).length) {
-        return [new InfoTreeItem("暂无题目", "这场实验当前没有可见题目", "list-unordered")];
-      }
-      return (entry.problems || []).map((problem) => new ProblemTreeItem(
-        problem,
-        this.getProblemProgress(problem, entry.contest, entry.baseUrl),
-        "xmuoj.openContestWorkspaceProblem",
-        [{
-          baseUrl: entry.baseUrl,
-          contest: entry.contest,
-          contestPassword: entry.contestPassword,
-          problems: entry.problems,
-          problem
-        }],
-        "problem",
-        { baseUrl: entry.baseUrl, contest: entry.contest }
-      ));
-    }
-    return [];
+    )));
   }
 
   async getProblemWorkspaceChildren(item) {
     try {
-      const workspace = await findExistingProblemWorkspace(item.problem, item.contest);
+      // 树展开是只读操作：只查索引/旧路径，不触发目录迁移（迁移只发生在开题等显式动作）
+      const workspace = await findExistingProblemWorkspace(item.problem, item.contest, {
+        migrate: false,
+        baseUrl: item.baseUrl
+      });
       if (!workspace) {
         return [new InfoTreeItem("暂无本地目录", "先点「题目」打开，再执行「打开代码」生成本地题目目录", "folder")];
       }
@@ -507,15 +481,28 @@ class ProblemTreeDataProvider {
     return visibleEntries.map((entry) => new WorkspaceEntryTreeItem(entry, rootDir, this.state.currentTreeFilePath));
   }
 
+  getEntryProgress(entry) {
+    if (!entry) {
+      return null;
+    }
+    return this.getProblemProgress(
+      { id: entry.problemId, display_id: entry.displayId },
+      entry.contestId ? { id: entry.contestId, title: entry.contestTitle } : null,
+      entry.baseUrl
+    );
+  }
+
   getProblemProgress(problem, contest = this.state.contestWorkspace ? this.state.contestWorkspace.contest : null, baseUrl = this.state.baseUrl || "") {
-    const key = [
-      normalizeBaseUrlForKey(baseUrl),
-      contest ? contest.id : "problemset",
-      problem.id,
-      resolveProblemProgressScope()
-    ].join("::");
-    const progress = this.state.problemProgress ? this.state.problemProgress[key] : null;
-    return progress || null;
+    if (!problem || problem.id === undefined || problem.id === null) {
+      return null;
+    }
+    return resolveProblemProgress(this.state.problemProgress, {
+      key: buildProblemProgressKey(baseUrl, problem.id),
+      baseUrl,
+      problemId: problem.id,
+      contestId: contest ? contest.id : null,
+      progressScope: resolveProblemProgressScope()
+    });
   }
 }
 

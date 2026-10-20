@@ -2,11 +2,11 @@
   "name": "xmuoj-vscode",
   "displayName": "XMUOJ",
   "description": "在VSCode/Trae中提供XMUOJ的沉浸式刷题体验。",
-  "version": "0.0.96",
+  "version": "0.1.0",
   "publisher": "xmuoj",
   "scripts": {
     "package": "vsce package --allow-missing-repository --skip-license",
-    "check": "node --check src/aiProvider.js && node --check src/client.js && node --check src/codeLens.js && node --check src/extension.js && node --check src/problemWorkspace.js && node --check src/runner.js && node --check src/treeData.js && node scripts/smoke.js",
+    "check": "node --check src/aiProvider.js && node --check src/client.js && node --check src/codeLens.js && node --check src/extension.js && node --check src/migration.js && node --check src/problemWorkspace.js && node --check src/progress.js && node --check src/runner.js && node --check src/search.js && node --check src/treeData.js && node --check src/workspaceStore.js && node scripts/workspace-store.test.js && node scripts/workspace-migration.test.js && node scripts/progress.test.js && node scripts/search.test.js && node scripts/smoke.js",
     "lint": "echo 'Lint rules are not configured yet'"
   },
   "engines": {
@@ -30,7 +30,7 @@
         "xmuoj.localWorkspaceRoot": {
           "type": "string",
           "default": "",
-          "description": "XMUOJ 本地工作区根目录。实验题目位于其下的 contest-<id>，公共题库题目位于其下的 problemsets（相对路径固定，勿手动改动结构）。"
+          "description": "XMUOJ 本地工作区根目录。所有题目统一存放在其下的 problems/<题目标识>/，旧 contest-<id> 与 problemsets 目录会在启动时自动迁移（可回滚）。"
         },
         "xmuoj.editor.shortcuts": {
           "type": "array",
@@ -65,6 +65,16 @@
           "type": "boolean",
           "default": true,
           "description": "在题目树中使用图标和颜色强化状态显示，例如 AC、本地通过、已提交。"
+        },
+        "xmuoj.autoMigrate": {
+          "type": "boolean",
+          "default": true,
+          "description": "启动时自动把旧布局（contest-*/problemsets）中的题目迁移到统一的 problems/ 目录；迁移可回滚，不会删除非空目录。"
+        },
+        "xmuoj.rememberContestPasswords": {
+          "type": "boolean",
+          "default": true,
+          "description": "进入有密码的实验后，使用系统钥匙串（VS Code SecretStorage）记住密码；可在命令面板执行「XMUOJ：忘记实验密码」清除。"
         }
       }
     },
@@ -272,6 +282,54 @@
       {
         "command": "xmuoj.revealProblemWorkspaceEntry",
         "title": "XMUOJ：在资源管理器中定位"
+      },
+      {
+        "command": "xmuoj.migrateWorkspaces",
+        "title": "XMUOJ：迁移本地题目目录"
+      },
+      {
+        "command": "xmuoj.rollbackWorkspaceMigration",
+        "title": "XMUOJ：回滚本地目录迁移"
+      },
+      {
+        "command": "xmuoj.rebuildWorkspaceIndex",
+        "title": "XMUOJ：重建本地题目索引"
+      },
+      {
+        "command": "xmuoj.openRecentProblem",
+        "title": "XMUOJ：打开最近题目"
+      },
+      {
+        "command": "xmuoj.removeRecentProblem",
+        "title": "XMUOJ：从最近列表移除"
+      },
+      {
+        "command": "xmuoj.openRecentProblemWorkspace",
+        "title": "XMUOJ：打开最近题目的本地目录"
+      },
+      {
+        "command": "xmuoj.startWorkingOnTreeProblem",
+        "title": "XMUOJ：开始作答（树节点）"
+      },
+      {
+        "command": "xmuoj.search",
+        "title": "XMUOJ：搜索题目"
+      },
+      {
+        "command": "xmuoj.openSettings",
+        "title": "XMUOJ：账户与设置"
+      },
+      {
+        "command": "xmuoj.refreshExplorer",
+        "title": "XMUOJ：刷新刷题工作台"
+      },
+      {
+        "command": "xmuoj.retryBootstrap",
+        "title": "XMUOJ：重试连接"
+      },
+      {
+        "command": "xmuoj.forgetContestPassword",
+        "title": "XMUOJ：忘记实验密码"
       }
     ],
     "viewsContainers": {
@@ -301,14 +359,29 @@
     "menus": {
       "view/title": [
         {
-          "command": "xmuoj.login",
+          "command": "xmuoj.createProblemWorkspace",
           "when": "view == xmuojExplorer",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "xmuoj.search",
+          "when": "view == xmuojExplorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "xmuoj.openSettings",
+          "when": "view == xmuojExplorer",
+          "group": "navigation@2"
         },
         {
           "command": "xmuoj.createProblemWorkspace",
           "when": "view == xmuojExplorer",
-          "group": "navigation@1"
+          "group": "navigation@3"
+        },
+        {
+          "command": "xmuoj.refreshExplorer",
+          "when": "view == xmuojExplorer",
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -316,6 +389,51 @@
           "command": "xmuoj.revealProblemWorkspaceEntry",
           "when": "view == xmuojExplorer && (viewItem == problemWorkspaceFile || viewItem == problemWorkspaceFolder)",
           "group": "navigation"
+        },
+        {
+          "command": "xmuoj.startWorkingOnTreeProblem",
+          "when": "view == xmuojExplorer && (viewItem == recentProblem || viewItem == problem || viewItem == problemsetSelection)",
+          "group": "inline@1"
+        },
+        {
+          "command": "xmuoj.openRecentProblem",
+          "when": "view == xmuojExplorer && viewItem == recentProblem",
+          "group": "navigation@1"
+        },
+        {
+          "command": "xmuoj.openRecentProblemWorkspace",
+          "when": "view == xmuojExplorer && viewItem == recentProblem",
+          "group": "navigation@2"
+        },
+        {
+          "command": "xmuoj.removeRecentProblem",
+          "when": "view == xmuojExplorer && viewItem == recentProblem",
+          "group": "navigation@3"
+        },
+        {
+          "command": "xmuoj.refreshContest",
+          "when": "view == xmuojExplorer && viewItem == contestWorkspace",
+          "group": "inline@1"
+        },
+        {
+          "command": "xmuoj.refreshContest",
+          "when": "view == xmuojExplorer && viewItem == contestWorkspace",
+          "group": "navigation@1"
+        },
+        {
+          "command": "xmuoj.initContestWorkspace",
+          "when": "view == xmuojExplorer && viewItem == contestWorkspace",
+          "group": "navigation@2"
+        },
+        {
+          "command": "xmuoj.revealContestWorkspace",
+          "when": "view == xmuojExplorer && viewItem == contestWorkspace",
+          "group": "navigation@3"
+        },
+        {
+          "command": "xmuoj.removeContestWorkspaceSelection",
+          "when": "view == xmuojExplorer && viewItem == contestWorkspace",
+          "group": "navigation@4"
         }
       ],
       "editor/context": [

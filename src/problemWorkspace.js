@@ -14,9 +14,13 @@ const path = require("path");
 const vscode = require("vscode");
 const AdmZip = require("adm-zip");
 
-const METADATA_FILE_NAME = ".xmuoj.json";
+const store = require("./workspaceStore");
 
-const PROBLEMSET_DIR_NAME = "problemsets";
+const METADATA_FILE_NAME = store.METADATA_FILE_NAME;
+const PROBLEMS_DIR_NAME = store.PROBLEMS_DIR_NAME;
+
+// 旧版公共题库目录名：仅用于识别/兼容，不再作为写入位置。
+const PROBLEMSET_DIR_NAME = store.LEGACY_PROBLEMSET_DIR_NAME;
 
 // 生成文件的排除规则：批量下载题库后，VS Code 若持续 watch/search 这些文件会卡死。
 // 只做“排除监视与搜索”，不写 files.exclude，资源管理器里仍然可见。
@@ -24,7 +28,8 @@ const EXCLUDED_WATCH_PATTERNS = [
   "**/problem.md",
   "**/samples/**",
   "**/testcases/**",
-  "**/.xmuoj-build/**"
+  "**/.xmuoj-build/**",
+  "**/.xmuoj/**"
 ];
 const GITIGNORE_MARKER = "# XMUOJ generated";
 const GITIGNORE_BLOCK = [
@@ -32,6 +37,7 @@ const GITIGNORE_BLOCK = [
   "samples/",
   "testcases/",
   ".xmuoj-build/",
+  ".xmuoj/",
   ""
 ].join("\n");
 
@@ -187,51 +193,15 @@ async function finalizeWorkspaceRoot(rootPath) {
 }
 
 function normalizeWorkspaceRootPath(inputPath) {
-  const value = String(inputPath || "").trim();
-  if (!value) {
-    return "";
-  }
-  const resolved = path.resolve(value);
-  const baseName = path.basename(resolved);
-  const parent = path.dirname(resolved);
-  const parentBaseName = path.basename(parent);
-
-  if (baseName === PROBLEMSET_DIR_NAME || /^contest-\d+$/i.test(baseName)) {
-    return parent;
-  }
-  if (parentBaseName === PROBLEMSET_DIR_NAME || /^contest-\d+$/i.test(parentBaseName)) {
-    return path.dirname(parent);
-  }
-  return resolved;
+  return store.normalizeWorkspaceRootPath(inputPath);
 }
 
 function buildWorkspaceRootNormalizationMessage(selectedPath, normalizedPath) {
-  const selectedResolved = path.resolve(String(selectedPath || ""));
-  const normalizedResolved = path.resolve(String(normalizedPath || ""));
-  if (!selectedResolved || selectedResolved === normalizedResolved) {
-    return "";
-  }
-  const baseName = path.basename(selectedResolved);
-  const parentBaseName = path.basename(path.dirname(selectedResolved));
-
-  if (baseName === PROBLEMSET_DIR_NAME) {
-    return `你选择的是公共题库目录「${selectedResolved}」，已自动回退为工作区根目录：${normalizedResolved}`;
-  }
-  if (/^contest-\d+$/i.test(baseName)) {
-    return `你选择的是实验目录「${selectedResolved}」，已自动回退为工作区根目录：${normalizedResolved}`;
-  }
-  if (parentBaseName === PROBLEMSET_DIR_NAME || /^contest-\d+$/i.test(parentBaseName)) {
-    return `你选择的是单题目录「${selectedResolved}」，已自动回退为工作区根目录：${normalizedResolved}`;
-  }
-  return `已自动规范目录为工作区根目录：${normalizedResolved}`;
+  return store.buildWorkspaceRootNormalizationMessage(selectedPath, normalizedPath);
 }
 
 function slugifyTitle(title) {
-  return String(title || "problem")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48) || "problem";
+  return store.slugifyTitle(title);
 }
 
 async function migrateLegacyWorkspaceFoldersOnce() {
@@ -301,6 +271,7 @@ function setMetadataSourceFile(metadata, language, sourceFile) {
   return Object.assign({}, metadata, {
     language,
     sourceFile,
+    status: "active",
     sourceFiles: Object.assign({}, metadata && metadata.sourceFiles ? metadata.sourceFiles : {}, {
       [language]: sourceFile
     })
@@ -313,7 +284,14 @@ async function applyLanguageSwitch(problemDir, metadata, detail, nextLanguage) {
     nextLanguage,
     getMetadataSourceFile(metadata, nextLanguage) || getSourceFileName(nextLanguage)
   );
-  await writeProblemMetadata(problemDir, nextMetadata);
+  const written = await store.writeProblemMetadata(problemDir, {
+    baseUrl: metadata && metadata.baseUrl,
+    language: nextMetadata.language,
+    sourceFile: nextMetadata.sourceFile,
+    sourceFiles: nextMetadata.sourceFiles,
+    status: "active"
+  });
+  Object.assign(nextMetadata, written);
   const sourcePath = path.join(problemDir, getMetadataSourceFile(nextMetadata, nextLanguage));
   const template = (detail && detail.template && detail.template[nextLanguage]) || "";
 
@@ -332,10 +310,36 @@ async function applyLanguageSwitch(problemDir, metadata, detail, nextLanguage) {
       throw new Error(`无法创建新语言源代码文件：${sourcePath}。错误：${writeError.message}`);
     }
   }
+  await touchWorkspaceIndexForDir(problemDir, nextMetadata);
   return {
     metadata: nextMetadata,
     sourcePath
   };
+}
+
+/** 题目目录位于 {root}/problems/<题> 时推断根目录；其他布局返回空串。 */
+function inferWorkspaceRoot(problemDir) {
+  const parent = path.dirname(path.resolve(problemDir));
+  return path.basename(parent) === PROBLEMS_DIR_NAME ? path.dirname(parent) : "";
+}
+
+async function touchWorkspaceIndexForDir(problemDir, metadata) {
+  try {
+    const root = inferWorkspaceRoot(problemDir);
+    if (!root || !metadata) {
+      return;
+    }
+    const relativeDir = store.toPosixRelative(root, problemDir);
+    await store.updateWorkspaceIndexEntries(root, [
+      {
+        identity: metadata.identity,
+        entry: store.buildIndexEntry(relativeDir, metadata),
+        replace: true
+      }
+    ]);
+  } catch (error) {
+    console.warn("XMUOJ: 更新工作区索引失败:", error.message);
+  }
 }
 
 function buildProblemMarkdown(problem, contest) {
@@ -450,13 +454,19 @@ async function chooseWorkspaceRoot(options = {}) {
   return await finalizeWorkspaceRoot(newPath);
 }
 
-function buildProblemDirectory(rootPath, problem, contest) {
-  const scopeDir = contest ? `contest-${contest.id}` : PROBLEMSET_DIR_NAME;
-  return path.join(rootPath, scopeDir, `${problem.display_id}-${slugifyTitle(problem.title)}`);
+/**
+ * 解析题目目录（v0.1.0 起统一为 {root}/problems/<题>）。
+ * 异步：需要查索引并处理重名冲突；调用方必须 await。
+ */
+async function buildProblemDirectory(rootPath, problem, contest, options = {}) {
+  const resolved = await store.resolveProblemDir(rootPath, problem, contest, {
+    baseUrl: options.baseUrl || (problem && problem.baseUrl) || ""
+  });
+  return resolved.problemDir;
 }
 
 async function ensureProblemWorkspace({ rootPath, problem, contest, language, baseUrl }) {
-  const problemDir = buildProblemDirectory(rootPath, problem, contest);
+  const problemDir = await buildProblemDirectory(rootPath, problem, contest, { baseUrl });
   const samplesDir = path.join(problemDir, "samples");
   await fs.mkdir(samplesDir, { recursive: true });
 
@@ -490,8 +500,8 @@ async function ensureProblemWorkspace({ rootPath, problem, contest, language, ba
     }
   }
 
-  const metadata = {
-    version: 1,
+  // 合并写入：已有工作区的语言/源码/createdAt 不会被重置
+  const metadata = await store.writeProblemMetadata(problemDir, {
     baseUrl,
     problemId: problem.id,
     contestId: contest ? contest.id : null,
@@ -500,33 +510,34 @@ async function ensureProblemWorkspace({ rootPath, problem, contest, language, ba
     title: problem.title,
     language,
     sourceFile: sourceFileName,
-    sourceFiles: {
-      [language]: sourceFileName
-    },
-    createdAt: new Date().toISOString()
-  };
-  await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), "utf8");
+    sourceFiles: { [language]: sourceFileName },
+    status: "active"
+  });
+  await touchWorkspaceIndexForDir(problemDir, metadata);
 
   return { problemDir, sourceFilePath, metadataPath, metadata };
 }
 
 async function writeProblemMetadata(problemDir, metadata) {
-  const metadataPath = path.join(problemDir, METADATA_FILE_NAME);
-  await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), "utf8");
-  return metadataPath;
+  const written = await store.writeProblemMetadata(problemDir, metadata || {});
+  await touchWorkspaceIndexForDir(problemDir, written);
+  return written;
 }
 
 async function findProblemMetadata(startFilePath) {
   let currentDir = path.dirname(startFilePath);
   while (true) {
-    const metadataPath = path.join(currentDir, METADATA_FILE_NAME);
-    try {
-      const metadata = JSON.parse(await fs.readFile(metadataPath, "utf8"));
-      return { metadata, metadataPath };
-    } catch (error) {
-      if (error && error.code && error.code !== "ENOENT") {
-        throw error;
-      }
+    const result = await store.readProblemMetadata(currentDir);
+    if (result.metadata) {
+      return { metadata: result.metadata, metadataPath: result.metadataPath };
+    }
+    // 损坏的 JSON：不再向上找（避免误认父目录），返回 null 由调用方降级
+    if (result.corrupt) {
+      return null;
+    }
+    // 到达工作区边界（problems 容器）后不再继续
+    if (path.basename(currentDir) === PROBLEMS_DIR_NAME) {
+      return null;
     }
     const parentDir = path.dirname(currentDir);
     if (parentDir === currentDir) {
@@ -620,25 +631,38 @@ function applyProblemTasks(tasksJson, workspaceRoot, problemDir, metadata) {
     extractedCaseDir: `${relativeProblemDir}/testcases/extracted`,
     samplesDir: `${relativeProblemDir}/samples`
   });
-  const problemKey = `${metadata.displayId}-${metadata.language}`;
-  tasksJson.tasks = tasksJson.tasks.filter(task => !String(task.label || "").includes(problemKey));
+  // 以 problemId 为主键，避免跨实验 displayId 重名互相覆盖
+  const problemKey = `p${metadata.problemId}-${metadata.language}`;
+  const displayKey = `${metadata.displayId}-${metadata.language}`;
+  const displaySuffix = metadata.displayId ? `（${metadata.displayId}）` : "";
+  tasksJson.tasks = tasksJson.tasks.filter((task) => {
+    const label = String(task.label || "");
+    if (label.includes(problemKey)) {
+      return false;
+    }
+    // 清理旧版本按 displayId 生成的标签（同一 displayId 重名时会被覆盖，这里一并清掉）
+    if (displayKey && label.includes(displayKey)) {
+      return false;
+    }
+    return true;
+  });
   tasksJson.tasks.push(
     {
-      label: `XMUOJ Build ${problemKey}`,
+      label: `XMUOJ Build ${problemKey}${displaySuffix}`,
       type: "shell",
       command: commands.build,
       options: { cwd: "${workspaceFolder}" },
       problemMatcher: []
     },
     {
-      label: `XMUOJ Run Sample ${problemKey}`,
+      label: `XMUOJ Run Sample ${problemKey}${displaySuffix}`,
       type: "shell",
       command: commands.run,
       options: { cwd: "${workspaceFolder}" },
       problemMatcher: []
     },
     {
-      label: `XMUOJ 说明 ${problemKey}`,
+      label: `XMUOJ 说明 ${problemKey}${displaySuffix}`,
       type: "shell",
       command: `echo \"${commands.note.replace(/\"/g, '\\"')}\"`,
       options: { cwd: "${workspaceFolder}" },
@@ -673,8 +697,75 @@ async function createWorkspaceTasksBatch(workspaceRoot, entries) {
   return tasksPath;
 }
 
-async function findExistingProblemWorkspace(problem, contest) {
+function buildLegacyProblemDirectory(rootPath, problem, contest) {
+  const scopeDir = contest ? `contest-${contest.id}` : PROBLEMSET_DIR_NAME;
+  return path.join(rootPath, scopeDir, `${problem.display_id}-${slugifyTitleLegacy(problem.title)}`);
+}
+
+function slugifyTitleLegacy(title) {
+  return String(title || "problem")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "problem";
+}
+
+async function readIndexForLookup(rootPath, baseUrl) {
+  const index = await store.readWorkspaceIndex(rootPath);
+  if (index.corrupt || !index.updatedAt) {
+    const ensured = await store.ensureWorkspaceIndex(rootPath, { baseUrl });
+    return ensured.index;
+  }
+  return index;
+}
+
+function findIndexEntryForProblem(index, problem, contest, baseUrl) {
+  if (!index || !index.entries) {
+    return null;
+  }
+  const identity = store.buildProblemIdentity(baseUrl, problem.id);
+  if (index.entries[identity]) {
+    return index.entries[identity];
+  }
+  const candidates = Object.values(index.entries).filter(
+    (entry) => entry && String(entry.problemId) === String(problem.id)
+  );
+  if (!candidates.length) {
+    return null;
+  }
+  if (contest) {
+    const sameContest = candidates.find((entry) => String(entry.contestId) === String(contest.id));
+    if (sameContest) {
+      return sameContest;
+    }
+  }
+  return candidates[0];
+}
+
+async function buildWorkspaceResult(rootPath, problemDir, metadataRead, entry) {
+  const metadata = metadataRead.metadata;
+  const sourceFileName = getMetadataSourceFile(metadata, metadata.language);
+  return {
+    workspaceRoot: rootPath,
+    problemDir,
+    metadataPath: metadataRead.metadataPath,
+    metadata,
+    sourceFilePath: sourceFileName ? path.join(problemDir, sourceFileName) : null,
+    identity: metadata.identity,
+    legacy: Boolean(entry && entry.legacy)
+  };
+}
+
+/**
+ * 查找题目已有的本地工作区。
+ * 顺序：索引（身份）→ 旧布局规范路径 → 新布局规范目录名。
+ * 旧布局命中时默认惰性迁移这一道题；树节点展开传 { migrate: false } 保持只读。
+ */
+async function findExistingProblemWorkspace(problem, contest, options = {}) {
   await migrateLegacyWorkspaceFoldersOnce();
+  if (!problem || problem.id === undefined || problem.id === null) {
+    return null;
+  }
   const searchFolders = [];
   const handles = await getLocalWorkspaceFolderHandles();
   for (const folder of handles) {
@@ -685,31 +776,87 @@ async function findExistingProblemWorkspace(problem, contest) {
   }
 
   for (const workspaceRoot of searchFolders) {
-    const problemDir = buildProblemDirectory(workspaceRoot, problem, contest);
-    const metadataPath = path.join(problemDir, METADATA_FILE_NAME);
-    try {
-      const metadata = JSON.parse(await fs.readFile(metadataPath, "utf8"));
-      const sourceFilePath = path.join(problemDir, getMetadataSourceFile(metadata, metadata.language) || getSourceFileName(metadata.language));
-      return {
-        workspaceRoot,
-        problemDir,
-        metadataPath,
-        metadata,
-        sourceFilePath
-      };
-    } catch (error) {
-      if (!error || error.code !== "ENOENT") {
-        throw error;
+    const baseUrl = options.baseUrl || (problem && problem.baseUrl) || "";
+    const index = await readIndexForLookup(workspaceRoot, baseUrl);
+    const entry = findIndexEntryForProblem(index, problem, contest, baseUrl);
+
+    if (entry && entry.dir) {
+      let problemDir = path.join(workspaceRoot, ...String(entry.dir).split("/"));
+      let metadataRead = await store.readProblemMetadata(problemDir, { baseUrl });
+      if (metadataRead.metadata && String(metadataRead.metadata.problemId) === String(problem.id)) {
+        let legacyFlag = Boolean(entry.legacy);
+        if (entry.legacy && options.migrate !== false) {
+          const migrated = await migrateSingleLegacyProblem(workspaceRoot, entry.dir, options);
+          if (migrated && migrated.problemDir) {
+            const nextRead = await store.readProblemMetadata(migrated.problemDir, { baseUrl });
+            if (nextRead.metadata) {
+              problemDir = migrated.problemDir;
+              metadataRead = nextRead;
+              legacyFlag = false;
+            }
+          }
+        }
+        return buildWorkspaceResult(workspaceRoot, problemDir, metadataRead, { legacy: legacyFlag });
       }
+    }
+
+    // 兼容回退：旧布局规范路径（索引尚未覆盖时）
+    const legacyDir = buildLegacyProblemDirectory(workspaceRoot, problem, contest);
+    const legacyRead = await store.readProblemMetadata(legacyDir, { baseUrl });
+    if (legacyRead.metadata && String(legacyRead.metadata.problemId) === String(problem.id)) {
+      const relativeDir = store.toPosixRelative(workspaceRoot, legacyDir);
+      if (options.migrate !== false) {
+        const migrated = await migrateSingleLegacyProblem(workspaceRoot, relativeDir, options);
+        if (migrated && migrated.identity) {
+          const nextRead = await store.readProblemMetadata(migrated.problemDir, { baseUrl });
+          if (nextRead.metadata) {
+            return buildWorkspaceResult(workspaceRoot, migrated.problemDir, nextRead, { legacy: false });
+          }
+        }
+      }
+      return buildWorkspaceResult(workspaceRoot, legacyDir, legacyRead, { legacy: true });
+    }
+
+    // 兼容回退：新布局按规范目录名（索引缺失/损坏时）
+    const newDir = path.join(workspaceRoot, PROBLEMS_DIR_NAME, store.buildProblemDirName(problem));
+    const newRead = await store.readProblemMetadata(newDir, { baseUrl });
+    if (newRead.metadata && String(newRead.metadata.problemId) === String(problem.id)) {
+      return buildWorkspaceResult(workspaceRoot, newDir, newRead, { legacy: false });
     }
   }
   return null;
 }
 
+function migratedEntryFlag(entry) {
+  return { legacy: Boolean(entry && entry.legacy) };
+}
+
+async function migrateSingleLegacyProblem(workspaceRoot, relativeDir, options = {}) {
+  try {
+    const migration = require("./migration");
+    const result = await migration.migrateSingleProblem(workspaceRoot, relativeDir, {
+      baseUrl: options.baseUrl,
+      isDirectoryOpen: options.isDirectoryOpen
+    });
+    if (!result || !result.moved || !result.problemDir) {
+      return null;
+    }
+    return {
+      problemDir: result.problemDir,
+      identity: result.entry && result.entry.identity
+    };
+  } catch (error) {
+    console.warn("XMUOJ: 惰性迁移失败，继续使用旧目录:", error.message);
+    return null;
+  }
+}
+
 module.exports = {
   METADATA_FILE_NAME,
+  PROBLEMS_DIR_NAME,
   PROBLEMSET_DIR_NAME,
   buildProblemDirectory,
+  buildLegacyProblemDirectory,
   buildProblemMarkdown,
   createWorkspaceTasks,
   createWorkspaceTasksBatch,
@@ -726,6 +873,7 @@ module.exports = {
   setMetadataSourceFile,
   writeProblemMetadata,
   slugifyTitle,
+  inferWorkspaceRoot,
   getLocalWorkspaceFolderHandles,
   migrateLegacyWorkspaceFoldersOnce
 };

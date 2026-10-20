@@ -22,6 +22,7 @@ function loadUndici() {
 
 /** 固定站点（无证书时使用 HTTP，不在设置中暴露可改项） */
 const PLUGIN_SITE_ORIGIN = "http://xmuoj.com";
+const REQUEST_TIMEOUT_MS = 20000;
 
 class XmuojClient {
   constructor(context) {
@@ -187,14 +188,19 @@ class XmuojClient {
   }
 
   pluginFetchOnce(url, options) {
+    // VS Code 1.88 自带 Node 16，没有 AbortSignal.timeout，手动实现 20 秒超时。
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const requestOptions = Object.assign({}, options, { signal: controller.signal });
+    const clear = () => clearTimeout(timer);
     const undici = loadUndici();
     if (!undici) {
       this.configureTlsBehavior();
-      return globalThis.fetch(url, options);
+      return Promise.resolve(globalThis.fetch(url, requestOptions)).finally(clear);
     }
     this.configureTlsBehavior();
     const dispatcher = this.getPluginDispatcher(undici);
-    return undici.fetch(url, Object.assign({}, options, { dispatcher }));
+    return Promise.resolve(undici.fetch(url, Object.assign({}, requestOptions, { dispatcher }))).finally(clear);
   }
 
   buildFetchErrorMessage(error) {
@@ -202,6 +208,10 @@ class XmuojClient {
     const causeCode = error && error.cause && error.cause.code ? error.cause.code : "";
     const message = `${causeCode} ${rawMessage}`.trim();
     const usingHttps = /^https:\/\//i.test(this.baseUrl);
+
+    if (/aborted|AbortError|UND_ERR_ABORTED/i.test(message)) {
+      return `请求超时：${this.baseUrl} 在 ${REQUEST_TIMEOUT_MS / 1000} 秒内没有响应。请检查网络后重试。`;
+    }
     
     // 处理自签名证书（仅在使用 HTTPS 时可能出现）
     if (/DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT|UNABLE_TO_VERIFY_LEAF_SIGNATURE|self-signed/i.test(message)) {

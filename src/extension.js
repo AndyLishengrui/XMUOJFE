@@ -6,7 +6,6 @@ const { XmuojClient } = require("./client");
 const { XmuojCodeLensProvider } = require("./codeLens");
 const { ProblemTreeDataProvider } = require("./treeData");
 const {
-  METADATA_FILE_NAME,
   buildProblemDirectory,
   buildProblemMarkdown,
   chooseWorkspaceRoot,
@@ -22,12 +21,29 @@ const {
   setMetadataSourceFile,
   slugifyTitle,
   getLocalWorkspaceFolderHandles,
-  PROBLEMSET_DIR_NAME,
+  PROBLEMS_DIR_NAME,
+  inferWorkspaceRoot,
   writeProblemMetadata
 } = require("./problemWorkspace");
+const store = require("./workspaceStore");
+const migration = require("./migration");
+const progress = require("./progress");
+const {
+  normalizeBaseUrlForKey,
+  buildProblemProgressKey,
+  resolveProblemProgress,
+  getProblemProgressSummary,
+  normalizeContestStatus,
+  getContestStatusLabel,
+  canContestSubmitRemotely,
+  buildContestSubmitBlockedMessage,
+  applyProgressPatch,
+  migrateProgressMap,
+  PROGRESS_BACKUP_KEY
+} = progress;
 const { runLocalCases } = require("./runner");
+const search = require("./search");
 
-const RECENT_CONTESTS_KEY = "xmuoj.recentContests";
 const RECENT_PROBLEMS_KEY = "xmuoj.recentProblems";
 const LAST_SUBMISSION_RESULT_KEY = "xmuoj.lastSubmissionResult";
 const LAST_LOCAL_REPORT_KEY = "xmuoj.lastLocalReport";
@@ -38,8 +54,11 @@ const RECENT_SUBMISSION_DENSITY_KEY = "xmuoj.recentSubmissionDensity";
 const RECENT_SUBMISSION_RESULT_FILTER_KEY = "xmuoj.recentSubmissionResultFilter";
 const RECENT_SUBMISSION_LANGUAGE_FILTER_KEY = "xmuoj.recentSubmissionLanguageFilter";
 const PROBLEMSET_SELECTIONS_KEY = "xmuoj.problemsetSelections";
+const OPEN_CONTEST_WORKSPACES_KEY = "xmuoj.openContestWorkspaces";
+const RECENT_SEARCHES_KEY = "xmuoj.recentSearches";
 const WORKBENCH_LAYOUT_KEY = "xmuoj.workbenchLayout";
 const LAST_USERNAME_KEY = "xmuoj.lastUsername";
+const LAST_USER_KEY = "xmuoj.lastUser";
 const LAST_LANGUAGE_KEY = "xmuoj.lastUsedLanguage";
 /**
  * activate 时注入的扩展上下文，供模块级函数读写 globalState。
@@ -136,57 +155,7 @@ function extractContestId(input) {
   return String(input).trim();
 }
 
-function normalizeContestStatus(status) {
-  const raw = String(status || "").trim();
-  const lower = raw.toLowerCase();
-  if (raw === "-1") {
-    return { key: "ended", label: "结束" };
-  }
-  if (raw === "0") {
-    return { key: "running", label: "进行中" };
-  }
-  if (raw === "1") {
-    return { key: "pending", label: "准备中" };
-  }
-  if (["ended", "end", "finished", "closed", "over"].includes(lower)) {
-    return { key: "ended", label: "结束" };
-  }
-  if (["pending", "preparing", "scheduled", "not_started", "not-started"].includes(lower)) {
-    return { key: "pending", label: "准备中" };
-  }
-  if (["running", "active", "started", "ongoing", "live"].includes(lower)) {
-    return { key: "running", label: "进行中" };
-  }
-  if (["结束", "已结束"].includes(raw)) {
-    return { key: "ended", label: "结束" };
-  }
-  if (["准备中", "未开始"].includes(raw)) {
-    return { key: "pending", label: "准备中" };
-  }
-  if (["进行中", "已开始"].includes(raw)) {
-    return { key: "running", label: "进行中" };
-  }
-  return { key: raw ? lower : "unknown", label: raw || "未知" };
-}
-
-function getContestStatusLabel(contest) {
-  return normalizeContestStatus(contest && contest.status ? contest.status : "").label;
-}
-
-function canContestSubmitRemotely(contest) {
-  return normalizeContestStatus(contest && contest.status ? contest.status : "").key === "running";
-}
-
-function buildContestSubmitBlockedMessage(contest) {
-  const status = normalizeContestStatus(contest && contest.status ? contest.status : "");
-  if (status.key === "ended") {
-    return "该实验已结束，不能远程提交，只能本地测评。请使用“运行本地测试”。";
-  }
-  if (status.key === "pending") {
-    return "该实验处于准备中，不能远程提交。请等待实验开始后再提交，或先使用“运行本地测试”。";
-  }
-  return `该实验当前状态为“${status.label}”，仅“进行中”的实验允许远程提交。请先使用“运行本地测试”。`;
-}
+// 实验状态与进度键统一由 ./progress 提供，避免 extension/treeData 各维护一份。
 
 function findContestEntryById(state, contestId) {
   if (!contestId) {
@@ -228,13 +197,53 @@ function resolveContestPassword(state, contestId) {
   if (entry && entry.contestPassword) {
     return entry.contestPassword;
   }
+  if (state.contestPasswords && state.contestPasswords[String(contestId)]) {
+    return state.contestPasswords[String(contestId)];
+  }
   return "";
+}
+
+function contestPasswordSecretKey(username, contestId) {
+  return `xmuoj.contestPassword.${username}.${contestId}`;
+}
+
+/** 登录后把已知实验的密码从系统钥匙串预读进内存，保持同步读取接口。 */
+async function preloadContestPasswords(context, state) {
+  if (!state.user || !state.user.username || !context.secrets) {
+    return;
+  }
+  const ids = new Set();
+  for (const entry of state.openContestWorkspaces || []) {
+    if (entry && entry.contest && entry.contest.id !== undefined && entry.contest.id !== null) {
+      ids.add(String(entry.contest.id));
+    }
+  }
+  if (state.workspaceIndex && state.workspaceIndex.entries) {
+    for (const entry of Object.values(state.workspaceIndex.entries)) {
+      if (entry && entry.contestId !== undefined && entry.contestId !== null) {
+        ids.add(String(entry.contestId));
+      }
+    }
+  }
+  state.contestPasswords = state.contestPasswords || {};
+  for (const contestId of ids) {
+    try {
+      const value = await context.secrets.get(contestPasswordSecretKey(state.user.username, contestId));
+      if (value) {
+        state.contestPasswords[contestId] = value;
+      }
+    } catch (_error) {
+      /* 钥匙串不可用时忽略 */
+    }
+  }
 }
 
 function cacheContestPassword(state, contestId, contestPassword) {
   if (!contestId || !contestPassword) {
     return;
   }
+  state.contestPasswords = state.contestPasswords || {};
+  state.contestPasswords[String(contestId)] = contestPassword;
   if (
     state.contestWorkspace
     && state.contestWorkspace.contest
@@ -248,6 +257,13 @@ function cacheContestPassword(state, contestId, contestPassword) {
     }
     return entry;
   });
+  // 记住实验密码：写入系统钥匙串（不写 globalState，避免明文落盘）
+  const remember = vscode.workspace.getConfiguration("xmuoj").get("rememberContestPasswords", true) !== false;
+  if (remember && extensionContext && extensionContext.secrets && state.user && state.user.username) {
+    extensionContext.secrets
+      .store(contestPasswordSecretKey(state.user.username, String(contestId)), contestPassword)
+      .catch(() => null);
+  }
 }
 
 function localizeServerErrorMessage(rawMessage) {
@@ -412,19 +428,6 @@ function resolveProblemProgressScope() {
   return "global";
 }
 
-function buildProblemProgressKey(baseUrl, contestId, problemId, progressScope) {
-  return [
-    normalizeBaseUrlForKey(baseUrl),
-    contestId || "problemset",
-    problemId || "unknown",
-    normalizeProgressScope(progressScope || resolveProblemProgressScope())
-  ].join("::");
-}
-
-function normalizeBaseUrlForKey(baseUrl) {
-  return String(baseUrl || "").trim().replace(/\/+$/, "");
-}
-
 function buildContestWorkspaceKey(baseUrl, contestId) {
   return [normalizeBaseUrlForKey(baseUrl), String(contestId || "")].join("::");
 }
@@ -464,6 +467,9 @@ function upsertContestWorkspaceSelection(state, workspace, baseUrl) {
     ...(state.openContestWorkspaces || []).filter((item) => item.key !== key)
   ].slice(0, 12);
   state.openContestWorkspaces = next;
+  if (typeof state.persistOpenContests === "function") {
+    state.persistOpenContests();
+  }
   return next;
 }
 
@@ -516,6 +522,9 @@ function removeContestWorkspaceSelection(state, item) {
     state.activeContest = null;
     state.contestPassword = "";
   }
+  if (typeof state.persistOpenContests === "function") {
+    state.persistOpenContests();
+  }
   return state.openContestWorkspaces;
 }
 
@@ -543,7 +552,7 @@ function buildProblemProgressRef(baseUrl, problem, contest, options = {}) {
   }
   const progressScope = normalizeProgressScope(options.progressScope || resolveProblemProgressScope());
   return {
-    key: buildProblemProgressKey(baseUrl, contest ? contest.id : null, problem.id, progressScope),
+    key: buildProblemProgressKey(baseUrl, problem.id),
     baseUrl,
     problemId: problem.id,
     displayId: problem.display_id,
@@ -559,26 +568,12 @@ function getProblemProgress(state, baseUrl, problem, contest, options = {}) {
     return null;
   }
   const progressScope = normalizeProgressScope(options.progressScope || resolveProblemProgressScope());
-  return state.problemProgress[buildProblemProgressKey(baseUrl, contest ? contest.id : null, problem.id, progressScope)] || null;
-}
-
-function getProblemProgressSummary(progress) {
-  if (!progress) {
-    return "未开始";
-  }
-  if (progress.accepted) {
-    return "已 AC";
-  }
-  if (progress.lastSubmissionLabel) {
-    return `已提交 · ${progress.lastSubmissionLabel}`;
-  }
-  if (progress.localPassed) {
-    return "本地通过";
-  }
-  if (progress.workspaceCreated) {
-    return "已开题";
-  }
-  return "未开始";
+  return resolveProblemProgress(state.problemProgress, {
+    baseUrl,
+    problemId: problem.id,
+    contestId: contest ? contest.id : null,
+    progressScope
+  });
 }
 
 async function updateXmuojConfiguration(relativeKey, value) {
@@ -724,22 +719,15 @@ async function updateProblemProgress(context, state, progressRef, patch) {
   if (!progressRef || !progressRef.key) {
     return null;
   }
-  const current = state.problemProgress[progressRef.key] || {};
-  const next = Object.assign({}, current, {
-    baseUrl: progressRef.baseUrl,
-    problemId: progressRef.problemId,
-    displayId: progressRef.displayId,
-    title: progressRef.title,
-    contestId: progressRef.contestId,
-    contestTitle: progressRef.contestTitle,
-    progressScope: progressRef.progressScope,
-    updatedAt: new Date().toISOString()
-  }, patch);
-  state.problemProgress = Object.assign({}, state.problemProgress, {
-    [progressRef.key]: next
-  });
+  const { progress: nextProgress, entry } = applyProgressPatch(
+    state.problemProgress,
+    progressRef,
+    patch,
+    new Date().toISOString()
+  );
+  state.problemProgress = nextProgress;
   await context.globalState.update(PROBLEM_PROGRESS_KEY, state.problemProgress);
-  return next;
+  return entry;
 }
 
 async function fileExists(filePath) {
@@ -2998,8 +2986,26 @@ function renderResultPanelHtml(viewModel) {
 
 function updateStatusBars(state, userStatusBar, contestStatusBar, client) {
   state.baseUrl = client.baseUrl;
-  userStatusBar.text = state.user ? `XMUOJ $(account) ${state.user.username}` : "XMUOJ $(circle-slash) 未登录";
-  userStatusBar.tooltip = `XMUOJ 固定访问 ${client.baseUrl}（不在设置中修改）`;
+  const lastUsername = state.lastUser && state.lastUser.username ? state.lastUser.username : "";
+  if (state.authState === "offline") {
+    userStatusBar.text = "XMUOJ $(cloud-offline) 离线 · 点击重试";
+    userStatusBar.tooltip = lastUsername
+      ? `无法连接 ${client.baseUrl}，当前为离线状态（上次登录：${lastUsername}）。点击重试。`
+      : `无法连接 ${client.baseUrl}，当前为离线状态。点击重试。`;
+    userStatusBar.command = "xmuoj.retryBootstrap";
+  } else if (state.authState === "checking") {
+    userStatusBar.text = "XMUOJ $(sync~spin) 正在检查登录…";
+    userStatusBar.tooltip = `正在连接 ${client.baseUrl}`;
+    userStatusBar.command = "xmuoj.retryBootstrap";
+  } else if (state.user) {
+    userStatusBar.text = `XMUOJ $(account) ${state.user.username}`;
+    userStatusBar.tooltip = `已登录 ${client.baseUrl}`;
+    userStatusBar.command = "xmuoj.openSettings";
+  } else {
+    userStatusBar.text = "XMUOJ $(account) 登录 XMUOJ";
+    userStatusBar.tooltip = `点击登录 XMUOJ（${client.baseUrl}）`;
+    userStatusBar.command = "xmuoj.login";
+  }
   if (state.contestWorkspace && state.contestWorkspace.contest) {
     const contest = state.contestWorkspace.contest;
     const statusLabel = getContestStatusLabel(contest);
@@ -3461,6 +3467,9 @@ async function scanAllWorkspacesForProgress(context, client, state, contest, pro
 async function loadContestWorkspace(context, client, state, treeProvider, contestId, contestPassword) {
   state.contestPassword = contestPassword || "";
   state.contestWorkspace = await client.getContestWorkspace(contestId, state.contestPassword);
+  if (contestPassword) {
+    cacheContestPassword(state, contestId, contestPassword);
+  }
   upsertContestWorkspaceSelection(state, state.contestWorkspace, client.baseUrl);
   await scanAllWorkspacesForProgress(
     context,
@@ -3558,7 +3567,7 @@ async function startWorkingOnProblem(context, client, state, outputChannel, prob
   // 更新当前活动题目状态
   state.activeProblem = problem;
   state.activeContest = contest;
-
+  recordRecentProblem(state, problem, contest, client.baseUrl);
   // side mode 下若题面面板尚未打开，先自动打开题面，
   // 形成「代码在一列、题面在旁边列」的沉浸布局；打开失败不阻断编码。
   if (isSideModeEnabled() && !state.problemPanel) {
@@ -3663,6 +3672,7 @@ async function openProblemDetail(client, state, problem, contest, contestPasswor
   // 更新当前活动题目状态
   state.activeProblem = detail;
   state.activeContest = contest;
+  recordRecentProblem(state, detail, contest, client.baseUrl);
   
   let panel = state.problemPanel;
   if (!panel) {
@@ -4024,7 +4034,7 @@ async function initContestProblemFolders(context, client, state, outputChannel, 
         progress.report({ message: `${index + 1}/${problems.length} ${problem.display_id || problem.id}` });
         try {
           const detail = await client.getProblemWorkspace(problem.id, targetWorkspace.contest.id, targetContestPassword || undefined);
-          const problemDir = buildProblemDirectory(rootPath, detail, targetWorkspace.contest);
+          const problemDir = await buildProblemDirectory(rootPath, detail, targetWorkspace.contest, { baseUrl: client.baseUrl });
           const samplesDir = path.join(problemDir, "samples");
           await fs.mkdir(samplesDir, { recursive: true });
 
@@ -4038,21 +4048,22 @@ async function initContestProblemFolders(context, client, state, outputChannel, 
             await fs.writeFile(path.join(samplesDir, `${sampleNumber}.out`), sample.output || "", "utf8");
           }
 
-          const metadata = {
-            version: 1,
+          // 合并写入：已存在的工作区保留语言与源码，不降级为占位
+          const existingMetadata = await store.readProblemMetadata(problemDir, { baseUrl: client.baseUrl });
+          const metadataPatch = {
             baseUrl: client.baseUrl,
             problemId: detail.id,
             contestId: targetWorkspace.contest.id,
             contestTitle: targetWorkspace.contest.title,
             displayId: detail.display_id,
-            title: detail.title,
-            language: null,
-            sourceFile: null,
-            sourceFiles: {},
-            createdAt: new Date().toISOString()
+            title: detail.title
           };
-          const metadataPath = path.join(problemDir, METADATA_FILE_NAME);
-          await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), "utf8");
+          if (!existingMetadata.metadata) {
+            metadataPatch.language = null;
+            metadataPatch.sourceFile = null;
+            metadataPatch.status = "placeholder";
+          }
+          await writeProblemMetadata(problemDir, metadataPatch);
 
           created.push(problemDir);
           outputChannel.appendLine(`已创建 ${detail.display_id} → ${problemDir}`);
@@ -4385,6 +4396,207 @@ async function checkForUpdates(context, client, showUpToDateMessage = false) {
   }
 }
 
+const workspaceScanSessions = new Set();
+
+function isAnyDocumentInside(directory) {
+  const resolved = path.resolve(directory);
+  return (vscode.workspace.textDocuments || []).some((document) => {
+    const uri = document && document.uri;
+    return Boolean(uri && uri.scheme === "file" && uri.fsPath && store.isPathInside(resolved, uri.fsPath));
+  });
+}
+
+/**
+ * 启动扫盘（学生提议）：只读扫描本地题目目录，重建索引与「我的实验」；
+ * 需要时在后台执行一次旧布局迁移（可取消，失败不阻断）。
+ */
+async function runWorkspaceScanAndMigration(context, state, client, outputChannel, treeProvider) {
+  const config = vscode.workspace.getConfiguration("xmuoj");
+  const root = store.normalizeWorkspaceRootPath(config.get("localWorkspaceRoot", "") || "");
+  if (!root) {
+    return;
+  }
+  try {
+    await fs.access(root);
+  } catch (_error) {
+    return;
+  }
+  try {
+    const ensured = await store.ensureWorkspaceIndex(root, { baseUrl: client.baseUrl });
+    state.workspaceIndex = ensured.index;
+  } catch (error) {
+    outputChannel.appendLine(`扫描本地题目目录失败：${error.message}`);
+  }
+
+  const sessionKey = `${root}::${client.baseUrl}`;
+  if (workspaceScanSessions.has(sessionKey)) {
+    return;
+  }
+  workspaceScanSessions.add(sessionKey);
+
+  if (config.get("autoMigrate", true) === false) {
+    treeProvider.refresh();
+    return;
+  }
+
+  try {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "正在整理 XMUOJ 本地题目目录",
+        cancellable: true
+      },
+      async (progress, token) => {
+        const plan = await migration.planMigration(root, {
+          baseUrl: client.baseUrl,
+          isDirectoryOpen: isAnyDocumentInside
+        });
+        if (!plan.entries.some((entry) => entry.action === "move")) {
+          return;
+        }
+        progress.report({ message: `准备迁移 ${plan.summary.move} 道题…` });
+        const result = await migration.applyMigration(root, plan, {
+          baseUrl: client.baseUrl,
+          token,
+          isDirectoryOpen: isAnyDocumentInside,
+          onProgress: ({ processed, total, entry }) => {
+            progress.report({ message: `${processed}/${total} ${entry.displayId || entry.from}` });
+          }
+        });
+        if (result.locked === false) {
+          outputChannel.appendLine("另一个窗口正在迁移本地题目目录，本窗口跳过。");
+          return;
+        }
+        outputChannel.appendLine(
+          `本地目录迁移完成：移动 ${result.moved}，跳过 ${result.skipped}，重复 ${result.duplicate}，失败 ${result.failed}。`
+        );
+        if (result.failed) {
+          outputChannel.appendLine("可在命令面板执行“XMUOJ：回滚本地目录迁移”恢复到旧布局。");
+        }
+      }
+    );
+  } catch (error) {
+    outputChannel.appendLine(`整理本地题目目录失败（不影响使用）：${error.message}`);
+  }
+  try {
+    state.workspaceIndex = (await store.ensureWorkspaceIndex(root, { baseUrl: client.baseUrl })).index;
+  } catch (_error) {
+    /* 索引失败时保留原状态 */
+  }
+  treeProvider.refresh();
+}
+
+const MAX_RECENT_PROBLEMS = 10;
+const MAX_OPEN_CONTESTS = 12;
+
+function serializeContestEntry(entry) {
+  if (!entry || !entry.contest) {
+    return null;
+  }
+  const contest = entry.contest;
+  return {
+    key: entry.key,
+    baseUrl: entry.baseUrl,
+    contest: {
+      id: contest.id,
+      title: contest.title || "",
+      status: contest.status === undefined ? null : contest.status
+    },
+    // 只保留树与开题需要的字段，避免 globalState 被上百道题的完整详情撑大
+    problems: (entry.problems || []).map((problem) => ({
+      id: problem.id,
+      display_id: problem.display_id,
+      title: problem.title,
+      difficulty: problem.difficulty || "",
+      languages: problem.languages || []
+    }))
+  };
+}
+
+function loadPersistedContestEntries(context) {
+  const raw = context.globalState.get(OPEN_CONTEST_WORKSPACES_KEY, []);
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .map((entry) => serializeContestEntry(entry))
+    .filter(Boolean)
+    .slice(0, MAX_OPEN_CONTESTS);
+}
+
+function loadRecentProblems(context, baseUrl) {
+  const raw = context.globalState.get(RECENT_PROBLEMS_KEY, []);
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .filter((entry) => entry && entry.problemId !== undefined && entry.problemId !== null)
+    .map((entry) => {
+      const normalizedBase = normalizeBaseUrlForKey(entry.baseUrl || baseUrl);
+      return Object.assign({}, entry, {
+        baseUrl: normalizedBase,
+        identity: entry.identity || store.buildProblemIdentity(normalizedBase, entry.problemId),
+        displayId: entry.displayId || entry.display_id || "",
+        problem: entry.problem || {
+          id: entry.problemId,
+          display_id: entry.displayId || entry.display_id || "",
+          title: entry.title || ""
+        }
+      });
+    })
+    .slice(0, MAX_RECENT_PROBLEMS);
+}
+
+function recordRecentProblem(state, detail, contest, baseUrl) {
+  if (!state || !detail || detail.id === undefined || detail.id === null) {
+    return;
+  }
+  const normalizedBase = normalizeBaseUrlForKey(baseUrl || state.baseUrl);
+  const identity = store.buildProblemIdentity(normalizedBase, detail.id);
+  const entry = {
+    identity,
+    baseUrl: normalizedBase,
+    problemId: detail.id,
+    displayId: detail.display_id || detail.displayId || "",
+    title: detail.title || "",
+    difficulty: detail.difficulty || "",
+    contestId: contest && contest.id !== undefined ? contest.id : null,
+    contestTitle: contest && contest.title ? contest.title : null,
+    lastOpenedAt: new Date().toISOString(),
+    lastResultLabel: (state.problemProgress
+      && state.problemProgress[buildProblemProgressKey(normalizedBase, detail.id)]
+      && state.problemProgress[buildProblemProgressKey(normalizedBase, detail.id)].lastSubmissionLabel) || null
+  };
+  state.recentProblems = [entry, ...(state.recentProblems || []).filter((item) => item.identity !== identity)]
+    .slice(0, MAX_RECENT_PROBLEMS);
+  if (typeof state.persistRecentProblems === "function") {
+    state.persistRecentProblems();
+  }
+}
+
+/**
+ * 提交/本地测评结束后刷新「最近在做」里的结果摘要，避免用户必须重新开题才看到最新状态。
+ * 只更新已存在的最近条目，不因为一次提交把题目插到列表顶部。
+ */
+function updateRecentProblemResult(state, problemId, baseUrl, patch) {
+  if (!state || problemId === undefined || problemId === null || !Array.isArray(state.recentProblems)) {
+    return;
+  }
+  const normalizedBase = normalizeBaseUrlForKey(baseUrl || state.baseUrl);
+  const identity = store.buildProblemIdentity(normalizedBase, problemId);
+  let changed = false;
+  state.recentProblems = state.recentProblems.map((entry) => {
+    if (!entry || entry.identity !== identity) {
+      return entry;
+    }
+    changed = true;
+    return Object.assign({}, entry, patch, { updatedAt: new Date().toISOString() });
+  });
+  if (changed && typeof state.persistRecentProblems === "function") {
+    state.persistRecentProblems();
+  }
+}
+
 function activate(context) {
   extensionContext = context;
   const client = new XmuojClient(context);
@@ -4393,15 +4605,29 @@ function activate(context) {
   const contestStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
   userStatusBar.command = "xmuoj.login";
   contestStatusBar.command = "xmuoj.browseContests";
-  context.globalState.update(RECENT_CONTESTS_KEY, []).catch(() => null);
-  context.globalState.update(RECENT_PROBLEMS_KEY, []).catch(() => null);
+
+  // 进度键从“含绝对根目录”迁移到 <baseUrl>::<problemId>，只执行一次并保留备份
+  const storedProgress = context.globalState.get(PROBLEM_PROGRESS_KEY, {});
+  const migratedProgress = migrateProgressMap(storedProgress);
+  if (migratedProgress.changed) {
+    if (!context.globalState.get(PROGRESS_BACKUP_KEY, null)) {
+      context.globalState.update(PROGRESS_BACKUP_KEY, storedProgress).catch(() => null);
+    }
+    context.globalState.update(PROBLEM_PROGRESS_KEY, migratedProgress.progress).catch(() => null);
+  }
 
   const state = {
     contestWorkspace: null,
-    openContestWorkspaces: [],
+    openContestWorkspaces: loadPersistedContestEntries(context),
     problemsetSelections: context.globalState.get(PROBLEMSET_SELECTIONS_KEY, []),
+    recentProblems: loadRecentProblems(context, client.baseUrl),
+    recentSearches: context.globalState.get(RECENT_SEARCHES_KEY, []),
+    workspaceIndex: null,
     contestPassword: "",
+    contestPasswords: {},
     user: null,
+    authState: "checking",
+    lastUser: context.globalState.get(LAST_USER_KEY, null),
     bootstrapReady: false,
     lastSubmissionResult: context.globalState.get(LAST_SUBMISSION_RESULT_KEY, null),
     lastLocalReport: context.globalState.get(LAST_LOCAL_REPORT_KEY, null),
@@ -4410,7 +4636,7 @@ function activate(context) {
     recentSubmissionDensity: context.globalState.get(RECENT_SUBMISSION_DENSITY_KEY, "all"),
     recentSubmissionResultFilter: context.globalState.get(RECENT_SUBMISSION_RESULT_FILTER_KEY, "all"),
     recentSubmissionLanguageFilter: context.globalState.get(RECENT_SUBMISSION_LANGUAGE_FILTER_KEY, "all"),
-    problemProgress: context.globalState.get(PROBLEM_PROGRESS_KEY, {}),
+    problemProgress: migratedProgress.progress,
     resultPanel: null,
     baseUrl: client.baseUrl,
     currentSourcePath: null,
@@ -4422,6 +4648,16 @@ function activate(context) {
   };
   state.resultPanelFocus = null;
   state.persistenceHook = () => persistWorkbenchLayout(context, state);
+  state.persistRecentProblems = () => {
+    context.globalState.update(RECENT_PROBLEMS_KEY, state.recentProblems || []).catch(() => null);
+  };
+  state.persistOpenContests = () => {
+    const serialized = (state.openContestWorkspaces || [])
+      .map((entry) => serializeContestEntry(entry))
+      .filter(Boolean)
+      .slice(0, MAX_OPEN_CONTESTS);
+    context.globalState.update(OPEN_CONTEST_WORKSPACES_KEY, serialized).catch(() => null);
+  };
   state.userStatusBar = userStatusBar;
   state.contestStatusBar = contestStatusBar;
 
@@ -4485,10 +4721,15 @@ function activate(context) {
       const bootstrap = await client.getBootstrap();
       state.user = bootstrap.user;
       state.bootstrapReady = true;
+      state.authState = state.user ? "authenticated" : "loggedOut";
       bootstrapRetryAttempts = 0;
       // Bootstrap 成功但 user 为空 → 服务端明确未登录，清理残留认证态
       if (!state.user) {
         await clearStaleAuth();
+      } else {
+        state.lastUser = { username: state.user.username };
+        await context.globalState.update(LAST_USER_KEY, state.lastUser).catch(() => null);
+        preloadContestPasswords(context, state).catch(() => null);
       }
       codeLensProvider.setUser(state.user);
       updateStatusBars(state, userStatusBar, contestStatusBar, client);
@@ -4507,12 +4748,19 @@ function activate(context) {
           || /^(连接失败|请求超时|aborted|fetch failed)/i.test(String((error && error.message) || error)))
       );
       if (error && error.kind === "auth") {
+        state.authState = "loggedOut";
         await clearStaleAuth();
-      } else if (isNetwork && bootstrapRetryAttempts < BOOTSTRAP_MAX_RETRIES) {
-        bootstrapRetryAttempts += 1;
-        setTimeout(() => {
-          syncBootstrap(true).catch(() => null);
-        }, 5000);
+      } else {
+        // 网络/服务端异常：只要本地还有凭证，就保持“离线”而不是登出
+        const token = await client.getToken().catch(() => null);
+        const cookies = await client.getSessionCookies().catch(() => null);
+        state.authState = token || cookies ? "offline" : "loggedOut";
+        if (state.authState === "offline" && isNetwork && bootstrapRetryAttempts < BOOTSTRAP_MAX_RETRIES) {
+          bootstrapRetryAttempts += 1;
+          setTimeout(() => {
+            syncBootstrap(true).catch(() => null);
+          }, 5000);
+        }
       }
       codeLensProvider.setUser(null);
       updateStatusBars(state, userStatusBar, contestStatusBar, client);
@@ -4520,13 +4768,15 @@ function activate(context) {
     }
   }
   syncBootstrap().catch(() => null);
-
-
+  runWorkspaceScanAndMigration(context, state, client, outputChannel, treeProvider).catch(() => null);
 
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.quickStart", async () => {
     try {
       // 1) 确保本地工作区目录已配置（未配置才弹目录选择）
       const rootPath = await chooseWorkspaceRoot();
+      if (rootPath) {
+        runWorkspaceScanAndMigration(context, state, client, outputChannel, treeProvider).catch(() => null);
+      }
       // 2) 等待 bootstrap（最多 5 秒），避免竞态把已登录用户当成未登录
       if (!state.bootstrapReady) {
         await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: "正在检查登录状态…" }, async () => {
@@ -4536,7 +4786,21 @@ function activate(context) {
           }
         });
       }
-      // 3) 引导登录
+      // 3) 离线：不要求重新登录，可继续使用本地题目
+      if (state.authState === "offline") {
+        const action = await vscode.window.showWarningMessage(
+          `当前无法连接 XMUOJ${state.lastUser ? `（上次登录：${state.lastUser.username}）` : ""}，可先使用本地题目。`,
+          "重试连接",
+          "搜索本地题目"
+        );
+        if (action === "重试连接") {
+          await vscode.commands.executeCommand("xmuoj.retryBootstrap");
+        } else if (action === "搜索本地题目") {
+          await vscode.commands.executeCommand("xmuoj.search");
+        }
+        return;
+      }
+      // 4) 未登录 → 一次登录流程，成功后继续
       if (!state.user) {
         const action = await vscode.window.showInformationMessage(
           rootPath
@@ -4544,24 +4808,323 @@ function activate(context) {
             : "快速开始：登录 XMUOJ，并可随后在工具栏选择本地工作区目录。",
           "立即登录"
         );
-        if (action === "立即登录") {
-          await vscode.commands.executeCommand("xmuoj.login");
+        if (action !== "立即登录") {
+          return;
         }
+        await vscode.commands.executeCommand("xmuoj.login");
+        if (!state.user) {
+          return;
+        }
+      }
+      // 5) 单一入口：搜索 / 实验 / 公共题库 / 继续上次题目
+      const recent = (state.recentProblems || [])[0];
+      const pick = await vscode.window.showQuickPick([
+        { label: "$(search) 搜索题目", description: "本地 + 在线", value: "search" },
+        { label: "$(repo) 打开我的实验", description: "加载或查看已保存的实验", value: "contests" },
+        { label: "$(book) 打开公共题库", description: "刷题台与刷题队列", value: "problemset" },
+        ...(recent ? [{
+          label: "$(history) 继续上次的题目",
+          description: `${recent.displayId || recent.problemId} ${recent.title || ""}`.trim(),
+          value: "recent"
+        }] : [])
+      ], {
+        title: `XMUOJ 已就绪${rootPath ? `（工作区：${rootPath}）` : ""}`,
+        placeHolder: "选择要开始的动作",
+        ignoreFocusOut: true
+      });
+      if (!pick) {
         return;
       }
-      // 4) 已登录 → 引导进入刷题入口
-      const action = await vscode.window.showInformationMessage(
-        `XMUOJ 已就绪${rootPath ? `（工作区：${rootPath}）` : "（尚未选择工作区目录）"}，要从哪里开始？`,
-        "浏览实验",
-        "公共题库"
-      );
-      if (action === "浏览实验") {
+      if (pick.value === "search") {
+        await vscode.commands.executeCommand("xmuoj.search");
+      } else if (pick.value === "contests") {
         await vscode.commands.executeCommand("xmuoj.browseContests");
-      } else if (action === "公共题库") {
+      } else if (pick.value === "problemset") {
         await vscode.commands.executeCommand("xmuoj.browseProblemset");
+      } else if (pick.value === "recent" && recent) {
+        await vscode.commands.executeCommand("xmuoj.openRecentProblem", recent);
       }
     } catch (error) {
       await handleXmuojError(error, state, client, treeProvider);
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.migrateWorkspaces", async () => {
+    const root = store.normalizeWorkspaceRootPath(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "");
+    if (!root) {
+      vscode.window.showWarningMessage("请先在命令面板执行“XMUOJ：快速开始”或设置本地工作区目录。");
+      return;
+    }
+    try {
+      const plan = await migration.planMigration(root, {
+        baseUrl: client.baseUrl,
+        isDirectoryOpen: isAnyDocumentInside
+      });
+      const { move, skip, duplicate } = plan.summary;
+      if (!move) {
+        vscode.window.showInformationMessage(`没有需要迁移的旧目录（跳过 ${skip}，重复 ${duplicate}）。`);
+        return;
+      }
+      const reasonCount = {};
+      for (const entry of plan.entries) {
+        if (entry.action === "skip" && entry.reason) {
+          reasonCount[entry.reason] = (reasonCount[entry.reason] || 0) + 1;
+        }
+      }
+      const details = Object.entries(reasonCount)
+        .map(([reason, count]) => `${reason}: ${count}`)
+        .join("；");
+      const confirm = await vscode.window.showWarningMessage(
+        `将把 ${move} 道旧目录中的题目迁移到 problems/，跳过 ${skip} 道，保留 ${duplicate} 道重复目录。`,
+        {
+          modal: true,
+          detail: [
+            "迁移只移动包含 .xmuoj.json 旧目录，不删除非空目录，并保留迁移清单用于回滚。",
+            details ? `跳过原因：${details}` : ""
+          ].filter(Boolean).join("\n")
+        },
+        "开始迁移"
+      );
+      if (confirm !== "开始迁移") {
+        return;
+      }
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "正在迁移 XMUOJ 本地题目目录",
+          cancellable: true
+        },
+        async (progress, token) => {
+          const result = await migration.applyMigration(root, plan, {
+            baseUrl: client.baseUrl,
+            token,
+            isDirectoryOpen: isAnyDocumentInside,
+            onProgress: ({ processed, total, entry }) => {
+              progress.report({ message: `${processed}/${total} ${entry.displayId || entry.from}` });
+            }
+          });
+          if (!result.locked) {
+            vscode.window.showWarningMessage("另一个窗口正在迁移本地题目目录，请稍后再试。");
+            return;
+          }
+          vscode.window.showInformationMessage(
+            `迁移完成：移动 ${result.moved}，跳过 ${result.skipped}，重复 ${result.duplicate}，失败 ${result.failed}。`
+          );
+          outputChannel.appendLine(`手动迁移完成：${JSON.stringify({ moved: result.moved, skipped: result.skipped, duplicate: result.duplicate, failed: result.failed })}`);
+          treeProvider.refresh();
+        }
+      );
+    } catch (error) {
+      await handleXmuojError(error, state, client, treeProvider, { offerLogin: false });
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.rollbackWorkspaceMigration", async () => {
+    const root = store.normalizeWorkspaceRootPath(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "");
+    if (!root) {
+      vscode.window.showWarningMessage("请先配置本地工作区目录。");
+      return;
+    }
+    try {
+      const manifest = await migration.readMigrationManifest(root);
+      const movable = (manifest.entries || []).filter((entry) => entry.status === "moved" || entry.status === "already-done");
+      if (!movable.length) {
+        vscode.window.showInformationMessage("没有可回滚的迁移记录。");
+        return;
+      }
+      const confirm = await vscode.window.showWarningMessage(
+        `将按迁移清单把 ${movable.length} 道题移回原目录。`,
+        { modal: true, detail: "目标目录内容被改动过（文件数或字节数变化）的题目会跳过，不会被覆盖。" },
+        "回滚迁移"
+      );
+      if (confirm !== "回滚迁移") {
+        return;
+      }
+      const result = await migration.rollbackMigration(root);
+      if (!result.locked) {
+        vscode.window.showWarningMessage("另一个窗口正在迁移本地题目目录，请稍后再试。");
+        return;
+      }
+      const failed = result.failed || [];
+      vscode.window.showInformationMessage(
+        `回滚完成：移回 ${result.rolledBack}，跳过 ${result.skipped}${failed.length ? `，未能回滚 ${failed.length}` : ""}。`
+      );
+      if (failed.length) {
+        outputChannel.appendLine(`回滚未完成条目：${JSON.stringify(failed.slice(0, 20))}`);
+      }
+      treeProvider.refresh();
+    } catch (error) {
+      await handleXmuojError(error, state, client, treeProvider, { offerLogin: false });
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.rebuildWorkspaceIndex", async () => {
+    const root = store.normalizeWorkspaceRootPath(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "");
+    if (!root) {
+      vscode.window.showWarningMessage("请先配置本地工作区目录。");
+      return;
+    }
+    try {
+      const result = await store.ensureWorkspaceIndex(root, { baseUrl: client.baseUrl, force: true });
+      const count = Object.keys(result.index.entries || {}).length;
+      vscode.window.showInformationMessage(`本地题目索引已重建，共 ${count} 道题。`);
+      treeProvider.refresh();
+    } catch (error) {
+      await handleXmuojError(error, state, client, treeProvider, { offerLogin: false });
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.openRecentProblem", async (entry) => {
+    if (!entry || entry.problemId === undefined || entry.problemId === null) {
+      return;
+    }
+    const contest = entry.contestId
+      ? (getContestById(state, entry.contestId) || { id: entry.contestId, title: entry.contestTitle || "" })
+      : null;
+    try {
+      await openProblemDetail(
+        client,
+        state,
+        entry.problem || { id: entry.problemId, display_id: entry.displayId, title: entry.title },
+        contest,
+        contest ? resolveContestPassword(state, entry.contestId) : ""
+      );
+      updateStatusBars(state, userStatusBar, contestStatusBar, client);
+      treeProvider.refresh();
+    } catch (error) {
+      await handleXmuojError(error, state, client, treeProvider);
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.removeRecentProblem", async (entry) => {
+    if (!entry) {
+      return;
+    }
+    state.recentProblems = (state.recentProblems || []).filter((item) => item.identity !== entry.identity);
+    if (typeof state.persistRecentProblems === "function") {
+      state.persistRecentProblems();
+    }
+    treeProvider.refresh();
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.openRecentProblemWorkspace", async (entry) => {
+    if (!entry) {
+      return;
+    }
+    const contest = entry.contestId ? { id: entry.contestId, title: entry.contestTitle || "" } : null;
+    try {
+      const workspace = await findExistingProblemWorkspace(
+        entry.problem || { id: entry.problemId, display_id: entry.displayId, title: entry.title },
+        contest,
+        { baseUrl: entry.baseUrl }
+      );
+      if (!workspace || !workspace.problemDir) {
+        vscode.window.showInformationMessage("这道题还没有本地目录，先打开题目并「开始作答」。");
+        return;
+      }
+      await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(workspace.problemDir));
+    } catch (error) {
+      await handleXmuojError(error, state, client, treeProvider, { offerLogin: false });
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.startWorkingOnTreeProblem", async (item) => {
+    if (!item) {
+      return;
+    }
+    const entry = item.entry || item;
+    const problem = item.problem || entry.problem || {
+      id: entry.problemId,
+      display_id: entry.displayId || entry.display_id,
+      title: entry.title
+    };
+    const contest = item.contest
+      || (entry.contestId ? (getContestById(state, entry.contestId) || { id: entry.contestId, title: entry.contestTitle }) : null);
+    if (!problem || problem.id === undefined || problem.id === null) {
+      return;
+    }
+    try {
+      // 先拿完整题目详情（语言列表、测试数据开关等），失败时退回树上的精简数据
+      let detail = problem;
+      try {
+        detail = await client.getProblemWorkspace(problem.id, contest ? contest.id : undefined, contest ? resolveContestPassword(state, contest.id) : undefined);
+      } catch (_error) {
+        /* 离线时用缓存数据继续 */
+      }
+      await startWorkingOnProblem(context, client, state, outputChannel, detail, contest);
+      treeProvider.refresh();
+    } catch (error) {
+      await handleXmuojError(error, state, client, treeProvider);
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.refreshExplorer", async () => {
+    const root = store.normalizeWorkspaceRootPath(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "");
+    if (root) {
+      try {
+        state.workspaceIndex = (await store.ensureWorkspaceIndex(root, { baseUrl: client.baseUrl })).index;
+      } catch (error) {
+        outputChannel.appendLine(`刷新本地索引失败：${error.message}`);
+      }
+    }
+    treeProvider.refresh();
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.openSettings", async () => {
+    const root = store.normalizeWorkspaceRootPath(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "");
+    const items = [
+      state.user
+        ? { label: "$(sign-out) 退出登录", description: state.user.username, value: "logout" }
+        : { label: "$(account) 登录 XMUOJ", value: "login" },
+      { label: "$(folder) 选择本地工作区目录", description: root || "尚未设置", value: "workspace" },
+      { label: "$(sync) 迁移旧题目目录到 problems/", value: "migrate" },
+      { label: "$(history) 回滚上一次目录迁移", value: "rollback" },
+      { label: "$(refresh) 重建本地题目索引", value: "rebuild" },
+      { label: "$(cloud-download) 检查扩展更新", value: "update" },
+      { label: "$(clear-all) 清除最近搜索", value: "clearSearch" }
+    ];
+    const picked = await vscode.window.showQuickPick(items, {
+      title: "XMUOJ 账户与设置",
+      placeHolder: "选择要执行的操作",
+      ignoreFocusOut: true
+    });
+    if (!picked) {
+      return;
+    }
+    try {
+      if (picked.value === "login") {
+        await vscode.commands.executeCommand("xmuoj.login");
+      } else if (picked.value === "logout") {
+        await vscode.commands.executeCommand("xmuoj.logout");
+      } else if (picked.value === "workspace") {
+        await vscode.commands.executeCommand("xmuoj.createProblemWorkspace");
+      } else if (picked.value === "migrate") {
+        await vscode.commands.executeCommand("xmuoj.migrateWorkspaces");
+      } else if (picked.value === "rollback") {
+        await vscode.commands.executeCommand("xmuoj.rollbackWorkspaceMigration");
+      } else if (picked.value === "rebuild") {
+        await vscode.commands.executeCommand("xmuoj.rebuildWorkspaceIndex");
+      } else if (picked.value === "update") {
+        await vscode.commands.executeCommand("xmuoj.checkForUpdates");
+      } else if (picked.value === "clearSearch") {
+        state.recentSearches = [];
+        await context.globalState.update(RECENT_SEARCHES_KEY, []);
+        vscode.window.showInformationMessage("已清除最近搜索。");
+      }
+    } catch (error) {
+      await handleXmuojError(error, state, client, treeProvider, { offerLogin: false });
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.retryBootstrap", async () => {
+    state.authState = "checking";
+    updateStatusBars(state, userStatusBar, contestStatusBar, client);
+    bootstrapRetryAttempts = 0;
+    await syncBootstrap(true);
+    if (state.authState === "offline") {
+      vscode.window.showWarningMessage("仍然无法连接 XMUOJ，可继续离线使用本地题目。");
+    } else if (state.authState === "authenticated") {
+      vscode.window.showInformationMessage(`已重新连接：${state.user.username}`);
     }
   }));
 
@@ -4581,10 +5144,14 @@ function activate(context) {
     }
     const finishLogin = async (result) => {
       state.user = result.user;
+      state.authState = "authenticated";
+      state.lastUser = { username: result.user.username };
       await context.globalState.update(LAST_USERNAME_KEY, username).catch(() => null);
+      await context.globalState.update(LAST_USER_KEY, state.lastUser).catch(() => null);
       codeLensProvider.setUser(state.user);
       updateStatusBars(state, userStatusBar, contestStatusBar, client);
       treeProvider.refresh();
+      await preloadContestPasswords(context, state).catch(() => null);
       await refreshProblemPanel(state, client);
       vscode.window.showInformationMessage(`已登录：${result.user.username}`);
     };
@@ -4610,14 +5177,340 @@ function activate(context) {
     }
   }));
 
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.forgetContestPassword", async () => {
+    if (!context.secrets) {
+      return;
+    }
+    const ids = Array.from(new Set(
+      Object.keys(state.contestPasswords || {})
+        .concat((state.openContestWorkspaces || [])
+          .map((entry) => entry && entry.contest && entry.contest.id !== undefined ? String(entry.contest.id) : null)
+          .filter(Boolean))
+    ));
+    if (!ids.length) {
+      vscode.window.showInformationMessage("没有已记住的实验密码。");
+      return;
+    }
+    const picked = await vscode.window.showQuickPick(
+      ids.map((id) => {
+        const entry = (state.openContestWorkspaces || []).find((item) => item.contest && String(item.contest.id) === id);
+        return {
+          label: entry ? entry.contest.title : `实验 ${id}`,
+          description: `#${id}`,
+          contestId: id
+        };
+      }),
+      { title: "忘记实验密码", placeHolder: "选择要清除密码的实验" }
+    );
+    if (!picked) {
+      return;
+    }
+    const username = state.user && state.user.username;
+    if (username) {
+      await Promise.resolve(context.secrets.delete(contestPasswordSecretKey(username, picked.contestId))).catch(() => null);
+    }
+    delete state.contestPasswords[picked.contestId];
+    state.openContestWorkspaces = (state.openContestWorkspaces || []).map((entry) => (
+      entry && entry.contest && String(entry.contest.id) === picked.contestId
+        ? Object.assign({}, entry, { contestPassword: "" })
+        : entry
+    ));
+    state.persistOpenContests();
+    treeProvider.refresh();
+    vscode.window.showInformationMessage(`已清除「${picked.label}」的实验密码。`);
+  }));
+
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.logout", async () => {
+    const username = state.user && state.user.username ? state.user.username : (state.lastUser && state.lastUser.username);
+    if (username && context.secrets) {
+      const ids = new Set(Object.keys(state.contestPasswords || {}));
+      for (const entry of state.openContestWorkspaces || []) {
+        if (entry && entry.contest && entry.contest.id !== undefined && entry.contest.id !== null) {
+          ids.add(String(entry.contest.id));
+        }
+      }
+      for (const contestId of ids) {
+        await Promise.resolve(context.secrets.delete(contestPasswordSecretKey(username, contestId))).catch(() => null);
+      }
+    }
     await client.logout();
     state.user = null;
+    state.authState = "loggedOut";
+    state.lastUser = null;
+    state.contestPassword = "";
+    state.contestPasswords = {};
+    await context.globalState.update(LAST_USER_KEY, null).catch(() => null);
     codeLensProvider.setUser(state.user);
     updateStatusBars(state, userStatusBar, contestStatusBar, client);
     treeProvider.refresh();
     await refreshProblemPanel(state, client);
     vscode.window.showInformationMessage("已清除 XMUOJ 登录令牌");
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.search", async () => {
+    const localEntries = search.collectLocalEntries(state.workspaceIndex);
+    const quickPick = vscode.window.createQuickPick();
+    quickPick.title = "XMUOJ 搜索";
+    quickPick.placeholder = "输入题号、标题或关键词；本地结果即时过滤，在线结果自动搜索";
+    quickPick.matchOnDescription = true;
+    quickPick.matchOnDetail = true;
+    quickPick.ignoreFocusOut = true;
+
+    let requestSeq = 0;
+    let searchTimer = null;
+    let online = { problems: [], contests: [], problemsError: null, contestsError: null, keyword: null, loading: false };
+
+    const progressFor = (entry) => getProblemProgressSummary(resolveProblemProgress(state.problemProgress, {
+      key: buildProblemProgressKey(entry.baseUrl || state.baseUrl, entry.problemId),
+      baseUrl: entry.baseUrl || state.baseUrl,
+      problemId: entry.problemId,
+      contestId: entry.contestId
+    }));
+
+    function buildItems(keyword) {
+      const items = [];
+      const trimmed = keyword.trim();
+      if (!trimmed) {
+        const recents = (state.recentSearches || []).slice(0, 10);
+        if (recents.length) {
+          items.push({ label: "最近搜索", kind: vscode.QuickPickItemKind.Separator });
+          for (const value of recents) {
+            items.push({
+              label: `$(history) ${value}`,
+              payload: { type: "recentSearch", value }
+            });
+          }
+        }
+        items.push({ label: "本地工作区", kind: vscode.QuickPickItemKind.Separator });
+        if (!localEntries.length) {
+          items.push({
+            label: "本地还没有题目目录",
+            description: "搜索在线题目开始刷题",
+            payload: null
+          });
+        }
+        for (const entry of localEntries.slice(0, 50)) {
+          items.push(localItem(entry));
+        }
+        return items;
+      }
+
+      const matched = search.filterLocalWorkspaces(localEntries, trimmed);
+      if (matched.length) {
+        items.push({ label: "本地工作区", kind: vscode.QuickPickItemKind.Separator });
+        for (const entry of matched.slice(0, 30)) {
+          items.push(localItem(entry));
+        }
+      }
+
+      if (online.keyword === trimmed) {
+        if (online.problems.length) {
+          items.push({ label: "公共题库", kind: vscode.QuickPickItemKind.Separator });
+          for (const problem of online.problems) {
+            items.push({
+              label: `${problem.display_id || problem.id} ${problem.title || ""}`.trim(),
+              description: problem.difficulty || "",
+              detail: `题目 #${problem.id}`,
+              payload: { type: "problem", problem }
+            });
+          }
+        }
+        if (online.contests.length) {
+          items.push({ label: "实验", kind: vscode.QuickPickItemKind.Separator });
+          for (const contest of online.contests) {
+            items.push({
+              label: contest.title || `实验 ${contest.id}`,
+              description: getContestStatusLabel(contest),
+              detail: contest.require_password ? `#${contest.id} · 需要密码` : `#${contest.id}`,
+              payload: { type: "contest", contest }
+            });
+          }
+        }
+        if (online.problemsError || online.contestsError) {
+          items.push({
+            label: "$(cloud-offline) 在线搜索暂不可用",
+            description: "可继续使用本地结果",
+            payload: null
+          });
+        } else if (!online.problems.length && !online.contests.length) {
+          items.push({
+            label: "在线没有匹配结果",
+            description: "换个关键词，或使用本地工作区结果",
+            payload: null
+          });
+        }
+      } else if (!matched.length) {
+        items.push({
+          label: online.loading ? "$(loading~spin) 正在搜索…" : "$(search) 按回车立即搜索在线题库",
+          payload: null
+        });
+      }
+
+      items.push({ label: "操作", kind: vscode.QuickPickItemKind.Separator });
+      items.push({
+        label: "$(book) 在公共题库中继续浏览",
+        description: `关键词：${trimmed}`,
+        payload: { type: "browse" }
+      });
+      return items;
+    }
+
+    function localItem(entry) {
+      return {
+        label: `${entry.displayId || entry.problemId} ${entry.title || ""}`.trim(),
+        description: `${entry.contestTitle || "公共题库"} · ${progressFor(entry)}`,
+        detail: entry.dir || undefined,
+        payload: { type: "local", entry },
+        buttons: [{ iconPath: new vscode.ThemeIcon("play"), tooltip: "开始作答" }]
+      };
+    }
+
+    quickPick.items = buildItems("");
+
+    quickPick.onDidChangeValue((value) => {
+      if (searchTimer) {
+        clearTimeout(searchTimer);
+        searchTimer = null;
+      }
+      quickPick.items = buildItems(value);
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return;
+      }
+      searchTimer = setTimeout(() => {
+        runOnlineSearch(trimmed);
+      }, 500);
+    });
+
+    async function runOnlineSearch(keyword) {
+      const seq = ++requestSeq;
+      online = Object.assign({}, online, { loading: true, keyword });
+      if (!quickPick.visible) {
+        return;
+      }
+      quickPick.items = buildItems(quickPick.value);
+      const result = await search.searchOnline(client, keyword, { problemsLimit: 30, contestsLimit: 20 }).catch((error) => ({
+        problems: [],
+        contests: [],
+        problemsError: error,
+        contestsError: error
+      }));
+      if (seq !== requestSeq || quickPick.value.trim() !== keyword) {
+        return;
+      }
+      online = Object.assign({}, result, { keyword, loading: false });
+      if (quickPick.visible) {
+        quickPick.items = buildItems(quickPick.value);
+      }
+    }
+
+    function rememberSearch(keyword) {
+      const trimmed = String(keyword || "").trim();
+      if (!trimmed) {
+        return;
+      }
+      state.recentSearches = [trimmed, ...(state.recentSearches || []).filter((item) => item !== trimmed)].slice(0, 10);
+      context.globalState.update(RECENT_SEARCHES_KEY, state.recentSearches).catch(() => null);
+    }
+
+    quickPick.onDidTriggerItemButton(async (event) => {
+      const payload = event.item && event.item.payload;
+      if (!payload || payload.type !== "local") {
+        return;
+      }
+      quickPick.hide();
+      try {
+        const entry = payload.entry;
+        const contest = entry.contestId
+          ? (getContestById(state, entry.contestId) || { id: entry.contestId, title: entry.contestTitle || "" })
+          : null;
+        let detail = { id: entry.problemId, display_id: entry.displayId, title: entry.title };
+        try {
+          detail = await client.getProblemWorkspace(entry.problemId, contest ? contest.id : undefined, contest ? resolveContestPassword(state, contest.id) : undefined);
+        } catch (_error) {
+          /* 离线时用索引数据继续 */
+        }
+        await startWorkingOnProblem(context, client, state, outputChannel, detail, contest);
+        treeProvider.refresh();
+      } catch (error) {
+        await handleXmuojError(error, state, client, treeProvider);
+      }
+    });
+
+    quickPick.onDidAccept(async () => {
+      const selected = quickPick.selectedItems[0];
+      const payload = selected && selected.payload;
+      const acceptKeyword = quickPick.value.trim();
+      if (!payload) {
+        // 回车立即搜索：不等待防抖计时器
+        if (acceptKeyword && online.keyword !== acceptKeyword) {
+          await runOnlineSearch(acceptKeyword);
+        }
+        return;
+      }
+      if (payload.type === "recentSearch") {
+        quickPick.value = payload.value;
+        return;
+      }
+      quickPick.hide();
+      if (payload.type === "browse") {
+        await vscode.commands.executeCommand("xmuoj.browseProblemset");
+        return;
+      }
+      try {
+        if (payload.type === "local") {
+          rememberSearch(quickPick.value);
+          const entry = payload.entry;
+          const contest = entry.contestId
+            ? (getContestById(state, entry.contestId) || { id: entry.contestId, title: entry.contestTitle || "" })
+            : null;
+          await openProblemDetail(
+            client,
+            state,
+            { id: entry.problemId, display_id: entry.displayId, title: entry.title },
+            contest,
+            contest ? resolveContestPassword(state, contest.id) : ""
+          );
+          updateStatusBars(state, userStatusBar, contestStatusBar, client);
+          treeProvider.refresh();
+          return;
+        }
+        if (payload.type === "problem") {
+          rememberSearch(quickPick.value);
+          clearContestContext(state);
+          const detail = await openProblemDetail(client, state, payload.problem, null, "");
+          upsertProblemsetSelection(state, detail, client.baseUrl);
+          await persistProblemsetSelections(context, state);
+          updateStatusBars(state, userStatusBar, contestStatusBar, client);
+          treeProvider.refresh();
+          return;
+        }
+        if (payload.type === "contest") {
+          rememberSearch(quickPick.value);
+          const rememberedPassword = resolveContestPassword(state, payload.contest.id);
+          const contestPassword = payload.contest.require_password && !rememberedPassword
+            ? await vscode.window.showInputBox({ prompt: "请输入比赛密码", password: true, ignoreFocusOut: true })
+            : rememberedPassword;
+          if (payload.contest.require_password && !contestPassword) {
+            return;
+          }
+          await loadContestWorkspace(context, client, state, treeProvider, payload.contest.id, contestPassword || "");
+          updateStatusBars(state, userStatusBar, contestStatusBar, client);
+          treeProvider.refresh();
+        }
+      } catch (error) {
+        await handleXmuojError(error, state, client, treeProvider);
+      }
+    });
+
+    quickPick.onDidHide(() => {
+      if (searchTimer) {
+        clearTimeout(searchTimer);
+      }
+      requestSeq += 1;
+      quickPick.dispose();
+    });
+    quickPick.show();
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.browseContests", async () => {
@@ -4643,9 +5536,10 @@ function activate(context) {
       if (!pick) {
         return;
       }
-      const contestPassword = pick.contest.require_password
+      const rememberedPassword = resolveContestPassword(state, pick.contest.id);
+      const contestPassword = pick.contest.require_password && !rememberedPassword
         ? await vscode.window.showInputBox({ prompt: "请输入比赛密码", password: true, ignoreFocusOut: true })
-        : "";
+        : rememberedPassword;
       const workspace = await loadContestWorkspace(context, client, state, treeProvider, pick.contest.id, contestPassword || "");
       updateStatusBars(state, userStatusBar, contestStatusBar, client);
       await focusExplorerView();
@@ -4675,7 +5569,8 @@ function activate(context) {
       return;
     }
     const contestId = extractContestId(input);
-    const contestPassword = await vscode.window.showInputBox({
+    const rememberedPassword = resolveContestPassword(state, contestId);
+    const contestPassword = rememberedPassword || await vscode.window.showInputBox({
       prompt: "如果比赛需要密码，请输入比赛密码",
       password: true,
       ignoreFocusOut: true
@@ -4739,34 +5634,34 @@ function activate(context) {
       vscode.window.showWarningMessage("当前没有可用的实验信息");
       return;
     }
-    const root = String(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "").trim();
+    const root = store.normalizeWorkspaceRootPath(
+      String(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "").trim()
+    );
     if (!root) {
-      vscode.window.showWarningMessage("请先在「设置」里选择本地工作区根目录。");
+      vscode.window.showWarningMessage("请先在命令面板执行「XMUOJ：快速开始」选择本地工作区根目录。");
       return;
     }
-    const contestDir = path.join(root, `contest-${contest.id}`);
-    try {
-      await fs.access(contestDir);
-    } catch (_error) {
-      vscode.window.showWarningMessage(`在本地工作区中尚未找到「contest-${contest.id}」目录，请先生成本地题目。`);
-      return;
-    }
-    const uri = vscode.Uri.file(contestDir);
+    // v0.1.0 起实验题与公共题统一放在 root/problems/ 下，实验信息保存在元数据里
+    const problemsDir = path.join(root, PROBLEMS_DIR_NAME);
+    await fs.mkdir(problemsDir, { recursive: true });
+    const uri = vscode.Uri.file(problemsDir);
     await vscode.commands.executeCommand("revealFileInOS", uri);
-    vscode.window.showInformationMessage(`实验「${contest.title || contest.id}」目录：${contestDir}`);
+    vscode.window.showInformationMessage(`题目目录：${problemsDir}`);
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.revealProblemsetWorkspace", async () => {
-    const root = String(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "").trim();
+    const root = store.normalizeWorkspaceRootPath(
+      String(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "").trim()
+    );
     if (!root) {
-      vscode.window.showWarningMessage("请先在「设置」里选择本地工作区根目录。");
+      vscode.window.showWarningMessage("请先在命令面板执行「XMUOJ：快速开始」选择本地工作区根目录。");
       return;
     }
-    const problemsetDir = path.join(root, PROBLEMSET_DIR_NAME);
-    await fs.mkdir(problemsetDir, { recursive: true });
-    const uri = vscode.Uri.file(problemsetDir);
+    const problemsDir = path.join(root, PROBLEMS_DIR_NAME);
+    await fs.mkdir(problemsDir, { recursive: true });
+    const uri = vscode.Uri.file(problemsDir);
     await vscode.commands.executeCommand("revealFileInOS", uri);
-    vscode.window.showInformationMessage(`题库目录：${problemsetDir}`);
+    vscode.window.showInformationMessage(`题库目录：${problemsDir}`);
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.openProblem", async (problem) => {
@@ -4923,6 +5818,9 @@ function activate(context) {
         return;
       }
       state.openContestWorkspaces = current.filter((item) => item.key !== picked.value.key);
+    }
+    if (typeof state.persistOpenContests === "function") {
+      state.persistOpenContests();
     }
     treeProvider.refresh();
   }));
@@ -5184,6 +6082,10 @@ function activate(context) {
           lastLocalTotal: summary.total
         }
       );
+      updateRecentProblemResult(state, metadataContext.metadata.problemId, metadataContext.metadata.baseUrl || client.baseUrl, {
+        lastLocalSummary: `${summary.passed}/${summary.total}`,
+        localPassed: summary.failed === 0
+      });
       await showLocalReportPanel(context, state, client, report);
       treeProvider.refresh();
       await refreshProblemPanel(state, client);
@@ -5344,6 +6246,10 @@ function activate(context) {
             accepted: isAcceptedSubmissionResult(result)
           }
         );
+        updateRecentProblemResult(state, problemId, submissionResult.baseUrl, {
+          lastResultLabel: result.result_label,
+          accepted: isAcceptedSubmissionResult(result)
+        });
         await showSubmissionResultPanel(context, state, client, submissionResult);
         treeProvider.refresh();
         await refreshProblemPanel(state, client);

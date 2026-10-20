@@ -14,3 +14,7 @@ test/**
 main
 temp-old-vsix/**
 scripts/**
+
+.playwright-mcp/**
+PR_DESCRIPTION_xmuoj_vscode.md
+RELEASE_PROCESS.md
