@@ -3187,6 +3187,16 @@ async function resolveSourceContext(client, state, problem = null, contest = nul
     } catch (error) {
       existingWorkspace = null;
     }
+    // 目录被复制、改名或题目标题变化后，路径可能命中另一题的 .xmuoj.json；
+    // 元数据带题目编号时必须与目标题目一致，否则宁可继续走编辑器候选。
+    const metadata = existingWorkspace && existingWorkspace.metadata;
+    const metadataProblemId = metadata && metadata.problemId;
+    const targetProblemId = targetProblem && targetProblem.id;
+    if (metadataProblemId !== undefined && metadataProblemId !== null && metadataProblemId !== ""
+      && targetProblemId !== undefined && targetProblemId !== null
+      && !metadataMatchesProblem(metadata, targetProblem, targetContest)) {
+      existingWorkspace = null;
+    }
   }
 
   const candidatePaths = [];
@@ -3564,7 +3574,7 @@ async function startWorkingOnProblem(context, client, state, outputChannel, prob
   let workspaceJustCreated = false;
   if (!workspace) {
     try {
-      const createdWorkspace = await ensureLocalProblemWorkspace(client, state, problem, outputChannel);
+      const createdWorkspace = await ensureLocalProblemWorkspace(client, state, problem, outputChannel, { contest });
       if (!createdWorkspace) {
         return null;
       }
@@ -3609,7 +3619,7 @@ async function startWorkingOnProblem(context, client, state, outputChannel, prob
           return;
         }
         try {
-          await ensureTestCasesAvailable(client, state, outputChannel, workspace.problemDir, problem);
+          await ensureTestCasesAvailable(client, state, outputChannel, workspace.problemDir, problem, contest);
         } catch (error) {
           vscode.window.showWarningMessage(`下载测试数据失败：${error.message}，但本地工作区已创建成功`);
         }
@@ -3623,15 +3633,17 @@ async function startWorkingOnProblem(context, client, state, outputChannel, prob
 
 /**
  * 生成 XMUOJ 站点上的题目页地址：
- * - 比赛题目：/contest/<contestId>/problem/<problemId>/
- * - 公共题目：/problem/<problemId>
+ * - 比赛题目：/contest/<contestId>/problem/<displayId>/
+ * - 公共题目：/problem/<displayId>
+ * 站点路由使用的是题目展示号（display_id，如 PTA1.1），不是数据库内部 id。
  */
 function buildOnlineProblemUrl(baseUrl, problem, contest) {
   const origin = String(baseUrl || "").replace(/\/+$/, "");
-  if (!origin || !problem || problem.id === undefined || problem.id === null || problem.id === "") {
+  const displayId = problem && (problem.display_id || problem.displayId);
+  if (!origin || displayId === undefined || displayId === null || displayId === "") {
     return "";
   }
-  const problemId = encodeURIComponent(String(problem.id));
+  const problemId = encodeURIComponent(String(displayId));
   const contestId = contest && contest.id !== undefined && contest.id !== null && contest.id !== ""
     ? encodeURIComponent(String(contest.id))
     : "";
@@ -4139,7 +4151,7 @@ async function materializeContestWorkspace(context, client, state, outputChannel
           });
           if (downloadChoice.download && detail.can_download_test_case) {
             try {
-              await ensureTestCasesAvailable(client, state, outputChannel, workspace.problemDir, detail);
+              await ensureTestCasesAvailable(client, state, outputChannel, workspace.problemDir, detail, state.contestWorkspace ? state.contestWorkspace.contest : null);
             } catch (error) {
               outputChannel.appendLine(`${detail.display_id} 下载测试数据失败：${error.message}`);
             }
