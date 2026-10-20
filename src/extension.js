@@ -61,7 +61,14 @@ function setLastUsedLanguage(language) {
   extensionContext.globalState.update(LAST_LANGUAGE_KEY, language).catch(() => null);
 }
 const LANGUAGE_PRIORITY = ["C++", "Python3", "Java", "C"];
-const ACCEPTED_RESULTS = new Set(["Accepted", "AC"]);
+const ACCEPTED_RESULT_LABELS = new Set(["accepted", "ac"]);
+/** 后端 label 大小写不稳定，Accepted 判定统一按小写比较。 */
+function isAcceptedResultLabel(label) {
+  return ACCEPTED_RESULT_LABELS.has(String(label || "").trim().toLowerCase());
+}
+function isAcceptedSubmissionResult(result) {
+  return isAcceptedResultLabel(result && result.result_label);
+}
 const VERSION_CHECK_INTERVAL = 24 * 60 * 60 * 1000;
 const LAST_VERSION_CHECK_KEY = "xmuoj.lastVersionCheck";
 const LOCAL_LANGUAGE_FILE_CANDIDATES = {
@@ -1979,15 +1986,15 @@ function getSubmissionStatusPresentation(result) {
     }
   };
   return mapping[normalized] || {
-    tone: ACCEPTED_RESULTS.has(label) ? "success" : "warning",
+    tone: isAcceptedResultLabel(label) ? "success" : "warning",
     title: label || "评测结果",
-    explanation: ACCEPTED_RESULTS.has(label) ? "" : "请结合下面的错误信息继续排查。"
+    explanation: isAcceptedResultLabel(label) ? "" : "请结合下面的错误信息继续排查。"
   };
 }
 
 function getSubmissionVisualVariant(result) {
   const label = String(result && result.result_label ? result.result_label : "").trim().toLowerCase();
-  if (ACCEPTED_RESULTS.has(String(result && result.result_label ? result.result_label : ""))) {
+  if (isAcceptedSubmissionResult(result)) {
     return "accepted";
   }
   if (["compile error", "ce"].includes(label)) {
@@ -2098,7 +2105,7 @@ function renderDiagnosticBlock(title, content, tone = "neutral", expanded = fals
 
 function renderSubmissionResultSection(result) {
   const status = getSubmissionStatusPresentation(result);
-  const accepted = ACCEPTED_RESULTS.has(result.result_label);
+  const accepted = isAcceptedSubmissionResult(result);
   const pending = isPendingSubmissionResult(result);
   // 结果卡已经给出结论；通过或仍在判题时没有可补充的详情。
   if (accepted || pending) {
@@ -5112,7 +5119,7 @@ function activate(context) {
             sourceFile: path.basename(sourcePath),
             lastSubmissionId: result.id,
             lastSubmissionLabel: result.result_label,
-            accepted: ACCEPTED_RESULTS.has(result.result_label)
+            accepted: isAcceptedSubmissionResult(result)
           }
         );
         await showSubmissionResultPanel(context, state, client, submissionResult);
