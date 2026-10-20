@@ -58,6 +58,14 @@ async function main() {
     assert.ok(store.buildProblemDirName({ display_id: "1/2", title: "x" }).includes("1-2"));
   });
 
+  await check("目录名：shell 危险字符替换为全角（! $ 反引号）", () => {
+    const dirName = store.buildProblemDirName({ display_id: "PTA7.3", title: "求 1!+2!+3!+...+n!" });
+    assert.strictEqual(dirName, "PTA7.3-求-1！+2！+3！+...+n！");
+    assert.strictEqual(store.hasShellUnsafeChars("PTA7.3-求-1!+2!"), true);
+    assert.strictEqual(store.hasShellUnsafeChars(dirName), false);
+    assert.strictEqual(store.sanitizeShellUnsafeName("a!b$c`d"), "a！b＄c｀d");
+  });
+
   await check("身份键规范化", () => {
     assert.strictEqual(store.buildProblemIdentity("http://xmuoj.com/", 10220), "http://xmuoj.com::10220");
     assert.strictEqual(store.buildProblemIdentity("http://xmuoj.com", "10220"), "http://xmuoj.com::10220");

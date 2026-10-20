@@ -4410,6 +4410,45 @@ function isAnyDocumentInside(directory) {
  * 启动扫盘（学生提议）：只读扫描本地题目目录，重建索引与「我的实验」；
  * 需要时在后台执行一次旧布局迁移（可取消，失败不阻断）。
  */
+async function listShellUnsafeProblemDirs(root) {
+  try {
+    const entries = await fs.readdir(path.join(root, store.PROBLEMS_DIR_NAME), { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory() && store.hasShellUnsafeChars(entry.name))
+      .map((entry) => entry.name);
+  } catch (_error) {
+    return [];
+  }
+}
+
+/**
+ * 启动时提示含有 shell 危险字符的目录名（! / $ / 反引号）。
+ * 同一批目录名只提示一次，避免每次启动都弹窗。
+ */
+async function warnShellUnsafeProblemDirs(context, root) {
+  const names = await listShellUnsafeProblemDirs(root);
+  if (!names.length) {
+    return;
+  }
+  const notified = context.globalState.get(UNSAFE_DIR_NOTICE_KEY, []);
+  const fresh = names.filter((name) => !notified.includes(name));
+  if (!fresh.length) {
+    return;
+  }
+  const action = await vscode.window.showWarningMessage(
+    `发现 ${names.length} 个题目目录名包含 !、$ 或反引号，VS Code 的“运行/调试”按钮会执行失败。`,
+    "立即修复",
+    "稍后"
+  );
+  if (action === "立即修复") {
+    await vscode.commands.executeCommand("xmuoj.fixProblemDirectoryNames");
+    return;
+  }
+  if (action === "稍后") {
+    await context.globalState.update(UNSAFE_DIR_NOTICE_KEY, names.concat(notified).slice(0, 50));
+  }
+}
+
 async function runWorkspaceScanAndMigration(context, state, client, outputChannel, treeProvider) {
   const config = vscode.workspace.getConfiguration("xmuoj");
   const root = store.normalizeWorkspaceRootPath(config.get("localWorkspaceRoot", "") || "");
@@ -4436,6 +4475,7 @@ async function runWorkspaceScanAndMigration(context, state, client, outputChanne
 
   if (config.get("autoMigrate", true) === false) {
     treeProvider.refresh();
+    await warnShellUnsafeProblemDirs(context, root);
     return;
   }
 
@@ -4484,10 +4524,12 @@ async function runWorkspaceScanAndMigration(context, state, client, outputChanne
     /* 索引失败时保留原状态 */
   }
   treeProvider.refresh();
+  await warnShellUnsafeProblemDirs(context, root);
 }
 
 const MAX_RECENT_PROBLEMS = 10;
 const MAX_OPEN_CONTESTS = 12;
+const UNSAFE_DIR_NOTICE_KEY = "xmuoj.unsafeDirNotices";
 
 function serializeContestEntry(entry) {
   if (!entry || !entry.contest) {
@@ -4974,6 +5016,113 @@ function activate(context) {
     }
   }));
 
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.fixProblemDirectoryNames", async () => {
+    const root = store.normalizeWorkspaceRootPath(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "");
+    if (!root) {
+      vscode.window.showWarningMessage("请先配置本地工作区目录。");
+      return;
+    }
+    const problemsDir = path.join(root, store.PROBLEMS_DIR_NAME);
+    let entries = [];
+    try {
+      entries = await fs.readdir(problemsDir, { withFileTypes: true });
+    } catch (_error) {
+      vscode.window.showInformationMessage("还没有本地题目目录。");
+      return;
+    }
+    const unsafeDirs = entries.filter((entry) => entry.isDirectory() && store.hasShellUnsafeChars(entry.name));
+    if (!unsafeDirs.length) {
+      vscode.window.showInformationMessage("没有需要修复的题目目录名。");
+      return;
+    }
+    const confirm = await vscode.window.showWarningMessage(
+      `发现 ${unsafeDirs.length} 个题目目录名包含 !、$ 或反引号，VS Code 的“运行/调试”按钮会执行失败。`,
+      {
+        modal: true,
+        detail: "改名会把危险字符换成全角等价字符，并同步更新索引与任务配置。正在编辑的题目会跳过，关闭文件后可再次执行。"
+      },
+      "开始修复"
+    );
+    if (confirm !== "开始修复") {
+      return;
+    }
+    let renamed = 0;
+    let skipped = 0;
+    let failed = 0;
+    const problems = [];
+    try {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "正在修复题目目录名",
+          cancellable: true
+        },
+        async (progress, token) => {
+          let processed = 0;
+          for (const entry of unsafeDirs) {
+            if (token && token.isCancellationRequested) {
+              break;
+            }
+            processed += 1;
+            progress.report({ message: `${processed}/${unsafeDirs.length} ${entry.name}` });
+            const oldDir = path.join(problemsDir, entry.name);
+            if (isAnyDocumentInside(oldDir)) {
+              skipped += 1;
+              continue;
+            }
+            const baseName = store.sanitizeShellUnsafeName(entry.name);
+            let target = path.join(problemsDir, baseName);
+            let attempt = 2;
+            while (await store.pathExists(target)) {
+              target = path.join(problemsDir, `${baseName}-${attempt}`);
+              attempt += 1;
+            }
+            try {
+              await fs.rename(oldDir, target);
+            } catch (error) {
+              failed += 1;
+              problems.push(`${entry.name}：${error.message}`);
+              continue;
+            }
+            renamed += 1;
+            const read = await store.readProblemMetadata(target, { baseUrl: client.baseUrl });
+            if (read && read.exists && read.metadata && read.metadata.identity) {
+              try {
+                await store.updateWorkspaceIndexEntries(root, [{
+                  identity: read.metadata.identity,
+                  entry: store.buildIndexEntry(store.toPosixRelative(root, target), read.metadata)
+                }]);
+              } catch (_error) {
+                /* 索引随后会整体重建 */
+              }
+              try {
+                if (await store.pathExists(path.join(root, ".vscode", "tasks.json"))) {
+                  await createWorkspaceTasksBatch(root, [{ problemDir: target, metadata: read.metadata }]);
+                }
+              } catch (_error) {
+                /* 任务文件更新失败不影响改名 */
+              }
+            }
+          }
+        }
+      );
+    } catch (error) {
+      await handleXmuojError(error, state, client, treeProvider, { offerLogin: false });
+      return;
+    }
+    try {
+      state.workspaceIndex = (await store.ensureWorkspaceIndex(root, { baseUrl: client.baseUrl, force: true })).index;
+    } catch (_error) {
+      /* 索引重建失败时保留原状态 */
+    }
+    treeProvider.refresh();
+    outputChannel.appendLine(`题目目录名修复：改名 ${renamed}，跳过 ${skipped}，失败 ${failed}${problems.length ? `；${problems.join("；")}` : ""}`);
+    vscode.window.showInformationMessage(`题目目录名修复完成：改名 ${renamed}，跳过 ${skipped}，失败 ${failed}。`);
+    if (skipped) {
+      vscode.window.showWarningMessage(`有 ${skipped} 个目录正在编辑中，关闭对应文件后再次执行“XMUOJ：修复题目目录名”。`);
+    }
+  }));
+
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.openRecentProblem", async (entry) => {
     if (!entry || entry.problemId === undefined || entry.problemId === null) {
       return;
@@ -5080,6 +5229,7 @@ function activate(context) {
       { label: "$(sync) 迁移旧题目目录到 problems/", value: "migrate" },
       { label: "$(history) 回滚上一次目录迁移", value: "rollback" },
       { label: "$(refresh) 重建本地题目索引", value: "rebuild" },
+      { label: "$(tools) 修复题目目录名（! / $ 等字符）", value: "fixNames" },
       { label: "$(cloud-download) 检查扩展更新", value: "update" },
       { label: "$(clear-all) 清除最近搜索", value: "clearSearch" }
     ];
@@ -5104,6 +5254,8 @@ function activate(context) {
         await vscode.commands.executeCommand("xmuoj.rollbackWorkspaceMigration");
       } else if (picked.value === "rebuild") {
         await vscode.commands.executeCommand("xmuoj.rebuildWorkspaceIndex");
+      } else if (picked.value === "fixNames") {
+        await vscode.commands.executeCommand("xmuoj.fixProblemDirectoryNames");
       } else if (picked.value === "update") {
         await vscode.commands.executeCommand("xmuoj.checkForUpdates");
       } else if (picked.value === "clearSearch") {

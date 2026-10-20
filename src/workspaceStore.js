@@ -41,6 +41,12 @@ const MAX_DIR_NAME_LENGTH = 60;
 const MAX_COLLISION_ATTEMPTS = 200;
 const WINDOWS_RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 const ILLEGAL_SEGMENT_CHARS = /[\\/:*?"<>|\u0000-\u001f\u007f]/g;
+// 这些字符在 zsh/bash 的双引号内仍有特殊含义：! 触发历史展开（event not found），
+// $ 与反引号会做变量/命令替换。VS Code 的“运行/调试”按钮用 `python -u "<路径>"` 启动，
+// 目录名带这些字符会导致命令执行失败，因此统一换成全角等价字符。
+const SHELL_UNSAFE_CHARS = /[!$`]/g;
+const SHELL_UNSAFE_TEST = /[!$`]/;
+const SHELL_SAFE_REPLACEMENTS = { "!": "！", $: "＄", "`": "｀" };
 
 // ---------------------------------------------------------------------------
 // 基础工具
@@ -160,12 +166,22 @@ async function directoryHasEntries(targetPath) {
 // 目录命名
 // ---------------------------------------------------------------------------
 
+function hasShellUnsafeChars(value) {
+  return SHELL_UNSAFE_TEST.test(String(value === undefined || value === null ? "" : value));
+}
+
+/** 只替换 shell 危险字符，不改动目录名的其余部分（用于修复已有目录）。 */
+function sanitizeShellUnsafeName(value) {
+  return String(value === undefined || value === null ? "" : value)
+    .replace(SHELL_UNSAFE_CHARS, (ch) => SHELL_SAFE_REPLACEMENTS[ch]);
+}
+
 /**
  * 保留 Unicode（中文/字母/数字），只把文件系统非法字符、控制字符和连续空白
  * 替换为 `-`；去首尾 `-` 与 `.`。空标题回退为 `problem`。
  */
 function slugifyTitle(title) {
-  let value = String(title === undefined || title === null ? "" : title);
+  let value = sanitizeShellUnsafeName(title);
   value = value
     .replace(ILLEGAL_SEGMENT_CHARS, "-")
     .replace(/\s+/g, "-")
@@ -798,6 +814,8 @@ module.exports = {
   slugifyTitle,
   buildProblemDirName,
   resolveProblemDir,
+  hasShellUnsafeChars,
+  sanitizeShellUnsafeName,
   // 元数据
   normalizeProblemMetadata,
   readProblemMetadata,

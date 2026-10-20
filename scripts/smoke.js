@@ -263,6 +263,7 @@ async function main() {
       "xmuoj.migrateWorkspaces",
       "xmuoj.rollbackWorkspaceMigration",
       "xmuoj.rebuildWorkspaceIndex",
+      "xmuoj.fixProblemDirectoryNames",
       "xmuoj.openSettings",
       "xmuoj.openRecentProblem",
       "xmuoj.forgetContestPassword"

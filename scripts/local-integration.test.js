@@ -436,6 +436,18 @@ async function main() {
     });
     await writeFile(path.join(root, "problemsets", "JD004-集市算账", "main.py"), "print(2)\n");
 
+    // 新布局：目录名带 shell 危险字符（!），运行按钮会失败，应能一键修复
+    await writeJson(path.join(root, "problems", "PTA7.3-求-1!+2!+3!+...+n!", ".xmuoj.json"), {
+      version: 1,
+      problemId: 10223,
+      displayId: "PTA7.3",
+      title: "求 1!+2!+3!+...+n!",
+      language: "Python3",
+      sourceFile: "main.py",
+      createdAt: "2026-09-04T00:00:00.000Z"
+    });
+    await writeFile(path.join(root, "problems", "PTA7.3-求-1!+2!+3!+...+n!", "main.py"), "print(4)\n");
+
     // 无元数据的旧目录：必须原样保留
     await writeFile(path.join(root, "contest-359", "无元数据", "main.py"), "print(3)\n");
 
@@ -495,11 +507,11 @@ async function main() {
     console.log("  ok 元数据升级 v2：身份/实验信息/源码映射保留，v1 已备份");
 
     const index = JSON.parse(await fs.readFile(path.join(root, ".xmuoj", "index.json"), "utf8"));
-    assert.strictEqual(Object.keys(index.entries).length, 3, "索引应包含 3 道题");
+    assert.strictEqual(Object.keys(index.entries).length, 4, "索引应包含 4 道题");
     for (const entry of Object.values(index.entries)) {
       assert.ok(String(entry.dir).startsWith("problems/"), `索引目录应指向 problems/：${entry.dir}`);
     }
-    console.log("  ok 索引重建：3 道题全部指向 problems/");
+    console.log("  ok 索引重建：4 道题全部指向 problems/");
 
     // 2) 侧边栏结构
     const treeProvider = registeredTreeProviders.get("xmuojExplorer");
@@ -530,7 +542,7 @@ async function main() {
     await vscode.commands.executeCommand("xmuoj.search");
     const quickPick = createdQuickPicks[0];
     assert.ok(quickPick, "搜索应创建 QuickPick");
-    assert.strictEqual(localItems(quickPick.items).length, 3, "空关键词应列出 3 道本地题目");
+    assert.strictEqual(localItems(quickPick.items).length, 4, "空关键词应列出 4 道本地题目");
 
     quickPick.value = "算账";
     quickPick._valueEmitter.fire("算账");
@@ -556,7 +568,20 @@ async function main() {
     quickPick.hide();
     console.log("  ok 搜索接受本地结果：写入「最近在做」");
 
-    // 4) 回滚与再次迁移
+    // 4) 修复 shell 危险目录名
+    warningResponder = (message) => (String(message).includes("题目目录名包含") ? "开始修复" : undefined);
+    await vscode.commands.executeCommand("xmuoj.fixProblemDirectoryNames");
+    const fixedDir = path.join(root, "problems", "PTA7.3-求-1！+2！+3！+...+n！");
+    assert.strictEqual(await exists(path.join(fixedDir, "main.py")), true, "改名后源码应保留");
+    assert.strictEqual(await exists(path.join(root, "problems", "PTA7.3-求-1!+2!+3!+...+n!")), false, "原目录应消失");
+    const fixedIndex = JSON.parse(await fs.readFile(path.join(root, ".xmuoj", "index.json"), "utf8"));
+    assert.ok(
+      Object.values(fixedIndex.entries).some((entry) => String(entry.dir).includes("！")),
+      "索引应指向改名后的目录"
+    );
+    console.log("  ok 修复题目目录名：! 替换为全角！，索引同步");
+
+    // 5) 回滚与再次迁移
     warningResponder = (message) => (String(message).includes("移回原目录") ? "回滚迁移" : undefined);
     await vscode.commands.executeCommand("xmuoj.rollbackWorkspaceMigration");
     assert.strictEqual(await exists(path.join(root, "contest-483", "JD001-数组求和", "main.cpp")), true, "回滚后实验题应回到 contest-483");
@@ -570,10 +595,10 @@ async function main() {
     assert.ok(await findProblemDirById(root, 10222), "再次迁移后公共题应回到 problems/");
     console.log("  ok 迁移命令：回滚后可再次迁移");
 
-    // 5) 重建索引
+    // 6) 重建索引
     infoMessages.length = 0;
     await vscode.commands.executeCommand("xmuoj.rebuildWorkspaceIndex");
-    assert.ok(infoMessages.some((message) => String(message).includes("共 3 道题")), "重建索引应报告 3 道题");
+    assert.ok(infoMessages.some((message) => String(message).includes("共 4 道题")), "重建索引应报告 4 道题");
     console.log("  ok 重建索引命令");
 
     extension.deactivate();
@@ -587,7 +612,7 @@ async function main() {
 
     assert.strictEqual(unhandledRejections.length, 0, `存在未捕获 rejection：${unhandledRejections.map((reason) => (reason && reason.message) || reason).join("; ")}`);
 
-    console.log("local-integration OK（11 项）");
+    console.log("local-integration OK（12 项）");
   } finally {
     globalThis.fetch = originalFetch;
     Module._load = originalLoad;

@@ -2,7 +2,7 @@
   "name": "xmuoj-vscode",
   "displayName": "XMUOJ",
   "description": "在VSCode/Trae中提供XMUOJ的沉浸式刷题体验。",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "xmuoj",
   "scripts": {
     "package": "vsce package --allow-missing-repository --skip-license",
@@ -294,6 +294,10 @@
       {
         "command": "xmuoj.rebuildWorkspaceIndex",
         "title": "XMUOJ：重建本地题目索引"
+      },
+      {
+        "command": "xmuoj.fixProblemDirectoryNames",
+        "title": "XMUOJ：修复题目目录名"
       },
       {
         "command": "xmuoj.openRecentProblem",
