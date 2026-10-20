@@ -6,7 +6,7 @@
   "publisher": "xmuoj",
   "scripts": {
     "package": "vsce package --allow-missing-repository --skip-license",
-    "check": "node --check src/aiProvider.js && node --check src/client.js && node --check src/codeLens.js && node --check src/extension.js && node --check src/migration.js && node --check src/problemWorkspace.js && node --check src/progress.js && node --check src/runner.js && node --check src/search.js && node --check src/treeData.js && node --check src/workspaceStore.js && node scripts/workspace-store.test.js && node scripts/workspace-migration.test.js && node scripts/progress.test.js && node scripts/search.test.js && node scripts/smoke.js",
+    "check": "node --check src/aiProvider.js && node --check src/client.js && node --check src/codeLens.js && node --check src/extension.js && node --check src/migration.js && node --check src/problemWorkspace.js && node --check src/progress.js && node --check src/runner.js && node --check src/search.js && node --check src/treeData.js && node --check src/workspaceStore.js && node scripts/workspace-store.test.js && node scripts/workspace-migration.test.js && node scripts/progress.test.js && node scripts/search.test.js && node scripts/local-integration.test.js && node scripts/smoke.js",
     "lint": "echo 'Lint rules are not configured yet'"
   },
   "engines": {
