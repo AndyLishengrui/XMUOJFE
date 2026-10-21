@@ -4,6 +4,9 @@ const vscode = require("vscode");
 
 const { findExistingProblemWorkspace } = require("./problemWorkspace");
 const store = require("./workspaceStore");
+const contestList = require("./contestList");
+const { isQuestionBankContest } = require("./siteApi");
+const { mergeContestMetadata, metadataForContest } = require("./dataMigration");
 const {
   buildProblemProgressKey,
   resolveProblemProgress,
@@ -17,6 +20,23 @@ function isProblemColorizationEnabled() {
 
 function normalizeBaseUrlForKey(baseUrl) {
   return String(baseUrl || "").trim().replace(/\/+$/, "");
+}
+
+/** 题库（教材配套题库）才有竞速；实验/考试都按实验处理。 */
+function isQuestionBankEntry(entry) {
+  return Boolean(entry && entry.contest && isQuestionBankContest(entry.contest));
+}
+
+/**
+ * 扫盘得到的实验只有 id/title，没有 is_question_bank。
+ * 用启动时同步的 contestMetadata 补上服务端标记，离线重启也能正确归类。
+ */
+function withContestMetadata(state, contest) {
+  if (!contest || !state) {
+    return contest;
+  }
+  const metadata = metadataForContest(state.contestMetadata, contest.id);
+  return metadata ? mergeContestMetadata(contest, metadata) : contest;
 }
 
 function resolveProblemProgressScope() {
@@ -53,6 +73,8 @@ function getActionIcon(command) {
     "xmuoj.login": "account",
     "xmuoj.logout": "sign-out",
     "xmuoj.browseContests": "trophy",
+    "xmuoj.browseQuestionBanks": "library",
+    "xmuoj.openContestRace": "rocket",
     "xmuoj.browseProblemset": "library",
     "xmuoj.openProblemsetProblem": "book",
     "xmuoj.manageProblemsetSelections": "list-selection",
@@ -163,8 +185,9 @@ class ProblemTreeItem extends vscode.TreeItem {
     this.baseUrl = options.baseUrl;
     this.contest = options.contest || null;
     const presentation = getProgressPresentation(progress);
-    this.description = presentation.summary;
-    this.tooltip = `${problem.display_id} ${problem.title}\n状态：${presentation.summary}${problem.difficulty ? `\n难度：${problem.difficulty}` : ""}`;
+    const hasCapsule = Boolean(options.capsule);
+    this.description = hasCapsule ? `${presentation.summary} · 有回放` : presentation.summary;
+    this.tooltip = `${problem.display_id} ${problem.title}\n状态：${presentation.summary}${problem.difficulty ? `\n难度：${problem.difficulty}` : ""}${hasCapsule ? "\n时间胶囊：有录制记录" : ""}`;
     this.contextValue = contextValue;
     this.iconPath = new vscode.ThemeIcon(
       presentation.iconId,
@@ -179,7 +202,7 @@ class ProblemTreeItem extends vscode.TreeItem {
 }
 
 class RecentProblemTreeItem extends vscode.TreeItem {
-  constructor(entry, progress) {
+  constructor(entry, progress, options = {}) {
     super(`${entry.displayId || entry.display_id || entry.problemId} ${entry.title || ""}`.trim(), vscode.TreeItemCollapsibleState.None);
     this.id = `recent::${entry.identity}`;
     this.entry = entry;
@@ -192,8 +215,8 @@ class RecentProblemTreeItem extends vscode.TreeItem {
     this.contextValue = "recentProblem";
     const presentation = getProgressPresentation(progress);
     const source = entry.contestTitle || "公共题库";
-    this.description = `${source} · ${formatProgressDescription(progress)}`;
-    this.tooltip = `${this.label}\n${source}\n状态：${presentation.summary}`;
+    this.description = `${source} · ${formatProgressDescription(progress)}${options.capsule ? " · 有回放" : ""}`;
+    this.tooltip = `${this.label}\n${source}\n状态：${presentation.summary}${options.capsule ? "\n时间胶囊：有录制记录" : ""}`;
     this.iconPath = new vscode.ThemeIcon(
       presentation.iconId,
       isProblemColorizationEnabled() ? new vscode.ThemeColor(presentation.colorId) : undefined
@@ -213,11 +236,12 @@ class ContestTreeItem extends vscode.TreeItem {
     this.entry = entry;
     this.contest = entry.contest;
     this.baseUrl = entry.baseUrl;
-    this.contextValue = "contestWorkspace";
+    this.isQuestionBank = isQuestionBankEntry(entry);
+    this.contextValue = this.isQuestionBank ? "contestQuestionBank" : "contestWorkspace";
     const statusSummary = getContestStatusSummary(entry.contest);
     const problemCount = (entry.problems || []).length;
-    this.description = `${isActive ? "当前实验 · " : ""}${statusSummary} · ${problemCount} 题${entry.scanned ? " · 本地" : ""}`;
-    this.tooltip = `${this.label}\n${statusSummary}\n${problemCount} 道题${entry.scanned ? "\n来自本地目录扫描" : ""}`;
+    this.description = `${isActive ? "当前实验 · " : ""}${statusSummary} · ${problemCount} 题${this.isQuestionBank ? " · 可竞速" : ""}${entry.scanned ? " · 本地" : ""}`;
+    this.tooltip = `${this.label}\n${statusSummary}\n${problemCount} 道题${this.isQuestionBank ? "\n题库：可发起同题竞速" : "\n实验/考试：不提供竞速"}${entry.scanned ? "\n来自本地目录扫描" : ""}`;
     const statusKey = normalizeContestStatus(entry.contest ? entry.contest.status : "").key;
     const statusColor = statusKey === "running"
       ? "charts.green"
@@ -226,7 +250,9 @@ class ContestTreeItem extends vscode.TreeItem {
         : statusKey === "ended"
           ? "disabledForeground"
           : undefined;
-    this.iconPath = makeThemeIcon(isActive ? "target" : "trophy", isActive ? "charts.blue" : statusColor);
+    this.iconPath = this.isQuestionBank
+      ? makeThemeIcon("library", isActive ? "charts.blue" : statusColor)
+      : makeThemeIcon(isActive ? "target" : "trophy", isActive ? "charts.blue" : statusColor);
   }
 }
 
@@ -290,11 +316,14 @@ class ProblemTreeDataProvider {
   getRootSections() {
     const recentCount = (this.state.recentProblems || []).length;
     const contests = this.getContestEntries();
+    const questionBanks = contests.filter(isQuestionBankEntry);
+    const experiments = contests.filter((entry) => !isQuestionBankEntry(entry));
     const queueCount = (this.state.problemsetSelections || []).length;
     return [
       new SectionTreeItem("recent", "最近在做", recentCount ? `${recentCount} 道` : undefined, "history"),
-      new SectionTreeItem("contests", "我的实验", contests.length ? `${contests.length} 场` : undefined, "trophy"),
-      new SectionTreeItem("problemset", "公共题库", queueCount ? `${queueCount} 道` : undefined, "library")
+      new SectionTreeItem("contests", "我的实验", experiments.length ? `${experiments.length} 场` : undefined, "trophy"),
+      new SectionTreeItem("questionbanks", "我的题库", questionBanks.length ? `${questionBanks.length} 个` : undefined, "library"),
+      new SectionTreeItem("problemset", "公共题库", queueCount ? `${queueCount} 道` : undefined, "globe")
     ];
   }
 
@@ -304,6 +333,9 @@ class ProblemTreeDataProvider {
     }
     if (sectionId === "contests") {
       return this.getContestsSectionChildren();
+    }
+    if (sectionId === "questionbanks") {
+      return this.getQuestionBanksSectionChildren();
     }
     if (sectionId === "problemset") {
       return this.getProblemsetSectionChildren();
@@ -319,7 +351,9 @@ class ProblemTreeDataProvider {
         new InfoTreeItem("暂无最近题目", "打开任意题目后会出现在这里", "history")
       ];
     }
-    return entries.map((entry) => new RecentProblemTreeItem(entry, this.getEntryProgress(entry)));
+    return entries.map((entry) => new RecentProblemTreeItem(entry, this.getEntryProgress(entry), {
+      capsule: this.hasCapsule({ id: entry.problemId, display_id: entry.displayId || entry.display_id })
+    }));
   }
 
   /**
@@ -333,7 +367,10 @@ class ProblemTreeDataProvider {
         continue;
       }
       const key = entry.key || `${normalizeBaseUrlForKey(entry.baseUrl)}::${entry.contest.id}`;
-      byKey.set(key, Object.assign({}, entry, { key }));
+      byKey.set(key, Object.assign({}, entry, {
+        key,
+        contest: withContestMetadata(this.state, entry.contest)
+      }));
     }
     const index = this.state.workspaceIndex;
     if (index && index.entries) {
@@ -348,11 +385,11 @@ class ProblemTreeDataProvider {
           entry = {
             key,
             baseUrl,
-            contest: {
+            contest: withContestMetadata(this.state, {
               id: group.contestId,
               title: group.contestTitle || `实验 ${group.contestId}`,
               status: null
-            },
+            }),
             problems: [],
             contestPassword: "",
             scanned: true
@@ -376,14 +413,44 @@ class ProblemTreeDataProvider {
         }
       }
     }
-    return Array.from(byKey.values());
+    return Array.from(byKey.values()).filter(
+      (entry) => !contestList.isContestHidden(this.state.hiddenContests, entry.key)
+    );
   }
 
   getContestsSectionChildren() {
-    const entries = this.getContestEntries();
+    const entries = this.getContestEntries().filter((entry) => !isQuestionBankEntry(entry));
     const items = [new ActionTreeItem("搜索实验", "按关键词搜索实验，加入下面的实验列表", "xmuoj.browseContests")];
     if (!entries.length) {
       items.push(new InfoTreeItem("暂无实验", "加载实验或打开题目后，磁盘上的实验会自动出现在这里", "trophy"));
+      return items;
+    }
+    const activeContestId = this.state.contestWorkspace && this.state.contestWorkspace.contest
+      ? String(this.state.contestWorkspace.contest.id)
+      : null;
+    return items.concat(entries.map((entry) => new ContestTreeItem(
+      entry,
+      Boolean(activeContestId && String(entry.contest.id) === activeContestId)
+    )));
+  }
+
+  getQuestionBanksSectionChildren() {
+    const entries = this.getContestEntries().filter(isQuestionBankEntry);
+    const items = [
+      new ActionTreeItem(
+        "搜索题库",
+        "按标题搜索题库（教材配套题库）并加载；题库才提供竞速",
+        "xmuoj.browseQuestionBanks"
+      )
+    ];
+    if (!entries.length) {
+      items.push(
+        new InfoTreeItem(
+          "暂无题库",
+          "加载题库后会出现在这里；实验和考试不会提供竞速",
+          "library"
+        )
+      );
       return items;
     }
     const activeContestId = this.state.contestWorkspace && this.state.contestWorkspace.contest
@@ -413,7 +480,7 @@ class ProblemTreeDataProvider {
         problem
       }],
       "problem",
-      { baseUrl: entry.baseUrl, contest: entry.contest, id: `${baseKey}${problem.id}` }
+      { baseUrl: entry.baseUrl, contest: entry.contest, id: `${baseKey}${problem.id}`, capsule: this.hasCapsule(problem) }
     ));
   }
 
@@ -437,7 +504,8 @@ class ProblemTreeDataProvider {
       "problemsetSelection",
       {
         baseUrl: item.baseUrl,
-        id: `problemset::${normalizeBaseUrlForKey(item.baseUrl)}::${item.id}`
+        id: `problemset::${normalizeBaseUrlForKey(item.baseUrl)}::${item.id}`,
+        capsule: this.hasCapsule(item)
       }
     )));
   }
@@ -499,6 +567,18 @@ class ProblemTreeDataProvider {
       entry.contestId ? { id: entry.contestId, title: entry.contestTitle } : null,
       entry.baseUrl
     );
+  }
+
+  hasCapsule(problem) {
+    const keys = this.state.capsuleProblemKeys;
+    if (!keys || !keys.size || !problem) {
+      return false;
+    }
+    if (problem.id !== undefined && problem.id !== null && keys.has(String(problem.id))) {
+      return true;
+    }
+    const displayId = problem.display_id || problem.displayId;
+    return Boolean(displayId && keys.has(String(displayId).toLowerCase()));
   }
 
   getProblemProgress(problem, contest = this.state.contestWorkspace ? this.state.contestWorkspace.contest : null, baseUrl = this.state.baseUrl || "") {

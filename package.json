@@ -3,11 +3,11 @@
   "displayName": "XMUOJ",
   "description": "在VSCode/Trae中提供XMUOJ的沉浸式刷题体验。",
   "icon": "media/icon.png",
-  "version": "0.1.1",
+  "version": "0.1.5",
   "publisher": "xmuoj",
   "scripts": {
     "package": "vsce package --allow-missing-repository --skip-license",
-    "check": "node --check src/aiProvider.js && node --check src/client.js && node --check src/codeLens.js && node --check src/extension.js && node --check src/migration.js && node --check src/problemWorkspace.js && node --check src/progress.js && node --check src/runner.js && node --check src/search.js && node --check src/treeData.js && node --check src/workspaceStore.js && node scripts/workspace-store.test.js && node scripts/workspace-migration.test.js && node scripts/progress.test.js && node scripts/search.test.js && node scripts/local-integration.test.js && node scripts/smoke.js",
+    "check": "node --check media/problemset/app.js && node --check media/contestrace/app.js && node --check media/shared/capsule-format.js && node --check media/timecapsule/player.js && node --check src/aiProvider.js && node --check src/client.js && node --check src/contestList.js && node --check src/contestRaceWorkbench.js && node --check src/codeLens.js && node --check src/dataMigration.js && node --check src/extension.js && node --check src/languageTemplates.js && node --check src/migration.js && node --check src/problemWorkspace.js && node --check src/problemsetCatalog.js && node --check src/problemsetInsights.js && node --check src/problemsetQueue.js && node --check src/problemsetRace.js && node --check src/problemsetRanking.js && node --check src/problemsetWorkbench.js && node --check src/progress.js && node --check src/runner.js && node --check src/search.js && node --check src/siteApi.js && node --check src/timeCapsuleLibrary.js && node --check src/timeCapsulePanel.js && node --check src/timeCapsuleRecorder.js && node --check src/timeCapsuleStore.js && node --check src/treeData.js && node --check src/workspaceStore.js && node scripts/data-migration.test.js && node scripts/workspace-store.test.js && node scripts/workspace-migration.test.js && node scripts/progress.test.js && node scripts/search.test.js && node scripts/site-api.test.js && node scripts/problemset-catalog.test.js && node scripts/problemset-queue.test.js && node scripts/problemset-ranking.test.js && node scripts/problemset-race.test.js && node scripts/contest-list.test.js && node scripts/contest-race.test.js && node scripts/problemset-insights.test.js && node scripts/problemset-workbench.test.js && node scripts/time-capsule-format.test.js && node scripts/time-capsule-library.test.js && node scripts/time-capsule-store.test.js && node scripts/time-capsule-recorder.test.js && node scripts/time-capsule-panel.test.js && node scripts/code-lens.test.js && node scripts/language-templates.test.js && node scripts/local-integration.test.js && node scripts/smoke.js",
     "lint": "echo 'Lint rules are not configured yet'"
   },
   "engines": {
@@ -40,7 +40,8 @@
             "test",
             "submit",
             "description",
-            "results"
+            "results",
+            "replay"
           ],
           "items": {
             "type": "string",
@@ -51,6 +52,7 @@
               "description",
               "results",
               "language",
+              "replay",
               "aiSolution",
               "aiCode"
             ]
@@ -66,6 +68,66 @@
           "type": "boolean",
           "default": true,
           "description": "在题目树中使用图标和颜色强化状态显示，例如 AC、本地通过、已提交。"
+        },
+        "xmuoj.problemset.catalogTtlMinutes": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "description": "刷题台题目目录缓存的有效期（分钟）。到期后在后台重新同步，期间继续显示旧数据。"
+        },
+        "xmuoj.problemset.pageSize": {
+          "type": "number",
+          "default": 50,
+          "minimum": 10,
+          "maximum": 200,
+          "description": "刷题台题库每页显示的题目数量。"
+        },
+        "xmuoj.race.pollIntervalSeconds": {
+          "type": "number",
+          "default": 10,
+          "minimum": 5,
+          "maximum": 120,
+          "description": "实时竞速轮询对手提交的间隔（秒）。网络不稳定时会自动退避，截止前两分钟会提速。"
+        },
+        "xmuoj.timeCapsule.maxSizeMB": {
+          "type": "number",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 500,
+          "description": "单个代码时间胶囊的大小上限（MB）。达到上限时自动停止并保存已录制内容。"
+        },
+        "xmuoj.timeCapsule.checkpointSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 10,
+          "maximum": 600,
+          "description": "时间胶囊写入完整文本检查点的间隔（秒）。检查点越密，回放定位越快、文件越大。"
+        },
+        "xmuoj.timeCapsule.recordCursor": {
+          "type": "boolean",
+          "default": true,
+          "description": "录制时保存光标与选区，回放可以看到当时的编辑位置。关闭后胶囊更小。"
+        },
+        "xmuoj.timeCapsule.videoFps": {
+          "type": "number",
+          "default": 30,
+          "minimum": 10,
+          "maximum": 60,
+          "description": "时间胶囊导出 WebM 视频的帧率。帧率越高越流畅，文件也越大。"
+        },
+        "xmuoj.timeCapsule.videoWidth": {
+          "type": "number",
+          "default": 1280,
+          "minimum": 640,
+          "maximum": 3840,
+          "description": "导出视频的宽度（像素），默认 1280×720。"
+        },
+        "xmuoj.timeCapsule.videoHeight": {
+          "type": "number",
+          "default": 720,
+          "minimum": 360,
+          "maximum": 2160,
+          "description": "导出视频的高度（像素），默认 1280×720。"
         },
         "xmuoj.autoMigrate": {
           "type": "boolean",
@@ -109,9 +171,22 @@
         "icon": "$(search)"
       },
       {
+        "command": "xmuoj.browseQuestionBanks",
+        "title": "搜索题库",
+        "category": "XMUOJ",
+        "icon": "$(library)"
+      },
+      {
+        "command": "xmuoj.openContestRace",
+        "title": "题库竞速",
+        "category": "XMUOJ",
+        "icon": "$(rocket)"
+      },
+      {
         "command": "xmuoj.browseProblemset",
         "title": "打开公共题库",
-        "category": "XMUOJ"
+        "category": "XMUOJ",
+        "icon": "$(layout)"
       },
       {
         "command": "xmuoj.openProblemsetProblem",
@@ -327,6 +402,11 @@
         "category": "XMUOJ"
       },
       {
+        "command": "xmuoj.migrateLocalData",
+        "title": "整理本地数据",
+        "category": "XMUOJ"
+      },
+      {
         "command": "xmuoj.fixProblemDirectoryNames",
         "title": "修复题目目录名",
         "category": "XMUOJ"
@@ -378,6 +458,77 @@
         "command": "xmuoj.forgetContestPassword",
         "title": "忘记实验密码",
         "category": "XMUOJ"
+      },
+      {
+        "command": "xmuoj.timeCapsule.start",
+        "title": "开始录制时间胶囊",
+        "category": "XMUOJ",
+        "icon": "$(record)"
+      },
+      {
+        "command": "xmuoj.timeCapsule.pause",
+        "title": "暂停时间胶囊",
+        "category": "XMUOJ",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "xmuoj.timeCapsule.resume",
+        "title": "继续时间胶囊",
+        "category": "XMUOJ",
+        "icon": "$(play)"
+      },
+      {
+        "command": "xmuoj.timeCapsule.stop",
+        "title": "停止并保存时间胶囊",
+        "category": "XMUOJ",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "xmuoj.timeCapsule.replayProblem",
+        "title": "回放本题（时间胶囊）",
+        "category": "XMUOJ",
+        "icon": "$(history)"
+      },
+      {
+        "command": "xmuoj.fixCppUniversalHeader",
+        "title": "替换 C++ 万能头文件",
+        "category": "XMUOJ"
+      },
+      {
+        "command": "xmuoj.timeCapsule.list",
+        "title": "时间胶囊回放",
+        "category": "XMUOJ",
+        "icon": "$(record)"
+      },
+      {
+        "command": "xmuoj.timeCapsule.replayLatest",
+        "title": "回放最近的时间胶囊",
+        "category": "XMUOJ"
+      },
+      {
+        "command": "xmuoj.timeCapsule.export",
+        "title": "导出时间胶囊",
+        "category": "XMUOJ"
+      },
+      {
+        "command": "xmuoj.timeCapsule.import",
+        "title": "导入时间胶囊",
+        "category": "XMUOJ"
+      },
+      {
+        "command": "xmuoj.timeCapsule.delete",
+        "title": "删除时间胶囊",
+        "category": "XMUOJ"
+      },
+      {
+        "command": "xmuoj.timeCapsule.open",
+        "title": "打开时间胶囊",
+        "category": "XMUOJ"
+      },
+      {
+        "command": "xmuoj.timeCapsule.statusMenu",
+        "title": "时间胶囊状态菜单",
+        "category": "XMUOJ"
       }
     ],
     "viewsContainers": {
@@ -420,6 +571,11 @@
           "command": "xmuoj.openSettings",
           "when": "view == xmuojExplorer",
           "group": "navigation@3"
+        },
+        {
+          "command": "xmuoj.timeCapsule.list",
+          "when": "view == xmuojExplorer",
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -472,6 +628,58 @@
           "command": "xmuoj.removeContestWorkspaceSelection",
           "when": "view == xmuojExplorer && viewItem == contestWorkspace",
           "group": "navigation@4"
+        },
+        {
+          "command": "xmuoj.openContestRace",
+          "when": "view == xmuojExplorer && viewItem == contestQuestionBank",
+          "group": "inline@1"
+        },
+        {
+          "command": "xmuoj.openContestRace",
+          "when": "view == xmuojExplorer && viewItem == contestQuestionBank",
+          "group": "navigation@1"
+        },
+        {
+          "command": "xmuoj.refreshContest",
+          "when": "view == xmuojExplorer && viewItem == contestQuestionBank",
+          "group": "inline@2"
+        },
+        {
+          "command": "xmuoj.refreshContest",
+          "when": "view == xmuojExplorer && viewItem == contestQuestionBank",
+          "group": "navigation@1"
+        },
+        {
+          "command": "xmuoj.initContestWorkspace",
+          "when": "view == xmuojExplorer && viewItem == contestQuestionBank",
+          "group": "navigation@2"
+        },
+        {
+          "command": "xmuoj.revealContestWorkspace",
+          "when": "view == xmuojExplorer && viewItem == contestQuestionBank",
+          "group": "navigation@3"
+        },
+        {
+          "command": "xmuoj.removeContestWorkspaceSelection",
+          "when": "view == xmuojExplorer && viewItem == contestQuestionBank",
+          "group": "navigation@4"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "xmuoj.timeCapsule.stop",
+          "when": "xmuoj.timeCapsuleRecording",
+          "group": "navigation@8"
+        },
+        {
+          "command": "xmuoj.timeCapsule.replayProblem",
+          "when": "xmuoj.activeProblemFile && xmuoj.activeProblemHasCapsules && !xmuoj.timeCapsuleRecording",
+          "group": "navigation@10"
+        },
+        {
+          "command": "xmuoj.timeCapsule.start",
+          "when": "xmuoj.activeProblemFile && !xmuoj.activeProblemHasCapsules && !xmuoj.timeCapsuleRecording",
+          "group": "navigation@10"
         }
       ],
       "editor/context": [
@@ -479,6 +687,26 @@
           "command": "xmuoj.revealProblemWorkspaceEntry",
           "when": "editorIsOpen",
           "group": "navigation"
+        },
+        {
+          "command": "xmuoj.timeCapsule.replayProblem",
+          "when": "xmuoj.activeProblemFile",
+          "group": "xmuoj@10"
+        },
+        {
+          "command": "xmuoj.timeCapsule.start",
+          "when": "xmuoj.activeProblemFile && !xmuoj.timeCapsuleRecording",
+          "group": "xmuoj@11"
+        },
+        {
+          "command": "xmuoj.timeCapsule.stop",
+          "when": "xmuoj.timeCapsuleRecording",
+          "group": "xmuoj@11"
+        },
+        {
+          "command": "xmuoj.fixCppUniversalHeader",
+          "when": "editorLangId == cpp",
+          "group": "xmuoj@12"
         }
       ],
       "commandPalette": [
@@ -528,6 +756,14 @@
         },
         {
           "command": "xmuoj.showAdjacentHistorySubmission",
+          "when": "false"
+        },
+        {
+          "command": "xmuoj.timeCapsule.statusMenu",
+          "when": "false"
+        },
+        {
+          "command": "xmuoj.timeCapsule.open",
           "when": "false"
         }
       ]

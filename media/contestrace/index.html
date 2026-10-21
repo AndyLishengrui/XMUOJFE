@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src https: http: data:; style-src {{cspSource}} 'unsafe-inline'; script-src 'nonce-{{nonce}}'; font-src {{cspSource}};"
+    />
+    <link rel="stylesheet" href="{{baseStyleUri}}" />
+    <link rel="stylesheet" href="{{styleUri}}" />
+    <title>XMUOJ 题库竞速</title>
+  </head>
+  <body>
+    <div class="app">
+      <header class="identity">
+        <div class="identity-main">
+          <div class="avatar" aria-hidden="true">竞</div>
+          <div class="identity-text">
+            <div class="identity-name-row">
+              <strong id="contest-title">题库竞速</strong>
+              <span class="badge" id="contest-badge">题库</span>
+            </div>
+            <div class="identity-meta" id="contest-meta">正在加载题库…</div>
+          </div>
+        </div>
+        <div class="identity-actions">
+          <button type="button" class="btn ghost" id="btn-refresh">刷新题库</button>
+        </div>
+      </header>
+
+      <main class="content contest-race">
+        <div class="warning-line" id="warning" hidden></div>
+
+        <section class="card" id="active-race-card" hidden>
+          <div id="active-race"></div>
+        </section>
+
+        <section class="card" id="setup-card">
+          <div class="card-head">
+            <h2>发起实时竞速</h2>
+            <span class="muted" id="setup-sub">只在题库开放；同一时间只能进行一场竞速</span>
+          </div>
+          <div class="race-form">
+            <label>
+              <span>题目</span>
+              <select id="problem-select"></select>
+            </label>
+            <label>
+              <span>对手</span>
+              <input
+                id="opponent-input"
+                type="text"
+                placeholder="对方用户名（双方才能互相轮询提交）"
+                autocomplete="off"
+              />
+            </label>
+            <label>
+              <span>时限</span>
+              <select id="duration-select">
+                <option value="600">10 分钟</option>
+                <option value="900">15 分钟</option>
+                <option value="1800" selected>30 分钟</option>
+                <option value="3600">60 分钟</option>
+              </select>
+            </label>
+            <button type="button" class="btn primary" id="start-race">开始竞速</button>
+          </div>
+          <p class="hint" id="race-hint">
+            实时竞速 15 秒后开始；口令会复制到剪贴板，对手在同一题库粘贴加入。当前竞速结束前不能发起或加入另一场。
+          </p>
+          <div class="join-row">
+            <input id="token-input" type="text" placeholder="粘贴 XMJ1. 开头的竞速口令" autocomplete="off" />
+            <button type="button" class="btn" id="join-race">加入竞速</button>
+          </div>
+        </section>
+
+        <div class="grid-2 race-grid">
+          <section class="card">
+            <div class="card-head">
+              <h2>题目</h2>
+              <span class="muted" id="problem-stats"></span>
+            </div>
+            <div class="toolbar">
+              <select id="filter-status" aria-label="按状态筛选">
+                <option value="all">全部状态</option>
+                <option value="todo">未做</option>
+                <option value="attempted">尝试过</option>
+                <option value="solved">已通过</option>
+              </select>
+              <input id="filter-keyword" type="search" placeholder="筛选题号或标题" autocomplete="off" />
+            </div>
+            <div class="table-wrap">
+              <table class="problem-table">
+                <thead>
+                  <tr>
+                    <th class="status-col">状态</th>
+                    <th>题号</th>
+                    <th>标题</th>
+                    <th>难度</th>
+                    <th>对手</th>
+                    <th class="actions-cell">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="problem-body"></tbody>
+              </table>
+            </div>
+            <div class="empty" id="problem-empty" hidden>没有符合条件的题目</div>
+          </section>
+
+          <section class="card opponent-card">
+            <div class="card-head">
+              <h2>对手战绩</h2>
+              <button type="button" class="btn ghost small" id="btn-opponent">查看</button>
+            </div>
+            <div class="toolbar">
+              <input id="opponent-query" type="text" placeholder="输入用户名后查看题库战绩" autocomplete="off" />
+            </div>
+            <div id="opponent-panel" class="opponent-panel">
+              <p class="muted">输入用户名，查看对方在这个题库里做过哪些题。</p>
+            </div>
+          </section>
+        </div>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>竞速记录</h2>
+            <span class="muted" id="history-count"></span>
+          </div>
+          <div id="history-panel" class="history-panel"></div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+
+    <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+  </body>
+</html>

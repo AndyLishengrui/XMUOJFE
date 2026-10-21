@@ -8,6 +8,8 @@
 "use strict";
 
 const path = require("path");
+const fs = require("fs");
+const os = require("os");
 const Module = require("module");
 
 const EXPECTED_MIN_COMMANDS = 50;
@@ -126,6 +128,7 @@ const vscode = {
     createOutputChannel: () => mockOutputChannel,
     createStatusBarItem: () => ({ ...mockStatusBarItem }),
     onDidChangeActiveTextEditor: () => new Disposable(),
+    onDidChangeTextEditorSelection: () => new Disposable(),
     registerTreeDataProvider: () => new Disposable(),
     setStatusBarMessage: () => new Disposable(),
     showInformationMessage: async () => undefined,
@@ -159,6 +162,7 @@ const vscode = {
     }),
     saveAll: async () => true,
     onDidSaveTextDocument: () => new Disposable(),
+    onDidChangeTextDocument: () => new Disposable(),
     onDidChangeConfiguration: () => new Disposable(),
     fs: {
       readFile: async () => Buffer.alloc(0),
@@ -221,6 +225,8 @@ function makeStorage(initial = {}) {
 }
 
 async function main() {
+  // 全局存储指向临时目录：冒烟测试也会触发胶囊索引读写，不能污染仓库。
+  const smokeStorage = fs.mkdtempSync(path.join(os.tmpdir(), "xmuoj-smoke-"));
   // 在替换 fetch 的状态下加载，防止激活期发起真实网络请求
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
@@ -243,6 +249,7 @@ async function main() {
         delete: async () => undefined
       },
       extensionPath: path.join(__dirname, ".."),
+      globalStorageUri: vscode.Uri.file(smokeStorage),
       extensionMode: 1,
       asAbsolutePath: (p) => path.join(__dirname, "..", p)
     };
@@ -263,10 +270,27 @@ async function main() {
       "xmuoj.migrateWorkspaces",
       "xmuoj.rollbackWorkspaceMigration",
       "xmuoj.rebuildWorkspaceIndex",
+      "xmuoj.migrateLocalData",
       "xmuoj.fixProblemDirectoryNames",
       "xmuoj.openSettings",
       "xmuoj.openRecentProblem",
-      "xmuoj.forgetContestPassword"
+      "xmuoj.forgetContestPassword",
+      "xmuoj.browseProblemset",
+      "xmuoj.browseQuestionBanks",
+      "xmuoj.openContestRace",
+      "xmuoj.manageProblemsetSelections",
+      "xmuoj.removeProblemsetSelection",
+      "xmuoj.timeCapsule.start",
+      "xmuoj.timeCapsule.pause",
+      "xmuoj.timeCapsule.resume",
+      "xmuoj.timeCapsule.stop",
+      "xmuoj.timeCapsule.list",
+      "xmuoj.timeCapsule.replayLatest",
+      "xmuoj.timeCapsule.replayProblem",
+      "xmuoj.fixCppUniversalHeader",
+      "xmuoj.timeCapsule.export",
+      "xmuoj.timeCapsule.import",
+      "xmuoj.timeCapsule.delete"
     ];
     for (const id of requiredCommands) {
       if (!registeredCommands.some((entry) => entry.id === id)) {
@@ -286,6 +310,73 @@ async function main() {
     }
     if (!manifest.icon) {
       throw new Error("package.json 缺少扩展图标 media/icon.png");
+    }
+    const properties = (manifest.contributes.configuration || {}).properties || {};
+    const requiredSettings = [
+      "xmuoj.problemset.catalogTtlMinutes",
+      "xmuoj.problemset.pageSize",
+      "xmuoj.race.pollIntervalSeconds",
+      "xmuoj.timeCapsule.maxSizeMB",
+      "xmuoj.timeCapsule.checkpointSeconds",
+      "xmuoj.timeCapsule.recordCursor",
+      "xmuoj.timeCapsule.videoFps",
+      "xmuoj.timeCapsule.videoWidth",
+      "xmuoj.timeCapsule.videoHeight"
+    ];
+    for (const key of requiredSettings) {
+      if (!properties[key]) {
+        throw new Error(`缺少刷题台设置：${key}`);
+      }
+    }
+
+    // 刷题台模块必须能独立加载，且导出关键能力。
+    const siteApi = require(path.join(__dirname, "..", "src", "siteApi.js"));
+    if (typeof siteApi.createSiteApi !== "function" || !siteApi.JUDGE_STATUS) {
+      throw new Error("siteApi 缺少 createSiteApi 或 JUDGE_STATUS");
+    }
+    for (const name of ["problemsetCatalog", "problemsetQueue", "problemsetRanking", "problemsetRace"]) {
+      const mod = require(path.join(__dirname, "..", "src", `${name}.js`));
+      if (!mod || !Object.keys(mod).length) {
+        throw new Error(`${name} 没有导出任何函数`);
+      }
+    }
+    const workbenchModule = require(path.join(__dirname, "..", "src", "problemsetWorkbench.js"));
+    if (typeof workbenchModule.ProblemsetWorkbench !== "function") {
+      throw new Error("problemsetWorkbench 缺少 ProblemsetWorkbench 类");
+    }
+    const capsuleFormat = require(path.join(__dirname, "..", "media", "shared", "capsule-format.js"));
+    if (typeof capsuleFormat.sliceAt !== "function" || capsuleFormat.FORMAT !== "xmuoj.capsule") {
+      throw new Error("capsule-format 缺少 sliceAt 或 FORMAT");
+    }
+    const dataMigration = require(path.join(__dirname, "..", "src", "dataMigration.js"));
+    if (typeof dataMigration.mergeLoadedContestMetadata !== "function" || !dataMigration.DATA_MIGRATION_VERSION) {
+      throw new Error("dataMigration 缺少题库标记合并能力");
+    }
+    const capsuleStore = require(path.join(__dirname, "..", "src", "timeCapsuleStore.js"));
+    if (typeof capsuleStore.TimeCapsuleStore !== "function") {
+      throw new Error("timeCapsuleStore 缺少 TimeCapsuleStore 类");
+    }
+    if (typeof capsuleStore.TimeCapsuleStore.prototype.repairIndex !== "function") {
+      throw new Error("timeCapsuleStore 缺少 repairIndex");
+    }
+    const capsuleRecorder = require(path.join(__dirname, "..", "src", "timeCapsuleRecorder.js"));
+    if (typeof capsuleRecorder.TimeCapsuleRecorder !== "function") {
+      throw new Error("timeCapsuleRecorder 缺少 TimeCapsuleRecorder 类");
+    }
+    const capsulePanel = require(path.join(__dirname, "..", "src", "timeCapsulePanel.js"));
+    if (typeof capsulePanel.TimeCapsulePanel !== "function") {
+      throw new Error("timeCapsulePanel 缺少 TimeCapsulePanel 类");
+    }
+    const capsuleLibrary = require(path.join(__dirname, "..", "src", "timeCapsuleLibrary.js"));
+    if (typeof capsuleLibrary.problemKeyOf !== "function" || typeof capsuleLibrary.attemptsForProblem !== "function") {
+      throw new Error("timeCapsuleLibrary 缺少题目分组能力");
+    }
+    const languageTemplates = require(path.join(__dirname, "..", "src", "languageTemplates.js"));
+    if (!languageTemplates.LOCAL_LANGUAGE_TEMPLATES || typeof languageTemplates.replaceUniversalHeader !== "function") {
+      throw new Error("languageTemplates 缺少模板或万能头替换能力");
+    }
+    if (languageTemplates.LOCAL_LANGUAGE_TEMPLATES["C++"].includes("bits/stdc++.h")) {
+      throw new Error("C++ 模板不应使用 bits/stdc++.h");
     }
     const titleCommands = manifest.contributes.menus["view/title"] || [];
     for (const item of titleCommands) {
@@ -322,6 +413,7 @@ async function main() {
   } finally {
     globalThis.fetch = originalFetch;
     Module._load = originalLoad;
+    fs.rmSync(smokeStorage, { recursive: true, force: true });
   }
 }
 

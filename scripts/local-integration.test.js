@@ -4,9 +4,11 @@
  * 1. 旧布局（contest-* / problemsets）+ 新布局 problems/ 混合启动
  * 2. 激活扩展 → 启动扫盘 → 自动迁移 → 索引重建
  * 3. 校验目录、元数据 v2、备份、索引
- * 4. 校验侧边栏三组结构与「我的实验」扫盘分组
+ * 4. 校验侧边栏四组结构与「我的实验」扫盘分组
  * 5. 校验统一搜索的本地过滤、在线失败降级、接受本地结果后写入最近题目
  * 6. 校验回滚命令与再次迁移命令
+ * 7. 校验刷题台断网时渲染磁盘缓存并在题库内联报错
+ * 8. 校验时间胶囊开始录制、记录编辑并落盘
  *
  * 不访问网络：fetch 被替换为失败桩。
  */
@@ -16,7 +18,9 @@ const assert = require("assert");
 const fs = require("fs/promises");
 const os = require("os");
 const path = require("path");
+const zlib = require("zlib");
 const Module = require("module");
+const capsuleFormat = require("../media/shared/capsule-format");
 
 // ---- vscode mock ----------------------------------------------------------
 class Disposable {
@@ -95,11 +99,47 @@ class MockQuickPick {
 }
 
 const createdQuickPicks = [];
+const createdWebviewPanels = [];
+const textDocumentListeners = [];
 const registeredCommands = new Map();
 const registeredTreeProviders = new Map();
 const infoMessages = [];
 let programmaticConfig = {};
 let warningResponder = () => undefined;
+
+function makeWebviewPanel(viewType, title) {
+  const messages = [];
+  const messageListeners = [];
+  return {
+    viewType: viewType || "",
+    title: title || "",
+    visible: true,
+    messages,
+    messageListeners,
+    webview: {
+      html: "",
+      cspSource: "vscode-webview://xmuoj",
+      asWebviewUri: (uri) => uri,
+      onDidReceiveMessage: (listener) => {
+        messageListeners.push(listener);
+        return new Disposable(() => {
+          const index = messageListeners.indexOf(listener);
+          if (index >= 0) {
+            messageListeners.splice(index, 1);
+          }
+        });
+      },
+      postMessage: async (message) => {
+        messages.push(message);
+        return true;
+      }
+    },
+    onDidChangeViewState: () => new Disposable(),
+    onDidDispose: () => new Disposable(),
+    reveal() {},
+    dispose() {}
+  };
+}
 
 const mockOutputChannel = {
   append() {},
@@ -175,6 +215,11 @@ const vscode = {
     },
     parse(s) {
       return { scheme: "vscode", fsPath: s, path: s, toString: () => String(s) };
+    },
+    joinPath(base, ...parts) {
+      const root = base && base.fsPath ? base.fsPath : String(base);
+      const joined = [root].concat(parts.map(String)).join("/");
+      return vscode.Uri.file(joined);
     }
   },
   window: {
@@ -188,6 +233,7 @@ const vscode = {
       return pick;
     },
     onDidChangeActiveTextEditor: () => new Disposable(),
+    onDidChangeTextEditorSelection: () => new Disposable(),
     registerTreeDataProvider: (id, provider) => {
       registeredTreeProviders.set(id, provider);
       return new Disposable(() => registeredTreeProviders.delete(id));
@@ -213,19 +259,11 @@ const vscode = {
       isCancellationRequested: false,
       onCancellationRequested: () => new Disposable()
     }),
-    createWebviewPanel: () => ({
-      title: "",
-      webview: {
-        html: "",
-        cspSource: "",
-        asWebviewUri: (uri) => uri,
-        onDidReceiveMessage: () => new Disposable(),
-        postMessage: async () => true
-      },
-      onDidDispose: () => new Disposable(),
-      reveal() {},
-      dispose() {}
-    })
+    createWebviewPanel: (viewType, title) => {
+      const panel = makeWebviewPanel(viewType, title);
+      createdWebviewPanels.push(panel);
+      return panel;
+    }
   },
   workspace: {
     workspaceFolders: undefined,
@@ -244,6 +282,15 @@ const vscode = {
     }),
     saveAll: async () => true,
     onDidSaveTextDocument: () => new Disposable(),
+    onDidChangeTextDocument: (listener) => {
+      textDocumentListeners.push(listener);
+      return new Disposable(() => {
+        const index = textDocumentListeners.indexOf(listener);
+        if (index >= 0) {
+          textDocumentListeners.splice(index, 1);
+        }
+      });
+    },
     onDidChangeConfiguration: () => new Disposable(),
     fs: {
       readFile: async () => Buffer.alloc(0),
@@ -462,9 +509,22 @@ async function main() {
     vscode.workspace.workspaceFolders = [{ uri: vscode.Uri.file(root), name: path.basename(root), index: 0 }];
 
     const extension = require(path.join(__dirname, "..", "src", "extension.js"));
+    const globalStorageRoot = path.join(root, ".xmuoj-global");
+    await fs.mkdir(globalStorageRoot, { recursive: true });
     const context = {
       subscriptions: [],
-      globalState: makeStorage(),
+      // 模拟升级前保存的服务端题库标记：483 是教材题库，不是普通实验。
+      globalState: makeStorage({
+        "xmuoj.contestMetadata.v1": {
+          "483": {
+            id: 483,
+            title: "公共课 PTA 题库",
+            is_question_bank: true,
+            is_exam: false,
+            contest_type: "Public"
+          }
+        }
+      }),
       workspaceState: makeStorage(),
       secrets: {
         get: async () => undefined,
@@ -472,6 +532,8 @@ async function main() {
         delete: async () => undefined
       },
       extensionPath: path.join(__dirname, ".."),
+      extensionUri: vscode.Uri.file(path.join(__dirname, "..")),
+      globalStorageUri: vscode.Uri.file(globalStorageRoot),
       extensionMode: 1,
       asAbsolutePath: (p) => path.join(__dirname, "..", p)
     };
@@ -482,7 +544,13 @@ async function main() {
     await waitFor(async () => {
       const movedContest = await findProblemDirById(root, 10221);
       const movedPublic = await findProblemDirById(root, 10222);
-      return Boolean(movedContest && movedPublic);
+      // 文件移动与空目录清理发生在迁移的不同阶段，必须等两者都完成再断言。
+      return Boolean(
+        movedContest &&
+        movedPublic &&
+        !(await exists(path.join(root, "contest-483"))) &&
+        !(await exists(path.join(root, "problemsets")))
+      );
     }, { label: "自动迁移完成" });
 
     const contestDir = await findProblemDirById(root, 10221);
@@ -517,22 +585,105 @@ async function main() {
     const treeProvider = registeredTreeProviders.get("xmuojExplorer");
     assert.ok(treeProvider, "应注册刷题工作台 TreeDataProvider");
     const sections = await treeProvider.getChildren();
-    assert.deepStrictEqual(sections.map((item) => item.label), ["最近在做", "我的实验", "公共题库"]);
-    console.log("  ok 工作台顶层只有三组");
+    assert.deepStrictEqual(sections.map((item) => item.label), [
+      "最近在做",
+      "我的实验",
+      "我的题库",
+      "公共题库"
+    ]);
+    console.log("  ok 工作台顶层分为四组");
 
     const contestsSection = sections.find((item) => item.id === "contests");
     const contestChildren = await treeProvider.getChildren(contestsSection);
-    const scannedContest = findItem(contestChildren, (item) => item.contextValue === "contestWorkspace" && Number(item.contest.id) === 483);
-    assert.ok(scannedContest, "扫盘得到的实验 483 应出现在「我的实验」");
-    assert.strictEqual(scannedContest.label, "公共课 PTA 题库");
-    assert.strictEqual(scannedContest.entry.scanned, true);
-    const contestProblems = await treeProvider.getChildren(scannedContest);
-    assert.strictEqual(contestProblems.length, 2, "实验 483 展开应有 2 道题");
+    assert.strictEqual(
+      findItem(contestChildren, (item) => item.contest && Number(item.contest.id) === 483),
+      undefined,
+      "已标记为题库的 483 不应再出现在「我的实验」"
+    );
+
+    const banksSection = sections.find((item) => item.id === "questionbanks");
+    const bankChildren = await treeProvider.getChildren(banksSection);
+    const scannedBank = findItem(bankChildren, (item) => item.contextValue === "contestQuestionBank" && Number(item.contest.id) === 483);
+    assert.ok(scannedBank, "扫盘得到的题库 483 应出现在「我的题库」");
+    assert.strictEqual(scannedBank.label, "公共课 PTA 题库");
+    assert.strictEqual(scannedBank.entry.scanned, true);
+    // 迁移完成后 state.workspaceIndex 会在异步回调里更新；等待树真正拿到两道题。
+    // 扫盘索引分阶段更新时，树节点会被重新创建；必须每轮重新取节点，
+    // 不能一直展开第一次拿到的旧 TreeItem。
+    const currentBankItem = async () => {
+      const latestSections = await treeProvider.getChildren();
+      const latestSection = latestSections.find((item) => item.id === "questionbanks");
+      if (!latestSection) {
+        return null;
+      }
+      const items = await treeProvider.getChildren(latestSection);
+      return findItem(
+        items,
+        (item) => item.contextValue === "contestQuestionBank" && Number(item.contest.id) === 483
+      );
+    };
+    let bankProblems = [];
+    await waitFor(
+      async () => {
+        const item = await currentBankItem();
+        bankProblems = item ? await treeProvider.getChildren(item) : [];
+        return bankProblems.length === 2;
+      },
+      { timeoutMs: 20000, label: "题库 483 扫盘完成" }
+    );
+    assert.strictEqual(bankProblems.length, 2, "题库 483 展开应有 2 道题");
     assert.deepStrictEqual(
-      contestProblems.map((item) => item.problem.display_id).sort(),
+      bankProblems.map((item) => item.problem.display_id).sort(),
       ["JD001", "PTA1.1"]
     );
-    console.log("  ok 扫盘实验分组：展开直接是 2 道题目");
+    console.log("  ok 服务端题库标记：483 归入「我的题库」，展开直接是 2 道题目");
+
+    // 2.1) 从实验列表移除：扫盘恢复的实验也必须真正消失，而不是刷新后回来
+    warningResponder = (message) => (String(message).includes("删除比赛") ? "删除比赛" : undefined);
+    assert.deepStrictEqual(context.globalState.get("xmuoj.hiddenContests", []), []);
+    const removeTarget = await currentBankItem();
+    assert.ok(removeTarget, "移除前应能取到题库节点");
+    await vscode.commands.executeCommand("xmuoj.removeContestWorkspaceSelection", removeTarget);
+    assert.deepStrictEqual(
+      context.globalState.get("xmuoj.hiddenContests", []),
+      ["http://xmuoj.com::483"],
+      "移除后应在 globalState 持久化隐藏键"
+    );
+    const sectionsAfterRemove = await treeProvider.getChildren();
+    const banksAfterRemove = await treeProvider.getChildren(
+      sectionsAfterRemove.find((item) => item.id === "questionbanks")
+    );
+    assert.strictEqual(
+      findItem(banksAfterRemove, (item) => item.contest && Number(item.contest.id) === 483),
+      undefined,
+      "被移除的题库不应在刷新后重新出现"
+    );
+    const contestsAfterRemove = await treeProvider.getChildren(
+      sectionsAfterRemove.find((item) => item.id === "contests")
+    );
+    assert.strictEqual(
+      findItem(contestsAfterRemove, (item) => item.contest && Number(item.contest.id) === 483),
+      undefined,
+      "被移除的实验也不应出现在「我的实验」"
+    );
+    console.log("  ok 从实验列表移除：扫盘实验立即消失并持久化隐藏");
+
+    // 清理隐藏标记，避免影响后续断言（等价于重新加载该实验）
+    await context.globalState.update("xmuoj.hiddenContests", []);
+    const restoredProviderState = treeProvider.state || {};
+    if (restoredProviderState) {
+      restoredProviderState.hiddenContests = [];
+    }
+    treeProvider.refresh();
+    const sectionsRestored = await treeProvider.getChildren();
+    const banksRestored = await treeProvider.getChildren(
+      sectionsRestored.find((item) => item.id === "questionbanks")
+    );
+    assert.ok(
+      findItem(banksRestored, (item) => item.contest && Number(item.contest.id) === 483),
+      "清除隐藏标记后题库应恢复显示"
+    );
+    console.log("  ok 清除隐藏标记后实验恢复显示");
 
     const recentSection = sections.find((item) => item.id === "recent");
     const recentChildren = await treeProvider.getChildren(recentSection);
@@ -601,6 +752,144 @@ async function main() {
     assert.ok(infoMessages.some((message) => String(message).includes("共 4 道题")), "重建索引应报告 4 道题");
     console.log("  ok 重建索引命令");
 
+    // 7) 刷题台：断网时先渲染磁盘缓存，不白屏
+    const raceLib = require(path.join(__dirname, "..", "src", "problemsetRace.js"));
+    const cacheFile = path.join(
+      globalStorageRoot,
+      `problemset-catalog-${raceLib.fnv1a("http://xmuoj.com")}.json`
+    );
+    await writeJson(cacheFile, {
+      version: 1,
+      baseUrl: "http://xmuoj.com",
+      fetchedAt: Date.now() - 40 * 60 * 1000,
+      total: 4,
+      problems: [
+        { id: 10220, displayId: "PTA1.1", title: "求2数的积", difficulty: "Low", tags: ["数学"], acceptedNumber: 5, submissionNumber: 9 },
+        { id: 10221, displayId: "JD001", title: "数组求和", difficulty: "Low", tags: ["数组"], acceptedNumber: 2, submissionNumber: 7 },
+        { id: 10222, displayId: "JD004", title: "集市算账", difficulty: "Mid", tags: ["模拟"], acceptedNumber: 1, submissionNumber: 5 },
+        { id: 10223, displayId: "PTA7.3", title: "求 1!+2!+3!+...+n!", difficulty: "High", tags: ["循环"], acceptedNumber: 0, submissionNumber: 3 }
+      ]
+    });
+    await vscode.commands.executeCommand("xmuoj.browseProblemset");
+    const workbenchPanel = createdWebviewPanels.find((panel) => panel.viewType === "xmuojProblemsetWorkbench");
+    assert.ok(workbenchPanel, "打开公共题库应创建刷题台面板");
+    assert.ok(String(workbenchPanel.webview.html).includes("nonce-"), "刷题台脚本应通过 CSP nonce 加载");
+    await waitFor(
+      () => workbenchPanel.messages.some((message) => message.type === "snapshot" && message.slice === "problems" && message.meta && message.meta.source === "cache"),
+      { label: "刷题台缓存快照" }
+    );
+    const cachedSnapshot = workbenchPanel.messages
+      .filter((message) => message.type === "snapshot" && message.slice === "problems" && message.meta && message.meta.source === "cache")
+      .pop();
+    assert.strictEqual(cachedSnapshot.data.stats.total, 4, "断网时应渲染缓存的 4 道题");
+    assert.strictEqual(cachedSnapshot.data.items.length, 4);
+    assert.ok(
+      workbenchPanel.messages.some((message) => message.type === "error" && message.slice === "problems"),
+      "站点接口失败时应在题库内联提示，而不是白屏"
+    );
+    console.log("  ok 刷题台：断网时渲染磁盘缓存并内联报错");
+
+    // 8) 时间胶囊：开始录制 → 编辑 → 停止落盘
+    const capsuleDir = await findProblemDirById(root, 10220);
+    const capsuleSource = path.join(capsuleDir, "main.py");
+    let capsuleText = "print(1)\n";
+    const capsuleDocument = {
+      fileName: capsuleSource,
+      uri: vscode.Uri.file(capsuleSource),
+      languageId: "python",
+      isDirty: false,
+      getText: () => capsuleText,
+      save: async () => undefined
+    };
+    vscode.window.activeTextEditor = {
+      document: capsuleDocument,
+      selections: [{ anchor: { offset: 0 }, active: { offset: 0 } }],
+      selection: { anchor: { offset: 0 }, active: { offset: 0 } }
+    };
+    await vscode.commands.executeCommand("xmuoj.timeCapsule.start");
+    capsuleText = "print(1)\nprint(2)\n";
+    for (const listener of textDocumentListeners) {
+      listener({
+        document: capsuleDocument,
+        contentChanges: [{ rangeOffset: 9, rangeLength: 0, text: "print(2)\n" }]
+      });
+    }
+    await vscode.commands.executeCommand("xmuoj.timeCapsule.stop");
+    const capsuleRoot = path.join(globalStorageRoot, "timecapsules");
+    const capsuleFiles = (await fs.readdir(capsuleRoot)).filter((name) => name.endsWith(".xmuojcapsule"));
+    assert.strictEqual(capsuleFiles.length, 1, "停止后应生成 1 个胶囊文件");
+    const parsedCapsule = capsuleFormat.parseCapsule(
+      zlib.gunzipSync(await fs.readFile(path.join(capsuleRoot, capsuleFiles[0]))).toString("utf8")
+    );
+    assert.strictEqual(parsedCapsule.ok, true);
+    assert.strictEqual(parsedCapsule.meta.problem.displayId, "PTA1.1");
+    const finalCapsuleState = capsuleFormat.sliceAt(parsedCapsule.events, Infinity);
+    assert.strictEqual(finalCapsuleState.text, "print(1)\nprint(2)\n");
+    assert.ok(parsedCapsule.meta.eventCount >= 3, "应包含初始检查点、编辑与收尾检查点");
+    console.log("  ok 时间胶囊：开始录制、记录编辑并落盘");
+
+    // 停止后角标异步刷新：题目树应标出「有回放」
+    let badgeReady = false;
+    for (let attempt = 0; attempt < 50 && !badgeReady; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      badgeReady = treeProvider.hasCapsule({ id: 10220 });
+    }
+    assert.ok(badgeReady, "停止录制后题目树应记录该题的胶囊角标");
+    const badgedContest = await currentBankItem();
+    const badgedProblems = badgedContest ? await treeProvider.getChildren(badgedContest) : [];
+    const badged = badgedProblems.find((item) => Number(item.problem.id) === 10220);
+    assert.ok(badged, "实验题目应仍在树中");
+    assert.ok(String(badged.description).includes("有回放"), "有胶囊的题目应显示「有回放」角标");
+    console.log("  ok 时间胶囊：题目树显示「有回放」角标");
+
+    // 9) 回放面板：HTML 资源、init 摘要与按检查点切片
+    await vscode.commands.executeCommand("xmuoj.timeCapsule.replayLatest");
+    const capsulePanel = createdWebviewPanels.find((panel) => panel.viewType === "xmuojTimeCapsule");
+    assert.ok(capsulePanel, "应创建回放 webview");
+    assert.ok(capsulePanel.webview.html.includes("capsule-format.js"), "回放页应加载共享补丁算法");
+    assert.ok(capsulePanel.webview.html.includes("player.js"), "回放页应加载播放器脚本");
+    assert.ok(capsulePanel.webview.html.includes("nonce-"), "回放页应使用 CSP nonce");
+    capsulePanel.messages.length = 0;
+    for (const listener of capsulePanel.messageListeners) {
+      listener({ type: "ready" });
+    }
+    const initMessage = capsulePanel.messages.find((message) => message.type === "capsule:init");
+    assert.ok(initMessage, "页面 ready 后应收到 capsule:init");
+    assert.ok(initMessage.timeline.checkpoints.length >= 2, "应至少包含起始与收尾检查点");
+    assert.ok(initMessage.timeline.markers.length >= 0);
+    assert.strictEqual(initMessage.attempts.length, 1, "首次录制应只有一次尝试");
+    assert.strictEqual(initMessage.attempts[0].attemptNumber, 1);
+    assert.strictEqual(initMessage.currentId, parsedCapsule.meta.id);
+    for (const listener of capsulePanel.messageListeners) {
+      listener({ type: "events", requestId: "r1", start: 0, count: 100 });
+    }
+    const eventMessage = capsulePanel.messages.find((message) => message.type === "capsule:events");
+    assert.ok(eventMessage, "应返回请求的事件切片");
+    assert.strictEqual(eventMessage.requestId, "r1");
+    assert.strictEqual(eventMessage.events[0].k, "cp", "切片应从检查点开始");
+    console.log("  ok 时间胶囊回放：初始化摘要与切片协议");
+
+    // 10) 同一道题再录一次：回放页应聚合成两次尝试，且复用同一个面板
+    capsulePanel.messages.length = 0;
+    vscode.window.visibleTextEditors = [{ document: capsuleDocument, viewColumn: 1 }];
+    await vscode.commands.executeCommand("xmuoj.timeCapsule.start", { sourcePath: capsuleSource });
+    capsuleText = "print(1)\nprint(2)\nprint(3)\n";
+    for (const listener of textDocumentListeners) {
+      listener({
+        document: capsuleDocument,
+        contentChanges: [{ rangeOffset: 18, rangeLength: 0, text: "print(3)\n" }]
+      });
+    }
+    await vscode.commands.executeCommand("xmuoj.timeCapsule.stop");
+    await vscode.commands.executeCommand("xmuoj.timeCapsule.replayProblem", { sourcePath: capsuleSource });
+    const mergedInit = capsulePanel.messages.filter((message) => message.type === "capsule:init").pop();
+    assert.ok(mergedInit, "按题目回放应重新下发 init");
+    assert.strictEqual(createdWebviewPanels.filter((panel) => panel.viewType === "xmuojTimeCapsule").length, 1, "同一道题只应有一个回放标签页");
+    assert.strictEqual(mergedInit.attempts.length, 2, "两次录制应聚合为两次尝试");
+    assert.deepStrictEqual(mergedInit.attempts.map((item) => item.attemptNumber), [2, 1]);
+    assert.strictEqual(mergedInit.attempts[0].stats.edits, 1);
+    console.log("  ok 回放按题目聚合多次尝试并复用面板");
+
     extension.deactivate();
     for (const disposable of context.subscriptions) {
       try {
@@ -612,7 +901,7 @@ async function main() {
 
     assert.strictEqual(unhandledRejections.length, 0, `存在未捕获 rejection：${unhandledRejections.map((reason) => (reason && reason.message) || reason).join("; ")}`);
 
-    console.log("local-integration OK（12 项）");
+    console.log("local-integration OK（16 项）");
   } finally {
     globalThis.fetch = originalFetch;
     Module._load = originalLoad;

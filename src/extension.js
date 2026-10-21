@@ -43,6 +43,17 @@ const {
 } = progress;
 const { runLocalCases } = require("./runner");
 const search = require("./search");
+const problemsetQueue = require("./problemsetQueue");
+const contestList = require("./contestList");
+const { ProblemsetWorkbench } = require("./problemsetWorkbench");
+const { ContestRaceWorkbench } = require("./contestRaceWorkbench");
+const { isQuestionBankContest } = require("./siteApi");
+const dataMigration = require("./dataMigration");
+const { TimeCapsuleStore } = require("./timeCapsuleStore");
+const { TimeCapsuleRecorder } = require("./timeCapsuleRecorder");
+const { TimeCapsulePanel } = require("./timeCapsulePanel");
+const { LOCAL_LANGUAGE_TEMPLATES, replaceUniversalHeader } = require("./languageTemplates");
+const capsuleLibrary = require("./timeCapsuleLibrary");
 
 const RECENT_PROBLEMS_KEY = "xmuoj.recentProblems";
 const LAST_SUBMISSION_RESULT_KEY = "xmuoj.lastSubmissionResult";
@@ -54,7 +65,9 @@ const RECENT_SUBMISSION_DENSITY_KEY = "xmuoj.recentSubmissionDensity";
 const RECENT_SUBMISSION_RESULT_FILTER_KEY = "xmuoj.recentSubmissionResultFilter";
 const RECENT_SUBMISSION_LANGUAGE_FILTER_KEY = "xmuoj.recentSubmissionLanguageFilter";
 const PROBLEMSET_SELECTIONS_KEY = "xmuoj.problemsetSelections";
+const PROBLEMSET_QUEUE_CURSOR_KEY = "xmuoj.problemsetQueueCursor.v1";
 const OPEN_CONTEST_WORKSPACES_KEY = "xmuoj.openContestWorkspaces";
+const HIDDEN_CONTESTS_KEY = "xmuoj.hiddenContests";
 const RECENT_SEARCHES_KEY = "xmuoj.recentSearches";
 const WORKBENCH_LAYOUT_KEY = "xmuoj.workbenchLayout";
 const LAST_USERNAME_KEY = "xmuoj.lastUsername";
@@ -95,12 +108,6 @@ const LOCAL_LANGUAGE_FILE_CANDIDATES = {
   "C++": ["main.cpp"],
   Java: ["Main.java"],
   Python3: ["main.py", "main.python"]
-};
-const LOCAL_LANGUAGE_TEMPLATES = {
-  C: "#include <stdio.h>\n\nint main(void) {\n    return 0;\n}\n",
-  "C++": "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n\n    return 0;\n}\n",
-  Java: "import java.io.*;\nimport java.util.*;\n\npublic class Main {\n    public static void main(String[] args) throws Exception {\n    }\n}\n",
-  Python3: "def main():\n    pass\n\n\nif __name__ == '__main__':\n    main()\n"
 };
 
 function isSideModeEnabled() {
@@ -432,21 +439,40 @@ function buildContestWorkspaceKey(baseUrl, contestId) {
   return [normalizeBaseUrlForKey(baseUrl), String(contestId || "")].join("::");
 }
 
+/** 「从实验列表移除」必须同时记住隐藏键，否则扫盘来源会在 refresh 后把它加回来。 */
+function hideContestWorkspaceEntry(state, entry) {
+  const key = contestList.contestEntryKey(entry, state && state.baseUrl);
+  if (!key) {
+    return "";
+  }
+  state.hiddenContests = contestList.hideContest(state.hiddenContests, key);
+  if (typeof state.persistHiddenContests === "function") {
+    state.persistHiddenContests();
+  }
+  return key;
+}
+
+function unhideContestWorkspaceEntry(state, key) {
+  if (!key) {
+    return;
+  }
+  const next = contestList.unhideContest(state.hiddenContests, key);
+  if (next.length !== (Array.isArray(state.hiddenContests) ? state.hiddenContests.length : 0)) {
+    state.hiddenContests = next;
+    if (typeof state.persistHiddenContests === "function") {
+      state.persistHiddenContests();
+    }
+  }
+}
+
 function upsertProblemsetSelection(state, problem, baseUrl) {
-  const nextItem = {
-    id: problem.id,
-    display_id: problem.display_id,
-    title: problem.title,
-    difficulty: problem.difficulty || "",
-    languages: problem.languages || [],
+  // 已存在的题目原位更新，保持刷题顺序不变；新题追加到队尾。
+  state.problemsetSelections = problemsetQueue.upsertSelection(
+    state.problemsetSelections || [],
+    problem,
     baseUrl
-  };
-  const next = (state.problemsetSelections || [])
-    .filter((item) => !(String(item.id) === String(nextItem.id) && normalizeBaseUrlForKey(item.baseUrl) === normalizeBaseUrlForKey(baseUrl)))
-    .concat(nextItem)
-    .slice(-100);
-  state.problemsetSelections = next;
-  return next;
+  );
+  return state.problemsetSelections;
 }
 
 async function persistProblemsetSelections(context, state) {
@@ -455,6 +481,8 @@ async function persistProblemsetSelections(context, state) {
 
 function upsertContestWorkspaceSelection(state, workspace, baseUrl) {
   const key = buildContestWorkspaceKey(baseUrl, workspace && workspace.contest ? workspace.contest.id : null);
+  // 显式重新加载该实验时解除「从实验列表移除」留下的隐藏标记。
+  unhideContestWorkspaceEntry(state, key);
   const nextItem = {
     key,
     baseUrl,
@@ -474,7 +502,11 @@ function upsertContestWorkspaceSelection(state, workspace, baseUrl) {
 }
 
 function removeProblemsetSelection(state, item) {
-  state.problemsetSelections = (state.problemsetSelections || []).filter((entry) => !(String(entry.id) === String(item.id) && normalizeBaseUrlForKey(entry.baseUrl) === normalizeBaseUrlForKey(item.baseUrl)));
+  state.problemsetSelections = problemsetQueue.removeSelection(
+    state.problemsetSelections || [],
+    item,
+    item && item.baseUrl
+  );
   return state.problemsetSelections;
 }
 
@@ -483,40 +515,43 @@ function clearProblemsetSelections(state) {
   return state.problemsetSelections;
 }
 
-function buildProblemsetSelectionKey(problem, baseUrl) {
-  return [normalizeBaseUrlForKey(baseUrl), String(problem && problem.id ? problem.id : "")].join("::");
+function rememberProblemsetQueueCursor(problem, baseUrl) {
+  const cursor = problemsetQueue.buildCursor(problem, baseUrl);
+  if (!cursor || !extensionContext) {
+    return;
+  }
+  extensionContext.globalState.update(PROBLEMSET_QUEUE_CURSOR_KEY, cursor).catch(() => null);
 }
 
-function getProblemsetSelectionIndex(state, problem, baseUrl) {
-  const key = buildProblemsetSelectionKey(problem, baseUrl);
-  return (state.problemsetSelections || []).findIndex((item) => buildProblemsetSelectionKey(item, item.baseUrl) === key);
+function getProblemsetQueueCursor(state, baseUrl) {
+  if (state.activeProblem) {
+    return problemsetQueue.buildCursor(state.activeProblem, baseUrl);
+  }
+  return extensionContext
+    ? String(extensionContext.globalState.get(PROBLEMSET_QUEUE_CURSOR_KEY, "") || "")
+    : "";
 }
 
 function getNextProblemsetSelection(state, baseUrl) {
-  const selections = (state.problemsetSelections || []).filter((item) => normalizeBaseUrlForKey(item.baseUrl) === normalizeBaseUrlForKey(baseUrl));
-  if (!selections.length) {
-    return null;
-  }
-  if (!state.activeProblem) {
-    return selections[0];
-  }
-  const currentIndex = getProblemsetSelectionIndex(state, state.activeProblem, baseUrl);
-  if (currentIndex < 0) {
-    return selections[0];
-  }
-  return selections[currentIndex + 1] || null;
+  return problemsetQueue.nextSelection(
+    state.problemsetSelections || [],
+    getProblemsetQueueCursor(state, baseUrl),
+    baseUrl
+  );
 }
 
 function getRandomProblemsetSelection(state, baseUrl) {
-  const selections = (state.problemsetSelections || []).filter((item) => normalizeBaseUrlForKey(item.baseUrl) === normalizeBaseUrlForKey(baseUrl));
-  if (!selections.length) {
-    return null;
-  }
-  return selections[Math.floor(Math.random() * selections.length)] || null;
+  return problemsetQueue.randomSelection(state.problemsetSelections || [], baseUrl);
 }
 
 function removeContestWorkspaceSelection(state, item) {
-  state.openContestWorkspaces = (state.openContestWorkspaces || []).filter((entry) => entry.key !== item.key);
+  const key = contestList.contestEntryKey(item, state && state.baseUrl);
+  state.openContestWorkspaces = (state.openContestWorkspaces || []).filter((entry) => {
+    return contestList.contestEntryKey(entry, state && state.baseUrl) !== key;
+  });
+  if (key) {
+    hideContestWorkspaceEntry(state, item);
+  }
   if (state.contestWorkspace && item.contest && state.contestWorkspace.contest && String(state.contestWorkspace.contest.id) === String(item.contest.id)) {
     state.contestWorkspace = null;
     state.activeContest = null;
@@ -538,11 +573,17 @@ function syncActiveContestByEntry(state, workspaceEntry) {
   if (!workspaceEntry || !workspaceEntry.contest) {
     return;
   }
+  // 树节点没有 contestPassword/problems 字段，原始条目在 .entry 下。
+  const source = workspaceEntry.entry && workspaceEntry.entry.contest ? workspaceEntry.entry : workspaceEntry;
+  const contestId = workspaceEntry.contest.id;
+  const entryPassword = source.contestPassword || workspaceEntry.contestPassword || "";
+  // 扫盘条目不带密码；先解析已记住的密码，避免把当前实验的密码清空。
+  const knownPassword = resolveContestPassword(state, contestId);
   state.contestWorkspace = {
     contest: workspaceEntry.contest,
-    problems: workspaceEntry.problems || []
+    problems: source.problems || workspaceEntry.problems || []
   };
-  state.contestPassword = workspaceEntry.contestPassword || "";
+  state.contestPassword = entryPassword || knownPassword || "";
   state.activeContest = workspaceEntry.contest;
 }
 
@@ -1262,632 +1303,339 @@ function renderProblemHtml(problem, baseUrl, workspaceState = {}, _user = null) 
   </html>`;
 }
 
-function renderProblemsetWorkbenchRow(problem, state, baseUrl) {
-  const progress = getProblemProgress(state, baseUrl, problem, null);
-  const progressSummary = getProblemProgressSummary(progress);
-  const tags = Array.isArray(problem.tags) && problem.tags.length
-    ? problem.tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")
-    : '<span class="tag muted">暂无标签</span>';
-  const languages = Array.isArray(problem.languages) && problem.languages.length ? problem.languages.join(" · ") : "未知语言";
-  const payload = escapeHtml(JSON.stringify(problem));
-  return `
-    <tr>
-      <td class="problem-cell-actions">
-        <button class="primary icon-only" data-command="addQueue" data-problem="${payload}" title="加入队列" aria-label="加入队列">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10v2H4V7Zm0 4h10v2H4v-2Zm0 4h8v2H4v-2Zm11-5V7h2v3h3v2h-3v3h-2v-3h-3v-2h3Z" fill="currentColor"/></svg>
-        </button>
-        <button class="icon-only" data-command="startProblem" data-problem="${payload}" title="开刷" aria-label="开刷">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13L18 12 8 5.5Z" fill="currentColor"/></svg>
-        </button>
-        <button class="icon-only" data-command="openProblem" data-problem="${payload}" title="查看题面" aria-label="查看题面">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6c5.2 0 8.7 5 9 5.5.1.2.1.4 0 .6-.3.5-3.8 5.5-9 5.5s-8.7-5-9-5.5a.7.7 0 0 1 0-.6C3.3 11 6.8 6 12 6Zm0 2c-3.6 0-6.3 3.1-7 4 1 1.3 3.6 4 7 4 3.6 0 6.3-3.1 7-4-1-1.3-3.6-4-7-4Zm0 1.8a2.2 2.2 0 1 1 0 4.4 2.2 2.2 0 0 1 0-4.4Z" fill="currentColor"/></svg>
-        </button>
-      </td>
-      <td class="problem-cell-code">${escapeHtml(problem.display_id)}</td>
-      <td class="problem-cell-title">
-        <div class="problem-title-wrap">
-          <strong>${escapeHtml(problem.title)}</strong>
-          <div class="problem-subtitle">
-            <span class="status-pill">${escapeHtml(progressSummary)}</span>
-            ${problem.can_download_test_case ? '<span class="meta-pill accent">可下载数据</span>' : ""}
-          </div>
-        </div>
-      </td>
-      <td class="problem-cell-meta">${escapeHtml(problem.difficulty || "未知难度")}</td>
-      <td class="problem-cell-meta">${escapeHtml(languages)}</td>
-      <td class="problem-cell-tags">${tags}</td>
-    </tr>
-  `;
+/**
+ * 刷题台控制器是单例：面板、关注、竞速与缓存都挂在它上面。
+ * 通过 actions 回调复用现有开题/提交/树刷新逻辑，避免循环依赖。
+ */
+let problemsetWorkbench = null;
+let contestRaceWorkbench = null;
+
+// 时间胶囊是单例：录制器、状态栏与恢复入口都挂在扩展生命周期上。
+let timeCapsuleRecorder = null;
+let timeCapsuleStatusBar = null;
+let timeCapsulePauseBar = null;
+let timeCapsuleStopBar = null;
+let timeCapsulePanel = null;
+let timeCapsuleStoreRef = null;
+let timeCapsuleCodeLensProvider = null;
+let timeCapsuleIdleAvailable = false;
+let timeCapsuleRecordingContext = false;
+
+function formatCapsuleDuration(ms) {
+  const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const pad = (value) => String(value).padStart(2, "0");
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
 }
 
-function renderProblemsetQueueRow(problem, state, baseUrl) {
-  const progress = getProblemProgress(state, baseUrl, problem, null);
-  const progressSummary = getProblemProgressSummary(progress);
-  const payload = escapeHtml(JSON.stringify(problem));
-  return `
-    <tr>
-      <td class="problem-cell-actions">
-        <button class="primary icon-only" data-command="startQueueItem" data-problem="${payload}" title="开始刷题" aria-label="开始刷题">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13L18 12 8 5.5Z" fill="currentColor"/></svg>
-        </button>
-        <button class="icon-only" data-command="openQueueItem" data-problem="${payload}" title="查看题面" aria-label="查看题面">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6c5.2 0 8.7 5 9 5.5.1.2.1.4 0 .6-.3.5-3.8 5.5-9 5.5s-8.7-5-9-5.5a.7.7 0 0 1 0-.6C3.3 11 6.8 6 12 6Zm0 2c-3.6 0-6.3 3.1-7 4 1 1.3 3.6 4 7 4 3.6 0 6.3-3.1 7-4-1-1.3-3.6-4-7-4Zm0 1.8a2.2 2.2 0 1 1 0 4.4 2.2 2.2 0 0 1 0-4.4Z" fill="currentColor"/></svg>
-        </button>
-        <button class="icon-only" data-command="removeQueueItem" data-problem="${payload}" title="移除" aria-label="移除">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6l1 1h4v2H4V5h4l1-1Zm1 6h2v8h-2v-8Zm4 0h2v8h-2v-8ZM7 10h2v8H7v-8Z" fill="currentColor"/></svg>
-        </button>
-      </td>
-      <td class="problem-cell-code">${escapeHtml(problem.display_id)}</td>
-      <td class="problem-cell-title">
-        <div class="problem-title-wrap">
-          <strong>${escapeHtml(problem.title)}</strong>
-          <div class="problem-subtitle"><span class="status-pill">${escapeHtml(progressSummary)}</span></div>
-        </div>
-      </td>
-      <td class="problem-cell-meta">${escapeHtml(problem.difficulty || "未知难度")}</td>
-    </tr>
-  `;
-}
-
-function renderProblemsetWorkbenchSkeleton(message = "正在加载公共题库刷题台…") {
-  return `<!DOCTYPE html>
-  <html>
-    <head>
-      <meta charset="UTF-8" />
-      <style>
-        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17312f; background: radial-gradient(circle at top left, #f7ead2 0%, #f8f7f2 35%, #eef5f0 100%); }
-        .shell { max-width: 1280px; margin: 0 auto; padding: 24px; }
-        .panel { background: rgba(255,255,255,0.78); border: 1px solid rgba(23,49,47,0.08); border-radius: 22px; padding: 18px; box-shadow: 0 12px 36px rgba(23,49,47,0.06); backdrop-filter: blur(16px); }
-        .loading-card { min-height: 240px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #526b66; }
-      </style>
-    </head>
-    <body>
-      <div class="shell">
-        <div class="panel loading-card">${escapeHtml(message)}</div>
-      </div>
-    </body>
-  </html>`;
-}
-
-function renderProblemsetTable(results, state, baseUrl) {
-  if (!results.length) {
-    return '<div class="empty">先搜索一道题，再把它加入队列。你也可以直接点“直接开刷”。</div>';
+function updateTimeCapsuleStatus(status, summary) {
+  if (timeCapsuleCodeLensProvider) {
+    timeCapsuleCodeLensProvider.setCapsuleState(status, summary);
   }
-  return `
-    <div class="table-shell">
-      <table class="problem-table">
-        <thead>
-          <tr>
-            <th>操作</th>
-            <th>题号</th>
-            <th>题目</th>
-            <th>难度</th>
-            <th>语言</th>
-            <th>标签</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${results.map((problem) => renderProblemsetWorkbenchRow(problem, state, baseUrl)).join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
-function renderProblemsetQueueTable(queue, state, baseUrl) {
-  if (!queue.length) {
-    return '<div class="empty">当前队列为空。先在搜索结果里加入几道题，再开始连续刷题。</div>';
+  const active = status === "recording" || status === "paused";
+  if (active !== timeCapsuleRecordingContext) {
+    timeCapsuleRecordingContext = active;
+    vscode.commands
+      .executeCommand("setContext", "xmuoj.timeCapsuleRecording", active)
+      .then(undefined, () => null);
   }
-  return `
-    <div class="table-shell queue-shell">
-      <table class="problem-table queue-table">
-        <thead>
-          <tr>
-            <th>操作</th>
-            <th>题号</th>
-            <th>题目</th>
-            <th>难度</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${queue.map((problem) => renderProblemsetQueueRow(problem, state, baseUrl)).join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
-function renderProblemsetWorkbenchHtml(viewModel) {
-  const total = Number(viewModel.total || 0);
-  const offset = Number(viewModel.offset || 0);
-  const limit = Number(viewModel.limit || 20);
-  const results = Array.isArray(viewModel.results) ? viewModel.results : [];
-  const queue = Array.isArray(viewModel.queue) ? viewModel.queue : [];
-  const startLabel = total > 0 ? Math.min(offset + 1, total) : 0;
-  const endLabel = total > 0 ? Math.min(offset + results.length, total) : results.length;
-  const difficultyOptions = ["", "Low", "Mid", "High"];
-  const difficultyLabels = { "": "全部难度", Low: "Low", Mid: "Mid", High: "High" };
-  const serialized = JSON.stringify({
-    query: viewModel.query || "",
-    difficulty: viewModel.difficulty || "",
-    tag: viewModel.tag || "",
-    limit,
-    offset
-  });
-  const resultTable = renderProblemsetTable(results, viewModel.state, viewModel.baseUrl);
-  const queueTable = renderProblemsetQueueTable(queue, viewModel.state, viewModel.baseUrl);
-  const activeProblem = viewModel.activeProblem ? `<div class="active-problem"><span class="status-pill accent">当前题</span><strong>${escapeHtml(viewModel.activeProblem.display_id)} ${escapeHtml(viewModel.activeProblem.title)}</strong></div>` : "";
-  return `<!DOCTYPE html>
-  <html>
-    <head>
-      <meta charset="UTF-8" />
-      <style>
-        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17312f; background: radial-gradient(circle at top left, #f7ead2 0%, #f8f7f2 35%, #eef5f0 100%); }
-        .shell { max-width: 1280px; margin: 0 auto; padding: 24px; }
-        .hero { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.7fr); gap: 20px; align-items: end; }
-        h1 { margin: 0 0 10px; font-size: 30px; line-height: 1.1; letter-spacing: -0.02em; }
-        .subtitle { margin: 0; color: #526b66; line-height: 1.6; }
-        .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-        .stat { background: rgba(255,255,255,0.75); border: 1px solid rgba(23,49,47,0.08); border-radius: 18px; padding: 14px 16px; backdrop-filter: blur(16px); }
-        .stat-value { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-        .stat-label { font-size: 12px; color: #5a706b; }
-        .panel { margin-top: 18px; background: rgba(255,255,255,0.78); border: 1px solid rgba(23,49,47,0.08); border-radius: 22px; padding: 18px; box-shadow: 0 12px 36px rgba(23,49,47,0.06); backdrop-filter: blur(16px); }
-        .toolbar { display: grid; grid-template-columns: 1.4fr 0.6fr 0.9fr 0.5fr auto; gap: 10px; align-items: end; }
-        .field label { display: block; font-size: 12px; color: #5a706b; margin-bottom: 6px; }
-        .field input, .field select { width: 100%; box-sizing: border-box; border: 1px solid rgba(23,49,47,0.12); border-radius: 12px; padding: 11px 12px; font: inherit; background: #fff; color: #17312f; }
-        .toolbar button, .problem-card-actions button, .queue-card-actions button, .nav-buttons button, .problem-cell-actions button { border: 1px solid rgba(23,49,47,0.12); border-radius: 10px; padding: 7px 10px; background: #fff; color: #17312f; cursor: pointer; font-size: 12px; line-height: 1.2; transition: transform 0.16s ease, box-shadow 0.16s ease; }
-        .toolbar button:hover, .problem-card-actions button:hover, .queue-card-actions button:hover, .nav-buttons button:hover, .problem-cell-actions button:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(23,49,47,0.08); }
-        .toolbar button.primary, .problem-card-actions button.primary, .queue-card-actions button.primary, .nav-buttons button.primary, .problem-cell-actions button.primary { background: linear-gradient(135deg, #0b5d5b 0%, #1e7d61 100%); color: #f7f7f2; border-color: transparent; }
-        .toolbar-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
-        .section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
-        .section-head h2 { margin: 0; font-size: 18px; }
-        .section-head p { margin: 0; color: #56706a; font-size: 13px; }
-        .nav-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
-        .panel-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.9fr); gap: 18px; margin-top: 18px; }
-        .table-shell { overflow-x: auto; border: 1px solid rgba(23,49,47,0.08); border-radius: 18px; background: #fff; }
-        .problem-table { width: 100%; border-collapse: collapse; min-width: 860px; }
-        .queue-table { min-width: 620px; }
-        .problem-table thead th { text-align: left; font-size: 12px; font-weight: 700; color: #5a706b; padding: 10px 12px; background: #f7f8f6; border-bottom: 1px solid rgba(23,49,47,0.08); }
-        .problem-table tbody td { padding: 10px 12px; border-bottom: 1px solid rgba(23,49,47,0.06); vertical-align: top; }
-        .problem-table tbody tr:hover { background: rgba(215,235,229,0.28); }
-        .problem-cell-code { white-space: nowrap; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #7a8d86; width: 74px; }
-        .problem-cell-title strong { display: block; font-size: 15px; margin-bottom: 6px; }
-        .problem-title-wrap { min-width: 0; }
-        .problem-subtitle { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-        .problem-cell-meta { white-space: nowrap; color: #36514c; font-size: 13px; }
-        .problem-cell-tags { min-width: 120px; }
-        .problem-cell-actions { white-space: nowrap; width: 108px; padding-right: 4px; }
-        .problem-cell-actions button { margin: 0 4px 0 0; }
-        .problem-cell-actions .icon-only { width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; }
-        .problem-cell-actions .icon-only svg { width: 14px; height: 14px; display: block; }
-        .problem-table tbody td.problem-cell-actions { padding-right: 4px; }
-        .problem-table tbody td.problem-cell-code { padding-left: 6px; }
-        .problem-code { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: #7a8d86; }
-        .problem-card-meta, .problem-card-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-        .problem-card-actions, .queue-card-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-        .meta-pill, .status-pill, .tag { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 5px 9px; font-size: 11px; background: #d7ebe5; color: #17312f; }
-        .status-pill.accent, .meta-pill.accent { background: #ffe7c5; color: #8b4d08; }
-        .tag { background: #f2f5f3; color: #5d736d; }
-        .tag.muted { background: #f2f5f3; color: #5d736d; }
-        .empty { padding: 20px; border: 1px dashed rgba(23,49,47,0.18); border-radius: 18px; color: #5a706b; background: rgba(255,255,255,0.5); }
-        .error { margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: #ffe8e6; color: #8d342b; border: 1px solid #efc1bc; }
-        .active-problem { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
-        .workspace-tip { margin-top: 10px; color: #5a706b; font-size: 13px; }
-        .loading { margin-top: 10px; color: #5a706b; }
-        @media (max-width: 980px) {
-          .hero, .toolbar, .panel-grid { grid-template-columns: 1fr; }
-          .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-          .section-head, .problem-card-top { flex-direction: column; align-items: flex-start; }
-          .problem-cell-actions { white-space: normal; }
-          .problem-cell-tags { min-width: 0; }
-          .problem-table { min-width: 760px; }
-          .queue-table { min-width: 560px; }
-          .toolbar-actions { justify-content: flex-start; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="shell">
-        <div class="hero">
-          <div>
-            <h1>公共题库刷题台</h1>
-            <p class="subtitle">在这里搜索、筛选、编排和连续刷题。把题目加进队列后，可以直接开刷、跳到下一题，或者随机抽题继续。</p>
-            ${activeProblem}
-          </div>
-          <div class="stats">
-            <div class="stat"><div class="stat-value">${escapeHtml(String(total))}</div><div class="stat-label">当前结果数</div></div>
-            <div class="stat"><div class="stat-value">${escapeHtml(String(queue.length))}</div><div class="stat-label">刷题队列</div></div>
-            <div class="stat"><div class="stat-value">${escapeHtml(String(startLabel))}</div><div class="stat-label">当前页起始</div></div>
-            <div class="stat"><div class="stat-value">${escapeHtml(String(limit))}</div><div class="stat-label">每页题数</div></div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="section-head">
-            <div>
-              <h2>搜索与筛选</h2>
-              <p>支持题号、标题、难度和标签筛选。搜索结果可直接加入队列或开刷。</p>
-            </div>
-            <div class="nav-buttons">
-              <button type="button" data-command="nextQueue">继续下一题</button>
-              <button type="button" data-command="randomQueue">随机一题</button>
-              <button type="button" data-command="clearQueue">清空队列</button>
-            </div>
-          </div>
-          <form class="toolbar" id="search-form">
-            <div class="field">
-              <label>关键词</label>
-              <input id="problemset-keyword" name="keyword" type="text" placeholder="题号 / 标题" value="${escapeHtml(viewModel.query || "")}" />
-            </div>
-            <div class="field">
-              <label>难度</label>
-              <select id="problemset-difficulty" name="difficulty">
-                ${difficultyOptions.map((item) => `<option value="${escapeHtml(item)}" ${String(item) === String(viewModel.difficulty || "") ? "selected" : ""}>${escapeHtml(difficultyLabels[item])}</option>`).join("")}
-              </select>
-            </div>
-            <div class="field">
-              <label>标签</label>
-              <input id="problemset-tag" name="tag" type="text" placeholder="例如 dp / graph" value="${escapeHtml(viewModel.tag || "")}" />
-            </div>
-            <div class="field">
-              <label>每页</label>
-              <select id="problemset-limit" name="limit">
-                ${[10, 20, 30, 50].map((item) => `<option value="${item}" ${Number(item) === Number(limit) ? "selected" : ""}>${item}</option>`).join("")}
-              </select>
-            </div>
-            <div class="toolbar-actions">
-              <button type="submit" class="primary">搜索</button>
-              <button type="button" data-command="prevPage">上一页</button>
-              <button type="button" data-command="nextPage">下一页</button>
-            </div>
-          </form>
-          ${viewModel.loading ? '<div class="loading">正在加载题库…</div>' : ""}
-          ${viewModel.error ? `<div class="error">${escapeHtml(viewModel.error)}</div>` : ""}
-        </div>
-
-        <div class="panel-grid">
-          <section class="panel">
-            <div class="section-head">
-              <div>
-                <h2>搜索结果</h2>
-                <p>${results.length ? `当前显示第 ${startLabel} - ${endLabel} 题` : "没有匹配题目"}</p>
-              </div>
-              <div class="nav-buttons">
-                <button type="button" data-command="reloadSearch">重新加载</button>
-              </div>
-            </div>
-            ${resultTable}
-          </section>
-
-          <section class="panel">
-            <div class="section-head">
-              <div>
-                <h2>刷题队列</h2>
-                <p>按加入顺序连续刷题。每道题都能单独打开、移除或直接开刷。</p>
-              </div>
-              <div class="nav-buttons">
-                <button type="button" data-command="queueToTop">优先下一题</button>
-              </div>
-            </div>
-            ${queueTable}
-          </section>
-        </div>
-      </div>
-      <script type="application/json" id="problemset-workbench-state">${escapeHtml(serialized)}</script>
-      <script>
-        const vscode = acquireVsCodeApi();
-        const currentStateElement = document.getElementById("problemset-workbench-state");
-        let current = { limit: 20 };
-        try {
-          current = JSON.parse(currentStateElement ? currentStateElement.textContent || "{}" : "{}");
-        } catch (error) {
-          current = { limit: 20 };
-        }
-        function send(command, payload = {}) {
-          vscode.postMessage(Object.assign({ command }, payload));
-        }
-        window.addEventListener("error", (event) => {
-          const shell = document.querySelector(".shell");
-          if (!shell) {
-            return;
-          }
-          const error = document.createElement("div");
-          error.className = "error";
-          error.textContent = "刷题台脚本错误：" + (event.message || "未知错误");
-          shell.insertBefore(error, shell.firstChild);
-        });
-        document.getElementById("search-form").addEventListener("submit", (event) => {
-          event.preventDefault();
-          send("search", {
-            query: document.getElementById("problemset-keyword").value.trim(),
-            difficulty: document.getElementById("problemset-difficulty").value,
-            tag: document.getElementById("problemset-tag").value.trim(),
-            limit: Number(document.getElementById("problemset-limit").value) || current.limit || 20,
-            offset: 0
-          });
-        });
-        document.querySelectorAll("[data-command]").forEach((button) => {
-          button.addEventListener("click", () => {
-            const command = button.getAttribute("data-command");
-            const encoded = button.getAttribute("data-problem");
-            let payload = {};
-            if (encoded) {
-              try {
-                payload = JSON.parse(encoded);
-              } catch (error) {
-                payload = {};
-              }
-            }
-            send(command, payload);
-          });
-        });
-      </script>
-    </body>
-  </html>`;
-}
-
-function getProblemsetWorkbenchState(state) {
-  if (!state.problemsetWorkbench) {
-    state.problemsetWorkbench = {
-      query: "",
-      difficulty: "",
-      tag: "",
-      limit: 20,
-      offset: 0,
-      total: 0,
-      results: [],
-      loading: false,
-      error: null
-    };
-  }
-  return state.problemsetWorkbench;
-}
-
-function buildProblemsetWorkbenchViewModel(state, client) {
-  const workbench = getProblemsetWorkbenchState(state);
-  return {
-    query: workbench.query || "",
-    difficulty: workbench.difficulty || "",
-    tag: workbench.tag || "",
-    limit: workbench.limit || 20,
-    offset: workbench.offset || 0,
-    total: workbench.total || 0,
-    results: workbench.results || [],
-    loading: Boolean(workbench.loading),
-    error: workbench.error || null,
-    queue: state.problemsetSelections || [],
-    activeProblem: state.activeProblem && !state.activeContest ? state.activeProblem : null,
-    state,
-    baseUrl: client.baseUrl
-  };
-}
-
-async function refreshProblemsetWorkbenchPanel(state, client) {
-  if (!state.problemsetPanel) {
+  if (!timeCapsuleStatusBar) {
     return;
   }
-  state.problemsetPanel.title = "XMUOJ 公共题库刷题台";
-  state.problemsetPanel.webview.html = renderProblemsetWorkbenchHtml(buildProblemsetWorkbenchViewModel(state, client));
+  if (active) {
+    const duration = formatCapsuleDuration(summary && summary.durationMs);
+    timeCapsuleStatusBar.command = "xmuoj.timeCapsule.statusMenu";
+    timeCapsuleStatusBar.text =
+      status === "recording" ? `$(record) 录制中 ${duration}` : `$(debug-pause) 已暂停 ${duration}`;
+    timeCapsuleStatusBar.tooltip =
+      status === "recording"
+        ? "时间胶囊录制中。点击打开暂停/停止菜单，右侧还有独立的暂停与停止按钮。"
+        : "时间胶囊已暂停。点击打开继续/停止菜单，右侧还有独立的继续与停止按钮。";
+    timeCapsuleStatusBar.show();
+    if (timeCapsulePauseBar) {
+      timeCapsulePauseBar.command = status === "paused" ? "xmuoj.timeCapsule.resume" : "xmuoj.timeCapsule.pause";
+      timeCapsulePauseBar.text = status === "paused" ? "$(play) 继续录制" : "$(debug-pause) 暂停录制";
+      timeCapsulePauseBar.tooltip = status === "paused" ? "继续录制时间胶囊" : "暂停录制时间胶囊";
+      timeCapsulePauseBar.show();
+    }
+    if (timeCapsuleStopBar) {
+      timeCapsuleStopBar.command = "xmuoj.timeCapsule.stop";
+      timeCapsuleStopBar.text = "$(debug-stop) 停止并保存";
+      timeCapsuleStopBar.tooltip = "停止录制并保存时间胶囊";
+      timeCapsuleStopBar.show();
+    }
+    return;
+  }
+  if (timeCapsulePauseBar) {
+    timeCapsulePauseBar.hide();
+  }
+  if (timeCapsuleStopBar) {
+    timeCapsuleStopBar.hide();
+  }
+  if (status === "finalizing") {
+    timeCapsuleStatusBar.command = "";
+    timeCapsuleStatusBar.text = "$(sync~spin) 正在保存时间胶囊";
+    timeCapsuleStatusBar.tooltip = "正在压缩并保存时间胶囊";
+    timeCapsuleStatusBar.show();
+    return;
+  }
+  if (timeCapsuleIdleAvailable) {
+    timeCapsuleStatusBar.command = "xmuoj.timeCapsule.start";
+    timeCapsuleStatusBar.text = "$(record) 录制时间胶囊";
+    timeCapsuleStatusBar.tooltip = "为当前题目开始录制时间胶囊";
+    timeCapsuleStatusBar.show();
+    return;
+  }
+  timeCapsuleStatusBar.hide();
 }
 
-async function loadProblemsetWorkbenchResults(context, client, state, treeProvider, params = {}) {
-  const workbench = getProblemsetWorkbenchState(state);
-  const nextState = Object.assign({}, workbench, {
-    query: params.query !== undefined ? params.query : workbench.query,
-    difficulty: params.difficulty !== undefined ? params.difficulty : workbench.difficulty,
-    tag: params.tag !== undefined ? params.tag : workbench.tag,
-    limit: params.limit !== undefined ? Number(params.limit) || 20 : workbench.limit || 20,
-    offset: params.offset !== undefined ? Math.max(0, Number(params.offset) || 0) : workbench.offset || 0,
-    loading: true,
-    error: null
-  });
-  state.problemsetWorkbench = nextState;
-  await refreshProblemsetWorkbenchPanel(state, client);
-  try {
-    const response = await client.getProblemset({
-      keyword: nextState.query || undefined,
-      difficulty: nextState.difficulty || undefined,
-      tag: nextState.tag || undefined,
-      limit: nextState.limit,
-      offset: nextState.offset
-    });
-    state.problemsetWorkbench = Object.assign({}, nextState, {
-      loading: false,
-      error: null,
-      total: Number(response.count || response.total || (response.results && response.results.length) || 0),
-      results: response.results || []
-    });
-    await refreshProblemsetWorkbenchPanel(state, client);
-    if (treeProvider) {
-      treeProvider.refresh();
-    }
-    return state.problemsetWorkbench;
-  } catch (error) {
-    state.problemsetWorkbench = Object.assign({}, nextState, {
-      loading: false,
-      error: error.message || String(error),
-      results: []
-    });
-    await refreshProblemsetWorkbenchPanel(state, client);
-    throw error;
+/** 当前活动文件变化时，空闲状态栏按钮只在题目源文件上出现。 */
+function updateTimeCapsuleIdleStatus(available) {
+  timeCapsuleIdleAvailable = Boolean(available);
+  if (
+    timeCapsuleRecorder &&
+    (timeCapsuleRecorder.isRecording || timeCapsuleRecorder.status === "finalizing")
+  ) {
+    return;
   }
+  updateTimeCapsuleStatus("idle", null);
+}
+
+/**
+ * 刷新题目树/工作台的「有回放」角标。胶囊是本地文件，列表失败不影响录制本身。
+ * 键同时接受数字题目 id 与展示号（大小写不敏感），覆盖公共题库与实验题目。
+ */
+async function refreshCapsuleBadges(state) {
+  if (!timeCapsuleStoreRef || !state) {
+    return;
+  }
+  try {
+    const entries = await timeCapsuleStoreRef.list();
+    const keys = new Set();
+    const problemKeys = new Set();
+    const displayOnlyKeys = new Set();
+    for (const entry of entries) {
+      const problem = (entry && entry.problem) || {};
+      const hasNumericId = problem.id !== undefined && problem.id !== null && String(problem.id) !== "";
+      if (hasNumericId) {
+        keys.add(String(problem.id));
+      }
+      const displayId = problem.displayId || problem.display_id;
+      if (displayId) {
+        keys.add(String(displayId).toLowerCase());
+        if (!hasNumericId) {
+          displayOnlyKeys.add(String(displayId).toLowerCase());
+        }
+      }
+      const problemKey = capsuleLibrary.entryProblemKey(entry);
+      if (problemKey) {
+        problemKeys.add(problemKey);
+      }
+    }
+    state.capsuleProblemKeys = keys;
+    state.capsuleProblemKeySet = problemKeys;
+    state.capsuleDisplayOnlyKeys = displayOnlyKeys;
+    if (state.treeDataProvider) {
+      state.treeDataProvider.refresh();
+    }
+    await updateActiveCapsuleContext(state);
+  } catch (_error) {
+    /* 角标是辅助信息，读取失败时保持现状 */
+  }
+}
+
+/**
+ * 编辑器标题栏的「回放本题」只在当前文件有胶囊时显示；
+ * 用归一化题目键匹配，数字 id 与展示号两种来源都能命中。
+ */
+async function updateActiveCapsuleContext(state) {
+  const editor = vscode.window.activeTextEditor;
+  let has = false;
+  if (editor) {
+    try {
+      const found = await findProblemMetadata(editor.document.fileName);
+      const metadata = found && found.metadata;
+      if (metadata) {
+        const displayId = String(metadata.displayId || metadata.display_id || "").trim().toLowerCase();
+        const key = capsuleLibrary.problemKeyOf({
+          id: metadata.problemId,
+          displayId: metadata.displayId || metadata.display_id
+        });
+        has = Boolean(
+          (key && state.capsuleProblemKeySet && state.capsuleProblemKeySet.has(key)) ||
+          (displayId && state.capsuleDisplayOnlyKeys && state.capsuleDisplayOnlyKeys.has(displayId))
+        );
+      }
+    } catch (_error) {
+      has = false;
+    }
+  }
+  await vscode.commands.executeCommand("setContext", "xmuoj.activeProblemHasCapsules", has).then(undefined, () => null);
+}
+
+/** 在运行/提交/判题流程里打标记；没有录制时是空操作。 */
+function timeCapsuleMark(name, label, detail) {
+  if (!timeCapsuleRecorder || !timeCapsuleRecorder.isRecording) {
+    return;
+  }
+  try {
+    timeCapsuleRecorder.mark(name, label, detail);
+  } catch (_error) {
+    // 标记失败不能影响正常的运行/提交流程。
+  }
+}
+
+function getProblemsetWorkbench(context, client, state, treeProvider) {
+  if (problemsetWorkbench) {
+    return problemsetWorkbench;
+  }
+  problemsetWorkbench = new ProblemsetWorkbench({
+    context,
+    state,
+    outputChannel: state.outputChannel,
+    actions: {
+      getClient: () => client,
+      getUsername: () =>
+        (state.user && state.user.username) ||
+        (state.lastUser && state.lastUser.username) ||
+        "",
+      openProblem: async (problem) => {
+        clearContestContext(state);
+        updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
+        await openProblemDetail(
+          client,
+          state,
+          { id: problem.id, display_id: problem.displayId, title: problem.title },
+          null,
+          ""
+        );
+      },
+      startProblem: async (problem) => {
+        clearContestContext(state);
+        updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
+        const detail = await openProblemDetail(
+          client,
+          state,
+          { id: problem.id, display_id: problem.displayId, title: problem.title },
+          null,
+          ""
+        );
+        await startWorkingOnProblem(context, client, state, state.outputChannel, detail, null);
+        if (treeProvider) {
+          treeProvider.refresh();
+        }
+      },
+      openOnline: async (problem) => {
+        await vscode.commands.executeCommand("xmuoj.openOnlineProblem", {
+          problem: { id: problem.id, display_id: problem.displayId, title: problem.title },
+          contest: null
+        });
+      },
+      persistQueue: async () => {
+        await persistProblemsetSelections(context, state);
+      },
+      refreshTree: () => {
+        if (treeProvider) {
+          treeProvider.refresh();
+        }
+      },
+      login: () => vscode.commands.executeCommand("xmuoj.login"),
+      listCapsules: async () => {
+        if (!timeCapsuleStoreRef) {
+          return [];
+        }
+        return timeCapsuleStoreRef.list().catch(() => []);
+      }
+    }
+  });
+  return problemsetWorkbench;
+}
+
+function getContestRaceWorkbench(context, client, state, treeProvider) {
+  if (contestRaceWorkbench) {
+    return contestRaceWorkbench;
+  }
+  contestRaceWorkbench = new ContestRaceWorkbench({
+    context,
+    state,
+    outputChannel: state.outputChannel,
+    actions: {
+      getClient: () => client,
+      getBaseUrl: () => client.baseUrl,
+      getUsername: () =>
+        (state.user && state.user.username) ||
+        (state.lastUser && state.lastUser.username) ||
+        "",
+      openProblem: async (payload) => {
+        await vscode.commands.executeCommand("xmuoj.openContestWorkspaceProblem", payload);
+      },
+      startProblem: async (payload) => {
+        await vscode.commands.executeCommand("xmuoj.startWorkingOnTreeProblem", payload);
+      },
+      openOnline: async (payload) => {
+        await vscode.commands.executeCommand("xmuoj.openOnlineProblem", payload);
+      },
+      refreshContest: async (entry) => {
+        if (!entry || !entry.contest) {
+          throw new Error("题库信息已失效，请重新加载题库");
+        }
+        const password = resolveContestPassword(state, entry.contest.id) || entry.contestPassword || "";
+        const workspace = await loadContestWorkspace(
+          context,
+          client,
+          state,
+          treeProvider,
+          entry.contest.id,
+          password
+        );
+        return {
+          baseUrl: client.baseUrl,
+          contest: workspace.contest,
+          problems: workspace.problems || [],
+          contestPassword: state.contestPassword || password
+        };
+      }
+    }
+  });
+  return contestRaceWorkbench;
 }
 
 async function openProblemsetWorkbench(context, client, state, treeProvider) {
-  if (!state.problemsetPanel) {
-    const panel = vscode.window.createWebviewPanel(
-      "xmuojProblemsetWorkbench",
-      "XMUOJ 公共题库刷题台",
-      getProblemViewColumn(),
-      { enableScripts: true, retainContextWhenHidden: true }
-    );
-    panel.webview.html = renderProblemsetWorkbenchSkeleton();
-    panel.onDidDispose(() => {
-      if (state.problemsetPanel === panel) {
-        state.problemsetPanel = null;
-      }
-      if (typeof state.persistenceHook === "function") {
-        state.persistenceHook().catch(() => null);
-      }
-    });
-    state.problemsetPanel = panel;
-    panel.webview.onDidReceiveMessage(async (message) => {
-      try {
-        const payload = message && message.problem ? message.problem : (message && message.id ? message : null);
-        if (message.command === "search") {
-          await loadProblemsetWorkbenchResults(context, client, state, treeProvider, {
-            query: message.query || "",
-            difficulty: message.difficulty || "",
-            tag: message.tag || "",
-            limit: message.limit || 20,
-            offset: 0
-          });
-        } else if (message.command === "reloadSearch") {
-          const workbench = getProblemsetWorkbenchState(state);
-          await loadProblemsetWorkbenchResults(context, client, state, treeProvider, {
-            query: workbench.query,
-            difficulty: workbench.difficulty,
-            tag: workbench.tag,
-            limit: workbench.limit,
-            offset: workbench.offset
-          });
-        } else if (message.command === "nextPage") {
-          const workbench = getProblemsetWorkbenchState(state);
-          const nextOffset = Math.max(0, (workbench.offset || 0) + (workbench.limit || 20));
-          if (workbench.total && nextOffset >= workbench.total) {
-            vscode.window.showInformationMessage("已经是最后一页");
-            return;
-          }
-          await loadProblemsetWorkbenchResults(context, client, state, treeProvider, { offset: nextOffset });
-        } else if (message.command === "prevPage") {
-          const workbench = getProblemsetWorkbenchState(state);
-          const nextOffset = Math.max(0, (workbench.offset || 0) - (workbench.limit || 20));
-          await loadProblemsetWorkbenchResults(context, client, state, treeProvider, { offset: nextOffset });
-        } else if (message.command === "addQueue" && payload) {
-          upsertProblemsetSelection(state, payload, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          treeProvider.refresh();
-          await refreshProblemsetWorkbenchPanel(state, client);
-        } else if (message.command === "removeQueueItem" && payload) {
-          removeProblemsetSelection(state, payload);
-          await persistProblemsetSelections(context, state);
-          treeProvider.refresh();
-          await refreshProblemsetWorkbenchPanel(state, client);
-        } else if (message.command === "clearQueue") {
-          const confirmed = await vscode.window.showWarningMessage("确定要清空公共题库刷题队列吗？", { modal: true }, "清空");
-          if (confirmed !== "清空") {
-            return;
-          }
-          clearProblemsetSelections(state);
-          await persistProblemsetSelections(context, state);
-          treeProvider.refresh();
-          await refreshProblemsetWorkbenchPanel(state, client);
-        } else if (message.command === "queueToTop") {
-          const nextProblem = getNextProblemsetSelection(state, client.baseUrl) || (state.problemsetSelections || [])[0];
-          if (!nextProblem) {
-            vscode.window.showInformationMessage("当前队列为空");
-            return;
-          }
-          clearContestContext(state);
-          updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
-          const detail = await openProblemDetail(client, state, { id: nextProblem.id, display_id: nextProblem.display_id, title: nextProblem.title }, null, "");
-          upsertProblemsetSelection(state, detail, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          if (treeProvider) {
-            treeProvider.refresh();
-          }
-        } else if (message.command === "nextQueue") {
-          const nextProblem = getNextProblemsetSelection(state, client.baseUrl);
-          if (!nextProblem) {
-            vscode.window.showInformationMessage("队列里还没有下一题");
-            return;
-          }
-          clearContestContext(state);
-          updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
-          const detail = await openProblemDetail(client, state, { id: nextProblem.id, display_id: nextProblem.display_id, title: nextProblem.title }, null, "");
-          await startWorkingOnProblem(context, client, state, state.outputChannel, detail, null);
-          upsertProblemsetSelection(state, detail, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          if (treeProvider) {
-            treeProvider.refresh();
-          }
-        } else if (message.command === "randomQueue") {
-          const randomProblem = getRandomProblemsetSelection(state, client.baseUrl);
-          if (!randomProblem) {
-            vscode.window.showInformationMessage("队列里还没有题目");
-            return;
-          }
-          clearContestContext(state);
-          updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
-          const detail = await openProblemDetail(client, state, { id: randomProblem.id, display_id: randomProblem.display_id, title: randomProblem.title }, null, "");
-          await startWorkingOnProblem(context, client, state, state.outputChannel, detail, null);
-          upsertProblemsetSelection(state, detail, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          if (treeProvider) {
-            treeProvider.refresh();
-          }
-        } else if (message.command === "openProblem" && payload) {
-          clearContestContext(state);
-          updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
-          const detail = await openProblemDetail(client, state, payload, null, "");
-          upsertProblemsetSelection(state, detail, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          if (treeProvider) {
-            treeProvider.refresh();
-          }
-        } else if (message.command === "startProblem" && payload) {
-          clearContestContext(state);
-          updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
-          const detail = await openProblemDetail(client, state, payload, null, "");
-          upsertProblemsetSelection(state, detail, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          await startWorkingOnProblem(context, client, state, state.outputChannel, detail, null);
-          if (treeProvider) {
-            treeProvider.refresh();
-          }
-        } else if (message.command === "openQueueItem" && payload) {
-          clearContestContext(state);
-          updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
-          const detail = await openProblemDetail(client, state, payload, null, "");
-          upsertProblemsetSelection(state, detail, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          if (treeProvider) {
-            treeProvider.refresh();
-          }
-        } else if (message.command === "startQueueItem" && payload) {
-          clearContestContext(state);
-          updateStatusBars(state, state.userStatusBar, state.contestStatusBar, client);
-          const detail = await openProblemDetail(client, state, payload, null, "");
-          upsertProblemsetSelection(state, detail, client.baseUrl);
-          await persistProblemsetSelections(context, state);
-          await startWorkingOnProblem(context, client, state, state.outputChannel, detail, null);
-          if (treeProvider) {
-            treeProvider.refresh();
-          }
-        }
-      } catch (error) {
-        await refreshProblemsetWorkbenchPanel(state, client);
-        await handleXmuojError(error, state, client, treeProvider);
-      }
-    });
-  } else {
-    state.problemsetPanel.reveal(getProblemViewColumn(), false);
-  }
-  if (!state.problemsetWorkbench || !Array.isArray(state.problemsetWorkbench.results) || !state.problemsetWorkbench.results.length) {
+  const workbench = getProblemsetWorkbench(context, client, state, treeProvider);
+  await workbench.open();
+  return workbench.panel || state.problemsetPanel;
+}
+
+/** 提交结果落库后通知刷题台与题库竞速：更新已 AC 状态与竞速记录。 */
+function notifyProblemsetSubmission(payload) {
+  if (problemsetWorkbench) {
     try {
-      await loadProblemsetWorkbenchResults(context, client, state, treeProvider, { offset: 0 });
-    } catch (error) {
-      state.problemsetWorkbench = Object.assign({}, getProblemsetWorkbenchState(state), {
-        loading: false,
-        error: error.message || String(error),
-        results: []
-      });
-      await refreshProblemsetWorkbenchPanel(state, client);
+      problemsetWorkbench.noteMySubmission(payload);
+    } catch (_error) {
+      // 刷题台是附加能力，绝不能影响提交流程本身。
     }
-  } else {
-    await refreshProblemsetWorkbenchPanel(state, client);
   }
-  return state.problemsetPanel;
+  if (contestRaceWorkbench) {
+    try {
+      contestRaceWorkbench.noteMySubmission(payload);
+    } catch (_error) {
+      // 题库竞速同样是附加能力，失败不影响提交。
+    }
+  }
+}
+
+/** 队列被其他命令修改后通知刷题台刷新页面。 */
+function notifyProblemsetQueueChanged() {
+  if (!problemsetWorkbench) {
+    return;
+  }
+  try {
+    problemsetWorkbench.refreshQueueView();
+  } catch (_error) {
+    // 忽略：页面未打开时无需处理。
+  }
 }
 
 function getSubmissionStatusPresentation(result) {
@@ -3467,6 +3215,17 @@ async function scanAllWorkspacesForProgress(context, client, state, contest, pro
 async function loadContestWorkspace(context, client, state, treeProvider, contestId, contestPassword) {
   state.contestPassword = contestPassword || "";
   state.contestWorkspace = await client.getContestWorkspace(contestId, state.contestPassword);
+  if (state.contestWorkspace && state.contestWorkspace.contest) {
+    const metadata = dataMigration.metadataForContest(
+      state.contestMetadata,
+      state.contestWorkspace.contest.id
+    );
+    if (metadata) {
+      state.contestWorkspace = Object.assign({}, state.contestWorkspace, {
+        contest: dataMigration.mergeContestMetadata(state.contestWorkspace.contest, metadata)
+      });
+    }
+  }
   if (contestPassword) {
     cacheContestPassword(state, contestId, contestPassword);
   }
@@ -3672,6 +3431,9 @@ async function openProblemDetail(client, state, problem, contest, contestPasswor
   // 更新当前活动题目状态
   state.activeProblem = detail;
   state.activeContest = contest;
+  if (!contest) {
+    rememberProblemsetQueueCursor(detail, client.baseUrl);
+  }
   recordRecentProblem(state, detail, contest, client.baseUrl);
   
   let panel = state.problemPanel;
@@ -3891,6 +3653,10 @@ async function switchLanguage(context, metadataContext, detail, nextLanguage, st
     nextLanguage
   );
   metadataContext.metadata = switched.metadata;
+  timeCapsuleMark("language", `切换为 ${nextLanguage}`, {
+    language: nextLanguage,
+    file: path.basename(switched.sourcePath)
+  });
   const document = await vscode.workspace.openTextDocument(switched.sourcePath);
   // 使用Active视图列，避免创建新视图
   await vscode.window.showTextDocument(document, { preview: false, viewColumn: vscode.ViewColumn.Active });
@@ -3996,12 +3762,21 @@ async function resolveLanguageSwitchRequest(client, state, menuItem) {
 
 
 async function initContestProblemFolders(context, client, state, outputChannel, workspaceEntry) {
-  const targetWorkspace = workspaceEntry && workspaceEntry.contest
-    ? { contest: workspaceEntry.contest, problems: workspaceEntry.problems || [] }
+  // 从树节点进入时，题目列表与密码在 .entry 上，不能直接读树节点本身。
+  const source = workspaceEntry && workspaceEntry.entry && workspaceEntry.entry.contest
+    ? workspaceEntry.entry
+    : workspaceEntry;
+  const targetWorkspace = source && source.contest
+    ? { contest: source.contest, problems: source.problems || [] }
     : state.contestWorkspace;
-  const targetContestPassword = workspaceEntry && Object.prototype.hasOwnProperty.call(workspaceEntry, "contestPassword")
-    ? (workspaceEntry.contestPassword || "")
-    : (state.contestPassword || "");
+  const entryPassword = source && Object.prototype.hasOwnProperty.call(source, "contestPassword")
+    ? (source.contestPassword || "")
+    : "";
+  const targetContestPassword = entryPassword
+    || (targetWorkspace && targetWorkspace.contest
+      ? resolveContestPassword(state, targetWorkspace.contest.id)
+      : "")
+    || (state.contestPassword || "");
   if (!targetWorkspace || !targetWorkspace.contest) {
     vscode.window.showWarningMessage("请先打开一个比赛，再批量创建题目目录");
     return;
@@ -4328,31 +4103,60 @@ function compareVersions(a, b) {
   return 0;
 }
 
+function downloadFile(url, destPath, redirectsLeft = 5) {
+  return new Promise((resolve, reject) => {
+    const http = require("http");
+    const https = require("https");
+    const fsSync = require("fs");
+    const proto = url.startsWith("https:") ? https : http;
+    const request = proto.get(
+      url,
+      { headers: { "User-Agent": "Mozilla/5.0 (compatible; XMUOJ-VSCode-Plugin)" } },
+      (response) => {
+        const status = response.statusCode || 0;
+        if (status >= 300 && status < 400 && response.headers.location) {
+          response.resume();
+          if (redirectsLeft <= 0) {
+            reject(new Error("下载失败：重定向次数过多"));
+            return;
+          }
+          const nextUrl = new URL(response.headers.location, url).toString();
+          downloadFile(nextUrl, destPath, redirectsLeft - 1).then(resolve, reject);
+          return;
+        }
+        if (status !== 200) {
+          response.resume();
+          reject(new Error(`下载失败，HTTP ${status}`));
+          return;
+        }
+        const file = fsSync.createWriteStream(destPath);
+        response.pipe(file);
+        file.on("finish", () => file.close(() => resolve()));
+        file.on("error", (error) => {
+          file.destroy();
+          reject(error);
+        });
+        response.on("error", reject);
+      }
+    );
+    request.on("error", reject);
+    request.setTimeout(30 * 1000, () => request.destroy(new Error("下载超时")));
+  });
+}
+
 async function downloadAndInstallUpdate(url, version) {
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: "XMUOJ 更新" },
     async (progress) => {
       progress.report({ message: "下载中..." });
-      const https = require("https");
-      const http = require("http");
-      const fs = require("fs");
       const os = require("os");
-      const path = require("path");
       const tmpPath = path.join(os.tmpdir(), `xmuoj-vscode-${version}.vsix`);
-      await new Promise((resolve, reject) => {
-        const proto = url.startsWith("https") ? https : http;
-        proto.get(url, (res) => {
-          let stream = res;
-          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            const redirectProto = res.headers.location.startsWith("https") ? https : http;
-            redirectProto.get(res.headers.location, (r2) => { stream = r2; }).on("error", reject);
-          }
-          const file = fs.createWriteStream(tmpPath);
-          stream.pipe(file);
-          file.on("finish", () => { file.close(); resolve(); });
-          file.on("error", reject);
-        }).on("error", reject);
-      });
+      await downloadFile(url, tmpPath);
+      const stats = await fs.stat(tmpPath);
+      if (!stats.size) {
+        await fs.unlink(tmpPath).catch(() => {});
+        throw new Error("下载的 VSIX 文件为空，请稍后重试");
+      }
       progress.report({ message: "安装中..." });
       const uri = vscode.Uri.file(tmpPath);
       await vscode.commands.executeCommand("workbench.extensions.installExtension", uri);
@@ -4383,7 +4187,15 @@ async function checkForUpdates(context, client, showUpToDateMessage = false) {
         "稍后提醒"
       );
       if (action === "立即更新") {
-        await downloadAndInstallUpdate(data.download_url, data.version);
+        if (!data.download_url) {
+          vscode.window.showErrorMessage("更新信息缺少下载地址，请联系站点管理员。");
+          return;
+        }
+        try {
+          await downloadAndInstallUpdate(data.download_url, data.version);
+        } catch (error) {
+          vscode.window.showErrorMessage(`XMUOJ 更新失败：${error.message || error}`);
+        }
       }
     } else if (showUpToDateMessage) {
       vscode.window.showInformationMessage(`XMUOJ ${currentVersion} 已是最新版本`);
@@ -4527,6 +4339,60 @@ async function runWorkspaceScanAndMigration(context, state, client, outputChanne
   await warnShellUnsafeProblemDirs(context, root);
 }
 
+/**
+ * 首次安装 / 升级后的本地数据整理：
+ *  - 时间胶囊索引按胶囊文件重建，补齐 problem.key 与尝试序号；
+ *  - 题目目录扫描与旧布局迁移（runWorkspaceScanAndMigration）；
+ *  - 题库/实验标记由启动后的 refreshContestMetadata 单独同步（需要网络）。
+ *
+ * 任何一步失败都不会删除用户文件；索引整理失败时保留版本号，下次启动重试。
+ */
+async function runStartupDataMigration(context, state, client, outputChannel, treeProvider, timeCapsuleStore) {
+  const previous = Number(context.globalState.get(dataMigration.DATA_MIGRATION_KEY, 0)) || 0;
+  if (previous >= dataMigration.DATA_MIGRATION_VERSION) {
+    await runWorkspaceScanAndMigration(context, state, client, outputChannel, treeProvider);
+    return { migrated: false };
+  }
+
+  outputChannel.appendLine(
+    `首次启动数据整理：${previous ? `从版本 ${previous} 升级到 ${dataMigration.DATA_MIGRATION_VERSION}` : "初始化本地数据"}。`
+  );
+  let capsuleError = null;
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "XMUOJ 首次启动：正在整理本地数据",
+      cancellable: false
+    },
+    async (progress) => {
+      progress.report({ message: "整理时间胶囊索引…" });
+      try {
+        const repaired = await timeCapsuleStore.repairIndex();
+        outputChannel.appendLine(`时间胶囊索引已整理：${repaired.entries.length} 条。`);
+      } catch (error) {
+        capsuleError = error;
+        outputChannel.appendLine(`整理时间胶囊索引失败（下次启动重试）：${error.message}`);
+      }
+      progress.report({ message: "扫描题目目录并迁移旧布局…" });
+      await runWorkspaceScanAndMigration(context, state, client, outputChannel, treeProvider);
+    }
+  );
+
+  refreshCapsuleBadges(state).catch(() => null);
+  if (state.problemsetWorkbench && typeof state.problemsetWorkbench.loadCapsules === "function") {
+    state.problemsetWorkbench.loadCapsules().catch(() => null);
+  }
+  treeProvider.refresh();
+
+  if (!capsuleError) {
+    await context.globalState.update(dataMigration.DATA_MIGRATION_KEY, dataMigration.DATA_MIGRATION_VERSION);
+    vscode.window.showInformationMessage(
+      "XMUOJ 数据整理完成：题目目录、时间胶囊索引已就绪，题库分类会在联网后自动同步。"
+    );
+  }
+  return { migrated: true, capsuleError };
+}
+
 const MAX_RECENT_PROBLEMS = 10;
 const MAX_OPEN_CONTESTS = 12;
 const UNSAFE_DIR_NOTICE_KEY = "xmuoj.unsafeDirNotices";
@@ -4536,14 +4402,22 @@ function serializeContestEntry(entry) {
     return null;
   }
   const contest = entry.contest;
+  const serializedContest = {
+    id: contest.id,
+    title: contest.title || "",
+    status: contest.status === undefined ? null : contest.status
+  };
+  // 题库/考试标记必须一起保存；只存标题会让“公共课 PTA 题库”这类
+  // 不以 [教材] 开头的服务端题库在下次启动时被误判成普通实验。
+  for (const field of dataMigration.CONTEST_METADATA_FIELDS) {
+    if (contest[field] !== undefined && contest[field] !== null) {
+      serializedContest[field] = contest[field];
+    }
+  }
   return {
     key: entry.key,
     baseUrl: entry.baseUrl,
-    contest: {
-      id: contest.id,
-      title: contest.title || "",
-      status: contest.status === undefined ? null : contest.status
-    },
+    contest: serializedContest,
     // 只保留树与开题需要的字段，避免 globalState 被上百道题的完整详情撑大
     problems: (entry.problems || []).map((problem) => ({
       id: problem.id,
@@ -4553,6 +4427,14 @@ function serializeContestEntry(entry) {
       languages: problem.languages || []
     }))
   };
+}
+
+function loadPersistedContestMetadata(context) {
+  const raw = context.globalState.get(dataMigration.CONTEST_METADATA_KEY, {});
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {};
+  }
+  return raw;
 }
 
 function loadPersistedContestEntries(context) {
@@ -4661,7 +4543,10 @@ function activate(context) {
   const state = {
     contestWorkspace: null,
     openContestWorkspaces: loadPersistedContestEntries(context),
+    hiddenContests: context.globalState.get(HIDDEN_CONTESTS_KEY, []),
+    contestMetadata: loadPersistedContestMetadata(context),
     problemsetSelections: context.globalState.get(PROBLEMSET_SELECTIONS_KEY, []),
+    capsuleProblemKeys: new Set(),
     recentProblems: loadRecentProblems(context, client.baseUrl),
     recentSearches: context.globalState.get(RECENT_SEARCHES_KEY, []),
     workspaceIndex: null,
@@ -4700,12 +4585,23 @@ function activate(context) {
       .slice(0, MAX_OPEN_CONTESTS);
     context.globalState.update(OPEN_CONTEST_WORKSPACES_KEY, serialized).catch(() => null);
   };
+  state.persistHiddenContests = () => {
+    context.globalState
+      .update(HIDDEN_CONTESTS_KEY, (state.hiddenContests || []).slice(-contestList.MAX_HIDDEN_CONTESTS))
+      .catch(() => null);
+  };
+  state.persistContestMetadata = () => {
+    context.globalState
+      .update(dataMigration.CONTEST_METADATA_KEY, state.contestMetadata || {})
+      .catch(() => null);
+  };
   state.userStatusBar = userStatusBar;
   state.contestStatusBar = contestStatusBar;
 
   const treeProvider = new ProblemTreeDataProvider(state);
   state.treeDataProvider = treeProvider;
   const codeLensProvider = new XmuojCodeLensProvider();
+  timeCapsuleCodeLensProvider = codeLensProvider;
   vscode.window.registerTreeDataProvider("xmuojExplorer", treeProvider);
   context.subscriptions.push(vscode.languages.registerCodeLensProvider([{ scheme: "file" }], codeLensProvider));
 
@@ -4715,6 +4611,9 @@ function activate(context) {
         state.currentTreeFilePath = null;
         treeProvider.refresh();
       }
+      await vscode.commands.executeCommand("setContext", "xmuoj.activeProblemFile", false).then(undefined, () => null);
+      await vscode.commands.executeCommand("setContext", "xmuoj.activeProblemHasCapsules", false).then(undefined, () => null);
+      updateTimeCapsuleIdleStatus(false);
       return;
     }
     try {
@@ -4727,11 +4626,17 @@ function activate(context) {
       if (metadataEntry && metadataEntry.metadata) {
         await rememberSourceFile(context, state, editor.document.fileName);
       }
+      await vscode.commands.executeCommand("setContext", "xmuoj.activeProblemFile", Boolean(nextPath)).then(undefined, () => null);
+      updateTimeCapsuleIdleStatus(Boolean(nextPath));
+      await updateActiveCapsuleContext(state);
     } catch (error) {
       if (state.currentTreeFilePath) {
         state.currentTreeFilePath = null;
         treeProvider.refresh();
       }
+      await vscode.commands.executeCommand("setContext", "xmuoj.activeProblemFile", false).then(undefined, () => null);
+      await vscode.commands.executeCommand("setContext", "xmuoj.activeProblemHasCapsules", false).then(undefined, () => null);
+      updateTimeCapsuleIdleStatus(false);
     }
   }
 
@@ -4744,6 +4649,751 @@ function activate(context) {
   }));
 
   refreshCurrentTreeFile(vscode.window.activeTextEditor).catch(() => null);
+
+  // ---- 代码时间胶囊：手动录制当前题目文件，纯本地保存 ----
+  const timeCapsuleRoot = context.globalStorageUri
+    ? path.join(context.globalStorageUri.fsPath, "timecapsules")
+    : path.join(context.extensionPath, ".timecapsules");
+  const timeCapsuleConfig = vscode.workspace.getConfiguration("xmuoj");
+  const timeCapsuleStore = new TimeCapsuleStore(timeCapsuleRoot, {
+    maxBytes:
+      Math.max(1, Number(timeCapsuleConfig.get("timeCapsule.maxSizeMB", 50)) || 50) * 1024 * 1024
+  });
+  timeCapsuleStoreRef = timeCapsuleStore;
+  refreshCapsuleBadges(state).catch(() => null);
+  timeCapsuleStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 98);
+  timeCapsuleStatusBar.command = "xmuoj.timeCapsule.start";
+  timeCapsuleStatusBar.tooltip = "为当前题目开始录制时间胶囊";
+  timeCapsuleStatusBar.hide();
+  timeCapsulePauseBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 97);
+  timeCapsulePauseBar.command = "xmuoj.timeCapsule.pause";
+  timeCapsulePauseBar.hide();
+  timeCapsuleStopBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 96);
+  timeCapsuleStopBar.command = "xmuoj.timeCapsule.stop";
+  timeCapsuleStopBar.hide();
+  updateTimeCapsuleIdleStatus(Boolean(state.currentTreeFilePath));
+  timeCapsulePanel = new TimeCapsulePanel({
+    context,
+    store: timeCapsuleStore,
+    outputChannel,
+    vscode
+  });
+
+  function capsulePickLabel(entry) {
+    const problem = entry.problem || {};
+    const title = [problem.displayId || problem.id || "", problem.title || ""].filter(Boolean).join(" ");
+    return title || entry.file || entry.id;
+  }
+
+  async function pickCapsule(title) {
+    const entries = await timeCapsuleStore.list().catch(() => []);
+    if (!entries.length) {
+      vscode.window.showInformationMessage("还没有保存过时间胶囊。打开题目后执行「开始录制时间胶囊」。");
+      return null;
+    }
+    const items = entries.map((entry) => {
+      const parts = [];
+      if (entry.language) {
+        parts.push(entry.language);
+      }
+      if (entry.startedAt) {
+        parts.push(new Date(entry.startedAt).toLocaleString());
+      }
+      if (entry.durationMs) {
+        parts.push(formatCapsuleDuration(entry.durationMs));
+      }
+      if (entry.result) {
+        parts.push(entry.result);
+      }
+      return {
+        label: capsulePickLabel(entry),
+        description: parts.join(" · "),
+        detail: `${entry.eventCount || 0} 个事件 · ${entry.id}`,
+        entry
+      };
+    });
+    const picked = await vscode.window.showQuickPick(items, {
+      title: title || "时间胶囊",
+      matchOnDescription: true,
+      matchOnDetail: true
+    });
+    return picked ? picked.entry : null;
+  }
+
+  async function showTimeCapsuleSummary(stopped) {
+    if (!stopped || !stopped.meta) {
+      return;
+    }
+    refreshCapsuleBadges(state).catch(() => null);
+    if (problemsetWorkbench) {
+      problemsetWorkbench.loadCapsules().catch(() => null);
+    }
+    const stats = stopped.meta.stats || {};
+    const durationMs = Number(stopped.durationMs || stopped.meta.durationMs) || 0;
+    const edits = Number(stopped.edits || stats.edits) || 0;
+    const runs = Number(stopped.runs || stats.runs) || 0;
+    const submits = Number(stopped.submits || stats.submits) || 0;
+    const preview = {
+      title: "本次录制已保存",
+      durationMs,
+      edits,
+      runs,
+      submits,
+      result: stopped.meta.result || stopped.result || null,
+      attempt: stopped.meta.attempt || null,
+      language: stopped.meta.language || "",
+      file: stopped.meta.file || "",
+      startedAt: stopped.meta.startedAt || "",
+      endedAt: stopped.meta.endedAt || "",
+      eventCount: Number(stopped.meta.eventCount) || 0,
+      path: stopped.path || ""
+    };
+    // 停止后直接打开本题的回放页，并在顶部显示可见的录制结果摘要。
+    if (timeCapsulePanel) {
+      const panel = await timeCapsulePanel.open(stopped.meta.id, {
+        preview,
+        sourcePath: state.currentSourcePath || ""
+      }).catch(() => null);
+      if (panel) {
+        return;
+      }
+    }
+    const parts = [
+      `时长 ${formatCapsuleDuration(durationMs)}`,
+      `编辑 ${edits} 次`,
+      `运行 ${runs} 次`,
+      `提交 ${submits} 次`
+    ];
+    if (preview.result) {
+      parts.push(`结果 ${preview.result}`);
+    }
+    const choice = await vscode.window.showInformationMessage(
+      `时间胶囊已保存：${parts.join("，")}`,
+      "立即回放",
+      "打开所在文件夹"
+    );
+    if (choice === "立即回放" && timeCapsulePanel) {
+      await timeCapsulePanel.open(stopped.meta.id, { preview });
+    } else if (choice === "打开所在文件夹" && stopped.path) {
+      await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(stopped.path)).catch(() => null);
+    }
+  }
+
+  function getTimeCapsuleRecorder() {
+    if (timeCapsuleRecorder) {
+      return timeCapsuleRecorder;
+    }
+    timeCapsuleRecorder = new TimeCapsuleRecorder({
+      store: timeCapsuleStore,
+      outputChannel,
+      checkpointSeconds: Number(timeCapsuleConfig.get("timeCapsule.checkpointSeconds", 60)) || 60,
+      recordCursor: timeCapsuleConfig.get("timeCapsule.recordCursor", true) !== false,
+      onStateChange: (status, summary) => updateTimeCapsuleStatus(status, summary),
+      onLimit: async (error) => {
+        const recorder = timeCapsuleRecorder;
+        if (!recorder || !recorder.isRecording) {
+          return;
+        }
+        let stopped = null;
+        try {
+          stopped = await recorder.stop({ result: "limit" });
+        } catch (_stopError) {
+          stopped = null;
+        }
+        const reason = error && error.limit === "events" ? "事件数量" : "文件大小";
+        vscode.window.showWarningMessage(`时间胶囊已达到${reason}上限，已自动停止并保存。`);
+        await showTimeCapsuleSummary(stopped);
+      }
+    });
+    return timeCapsuleRecorder;
+  }
+
+  const timeCapsuleTicker = setInterval(() => {
+    if (!timeCapsuleRecorder || !timeCapsuleRecorder.isRecording) {
+      return;
+    }
+    updateTimeCapsuleStatus(timeCapsuleRecorder.status, timeCapsuleRecorder.summary());
+  }, 1000);
+  if (timeCapsuleTicker && typeof timeCapsuleTicker.unref === "function") {
+    timeCapsuleTicker.unref();
+  }
+  context.subscriptions.push({ dispose: () => clearInterval(timeCapsuleTicker) });
+
+  context.subscriptions.push(vscode.workspace.onDidChangeTextDocument((event) => {
+    if (timeCapsuleRecorder) {
+      timeCapsuleRecorder.handleTextChange(event);
+    }
+  }));
+  context.subscriptions.push(vscode.window.onDidChangeTextEditorSelection((event) => {
+    if (timeCapsuleRecorder) {
+      timeCapsuleRecorder.handleSelectionChange(event);
+    }
+  }));
+  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument((document) => {
+    if (timeCapsuleRecorder) {
+      timeCapsuleRecorder.handleSave(document);
+    }
+  }));
+
+  /** 打开并聚焦题目源文件；回放面板没有文本编辑器时也能从面板开始录制。 */
+  async function focusProblemDocument(sourcePath) {
+    if (!sourcePath) {
+      const active = vscode.window.activeTextEditor;
+      return active ? active.document : null;
+    }
+    const visible = vscode.window.visibleTextEditors.find(
+      (item) => item.document.fileName === sourcePath
+    );
+    if (visible) {
+      await vscode.window.showTextDocument(visible.document, {
+        preview: false,
+        viewColumn: visible.viewColumn
+      }).catch(() => null);
+      return visible.document;
+    }
+    const document = await vscode.workspace.openTextDocument(sourcePath);
+    const activeEditor = vscode.window.activeTextEditor;
+    let viewColumn = vscode.ViewColumn.One;
+    if (activeEditor && activeEditor.viewColumn) {
+      viewColumn = activeEditor.viewColumn;
+    }
+    await vscode.window.showTextDocument(document, { preview: false, viewColumn });
+    return document;
+  }
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.timeCapsule.start", async (arg) => {
+    const sourcePath = typeof arg === "string" ? arg : arg && arg.sourcePath;
+    // 从回放页点「录制新一次」时没有活动文本编辑器，回退到最近一次打开的题目源文件。
+    const requestedPath = sourcePath || (!vscode.window.activeTextEditor ? state.currentSourcePath : "");
+    let document = null;
+    if (requestedPath) {
+      try {
+        document = await focusProblemDocument(requestedPath);
+      } catch (error) {
+        vscode.window.showErrorMessage(`无法打开题目源文件：${error && error.message ? error.message : error}`);
+        return;
+      }
+    } else {
+      const editor = vscode.window.activeTextEditor;
+      document = editor ? editor.document : null;
+    }
+    if (!document) {
+      vscode.window.showWarningMessage("请先打开要录制的题目源文件");
+      return;
+    }
+    const recorder = getTimeCapsuleRecorder();
+    if (recorder.isRecording) {
+      vscode.window.showInformationMessage("已有正在录制的时间胶囊，请先停止或继续当前录制。");
+      return;
+    }
+    let metadataContext = null;
+    try {
+      metadataContext = await getEditorProblemContext(client, document);
+    } catch (_error) {
+      metadataContext = null;
+    }
+    if (!metadataContext || !metadataContext.metadata) {
+      vscode.window.showWarningMessage("当前文件不在 XMUOJ 题目工作区中，请先打开题目再开始录制。");
+      return;
+    }
+    const metadata = metadataContext.metadata;
+    try {
+      const summary = await recorder.start({
+        document,
+        problem: { id: metadata.problemId, displayId: metadata.displayId, title: metadata.title },
+        language: inferLanguage(document) || metadata.language || "",
+        file: path.basename(document.fileName)
+      });
+      vscode.window.setStatusBarMessage(`$(record) 开始录制时间胶囊：${summary.file}`, 3000);
+      // 明确告诉用户录制已开始，并直接给出暂停/停止入口；不阻塞命令本身。
+      vscode.window.showInformationMessage(
+        `时间胶囊开始录制：${summary.file}。状态栏会显示计时，也可以随时暂停或停止。`,
+        "暂停",
+        "停止并保存"
+      ).then(async (choice) => {
+        if (choice === "暂停" && recorder.status === "recording") {
+          recorder.pause();
+        } else if (choice === "停止并保存" && recorder.isRecording) {
+          try {
+            const stopped = await recorder.stop({});
+            await showTimeCapsuleSummary(stopped);
+          } catch (error) {
+            vscode.window.showErrorMessage(`保存时间胶囊失败：${error && error.message ? error.message : error}`);
+          }
+        }
+      });
+    } catch (error) {
+      vscode.window.showErrorMessage(`无法开始录制时间胶囊：${error && error.message ? error.message : error}`);
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.timeCapsule.pause", () => {
+    if (!timeCapsuleRecorder || !timeCapsuleRecorder.isRecording) {
+      vscode.window.showInformationMessage("当前没有正在录制的时间胶囊。");
+      return;
+    }
+    timeCapsuleRecorder.pause();
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.timeCapsule.resume", () => {
+    if (!timeCapsuleRecorder || !timeCapsuleRecorder.isRecording) {
+      vscode.window.showInformationMessage("当前没有正在录制的时间胶囊。");
+      return;
+    }
+    timeCapsuleRecorder.resume();
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.timeCapsule.stop", async () => {
+    if (!timeCapsuleRecorder || !timeCapsuleRecorder.isRecording) {
+      vscode.window.showInformationMessage("当前没有正在录制的时间胶囊。");
+      return;
+    }
+    try {
+      const stopped = await timeCapsuleRecorder.stop({});
+      await showTimeCapsuleSummary(stopped);
+    } catch (error) {
+      vscode.window.showErrorMessage(`保存时间胶囊失败：${error && error.message ? error.message : error}`);
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.timeCapsule.statusMenu", async () => {
+    const recorder = timeCapsuleRecorder;
+    if (!recorder || !recorder.isRecording) {
+      return;
+    }
+    const paused = recorder.status === "paused";
+    const items = [
+      paused ? { label: "$(play) 继续录制", action: "resume" } : { label: "$(debug-pause) 暂停录制", action: "pause" },
+      { label: "$(save) 停止并保存", action: "stop" },
+      { label: "$(trash) 放弃本次录制", action: "discard" }
+    ];
+    const pick = await vscode.window.showQuickPick(items, { title: "时间胶囊" });
+    if (!pick) {
+      return;
+    }
+    if (pick.action === "pause") {
+      recorder.pause();
+    } else if (pick.action === "resume") {
+      recorder.resume();
+    } else if (pick.action === "stop") {
+      try {
+        const stopped = await recorder.stop({});
+        await showTimeCapsuleSummary(stopped);
+      } catch (error) {
+        vscode.window.showErrorMessage(`保存时间胶囊失败：${error && error.message ? error.message : error}`);
+      }
+    } else if (pick.action === "discard") {
+      const confirm = await vscode.window.showWarningMessage("放弃后本次录制不会保存，确定？", { modal: true }, "放弃");
+      if (confirm === "放弃") {
+        await recorder.discard();
+        vscode.window.showInformationMessage("已放弃本次时间胶囊录制。");
+      }
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.timeCapsule.replayLatest", async () => {
+    if (!timeCapsulePanel) {
+      return;
+    }
+    await timeCapsulePanel.openLatest();
+  }));
+
+  /**
+   * 在编辑器区域回放当前题目的全部尝试。
+   * 一个题目只占一个标签页；没有胶囊时引导用户直接开始第一次录制。
+   */
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.timeCapsule.replayProblem", async (arg) => {
+    const sourcePath = typeof arg === "string" ? arg : arg && arg.sourcePath;
+    const requestedPath = sourcePath || (!vscode.window.activeTextEditor ? state.currentSourcePath : "");
+    let document = null;
+    try {
+      document = await focusProblemDocument(requestedPath);
+    } catch (error) {
+      vscode.window.showErrorMessage(`无法打开题目源文件：${error && error.message ? error.message : error}`);
+      return;
+    }
+    if (!document) {
+      vscode.window.showWarningMessage("请先打开题目源文件，再查看回放。");
+      return;
+    }
+    let metadataContext = null;
+    try {
+      metadataContext = await getEditorProblemContext(client, document);
+    } catch (_error) {
+      metadataContext = null;
+    }
+    if (!metadataContext || !metadataContext.metadata) {
+      vscode.window.showWarningMessage("当前文件不在 XMUOJ 题目工作区中，无法确定题目。");
+      return;
+    }
+    if (!timeCapsulePanel) {
+      return;
+    }
+    const metadata = metadataContext.metadata;
+    const problem = {
+      id: metadata.problemId,
+      displayId: metadata.displayId || metadata.display_id,
+      title: metadata.title
+    };
+    const panel = await timeCapsulePanel.openProblem(problem, { sourcePath: document.fileName });
+    if (panel) {
+      return;
+    }
+    const choice = await vscode.window.showInformationMessage(
+      "这道题还没有时间胶囊。开始录制后，你的编码与调试过程会保存在本地，随时可以回放。",
+      "开始录制",
+      "导入胶囊"
+    );
+    if (choice === "开始录制") {
+      await vscode.commands.executeCommand("xmuoj.timeCapsule.start", {
+        sourcePath: document.fileName,
+        problem
+      });
+    } else if (choice === "导入胶囊") {
+      await vscode.commands.executeCommand("xmuoj.timeCapsule.import");
+      await timeCapsulePanel.openProblem(problem, { sourcePath: document.fileName });
+    }
+  }));
+
+  /** 显式命令：把已有 C++ 文件里的万能头换成三个标准头，避免静默改动用户代码。 */
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.fixCppUniversalHeader", async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      vscode.window.showWarningMessage("请先打开要修改的 C++ 源文件。");
+      return;
+    }
+    const document = editor.document;
+    const isCpp = document.languageId === "cpp" || /\.(cpp|cc|cxx|hpp)$/i.test(document.fileName || "");
+    if (!isCpp) {
+      vscode.window.showWarningMessage("当前文件不是 C++ 源文件。");
+      return;
+    }
+    const text = document.getText();
+    const next = replaceUniversalHeader(text);
+    if (next === null) {
+      vscode.window.showInformationMessage("当前文件没有 #include <bits/stdc++.h>，无需替换。");
+      return;
+    }
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(
+      document.uri,
+      new vscode.Range(document.positionAt(0), document.positionAt(text.length)),
+      next
+    );
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (applied) {
+      vscode.window.showInformationMessage(
+        "已把万能头替换为 <iostream>、<algorithm>、<cstring>，保存后生效。"
+      );
+    } else {
+      vscode.window.showErrorMessage("替换万能头失败，请重试。");
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.timeCapsule.list", async () => {
+    const entry = await pickCapsule("回放时间胶囊");
+    if (entry && timeCapsulePanel) {
+      await timeCapsulePanel.open(entry.id);
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.timeCapsule.open", async (id) => {
+    const capsuleId = typeof id === "string" ? id : id && id.id;
+    if (!capsuleId || !timeCapsulePanel) {
+      return;
+    }
+    await timeCapsulePanel.open(capsuleId);
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.timeCapsule.export", async () => {
+    const entry = await pickCapsule("导出时间胶囊");
+    if (!entry) {
+      return;
+    }
+    const os = require("os");
+    const target = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(path.join(os.tmpdir(), `${entry.id}.xmuojcapsule`)),
+      saveLabel: "导出时间胶囊",
+      filters: { "XMUOJ 时间胶囊": ["xmuojcapsule"] }
+    });
+    if (!target) {
+      return;
+    }
+    try {
+      await timeCapsuleStore.exportCapsule(entry.id, target.fsPath);
+      vscode.window.showInformationMessage(`时间胶囊已导出：${target.fsPath}`);
+    } catch (error) {
+      vscode.window.showErrorMessage(`导出失败：${error && error.message ? error.message : error}`);
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.timeCapsule.import", async () => {
+    const picked = await vscode.window.showOpenDialog({
+      canSelectMany: false,
+      openLabel: "导入时间胶囊",
+      filters: { "XMUOJ 时间胶囊": ["xmuojcapsule"] }
+    });
+    if (!picked || !picked[0]) {
+      return;
+    }
+    try {
+      const result = await timeCapsuleStore.importCapsule(picked[0].fsPath);
+      const label = capsulePickLabel(result.meta);
+      vscode.window.showInformationMessage(`已导入时间胶囊：${label}`);
+      refreshCapsuleBadges(state).catch(() => null);
+      if (problemsetWorkbench) {
+        problemsetWorkbench.loadCapsules().catch(() => null);
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(`导入失败：${error && error.message ? error.message : error}`);
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.timeCapsule.delete", async (arg) => {
+    const requestedId = typeof arg === "string" ? arg : arg && arg.id ? String(arg.id) : "";
+    let entry;
+    if (requestedId) {
+      // 回放面板按当前尝试删除，不再重复弹选择框。
+      const entries = await timeCapsuleStore.list().catch(() => []);
+      entry = entries.find((item) => String(item.id) === requestedId);
+      if (!entry) {
+        vscode.window.showInformationMessage("这条时间胶囊已经不存在。");
+        return;
+      }
+    } else {
+      entry = await pickCapsule("删除时间胶囊");
+      if (!entry) {
+        return;
+      }
+    }
+    const confirm = await vscode.window.showWarningMessage(
+      `删除后无法恢复：${capsulePickLabel(entry)}（${formatCapsuleDuration(entry.durationMs)}）`,
+      { modal: true },
+      "删除"
+    );
+    if (confirm !== "删除") {
+      return;
+    }
+    try {
+      await timeCapsuleStore.deleteCapsule(entry.id);
+      if (timeCapsulePanel) {
+        await timeCapsulePanel.removeCapsule(entry.id);
+      }
+      refreshCapsuleBadges(state).catch(() => null);
+      if (problemsetWorkbench) {
+        problemsetWorkbench.loadCapsules().catch(() => null);
+      }
+      vscode.window.showInformationMessage("时间胶囊已删除。");
+    } catch (error) {
+      vscode.window.showErrorMessage(`删除失败：${error && error.message ? error.message : error}`);
+    }
+  }));
+
+  // 崩溃/断电留下的临时录制：启动时询问是否收尾。
+  if (context.globalStorageUri) {
+    timeCapsuleStore
+      .recover()
+      .then((pending) => {
+        if (!pending.length) {
+          return;
+        }
+        return vscode.window
+          .showWarningMessage(
+            `发现 ${pending.length} 个未完成的时间胶囊，可能是上次异常退出留下的。`,
+            "恢复",
+            "稍后"
+          )
+          .then(async (choice) => {
+            if (choice !== "恢复") {
+              return;
+            }
+            let recovered = 0;
+            for (const entry of pending) {
+              try {
+                await timeCapsuleStore.recoverOne(entry.file, { result: "recovered" });
+                recovered += 1;
+              } catch (error) {
+                outputChannel.appendLine(`恢复时间胶囊失败 ${entry.id}：${error.message || error}`);
+              }
+            }
+            if (recovered) {
+              refreshCapsuleBadges(state).catch(() => null);
+              vscode.window.showInformationMessage(`已恢复 ${recovered} 个时间胶囊。`);
+            }
+          });
+      })
+      .catch(() => null);
+  }
+
+  // ---- 实验/题库标记同步 -------------------------------------------------
+  // 服务端 /api/plugin/contests 是公开接口，每项都带 is_question_bank 与
+  // is_exam。已加载实验只保存了 id/title/status，必须靠这里补齐标记，
+  // 否则“公共课 PTA 题库”会被当成普通实验。
+  let contestMetadataRefreshPromise = null;
+  let contestMetadataFetchedAt = 0;
+
+  async function fetchAllContests() {
+    const contests = [];
+    let offset = 0;
+    // 已加载实验最多 12 个，通常一页足够；翻 5 页作为上限，避免异常分页死循环。
+    for (let page = 0; page < 5; page += 1) {
+      const data = await client.getContests({ limit: 100, offset });
+      const results = data && Array.isArray(data.results) ? data.results : [];
+      if (!results.length) {
+        break;
+      }
+      contests.push(...results);
+      offset += results.length;
+      const total = Number(data && data.total);
+      if (!Number.isFinite(total) || contests.length >= total) {
+        break;
+      }
+    }
+    return contests;
+  }
+
+  async function refreshContestMetadata(options = {}) {
+    const force = options.force === true;
+    const now = Date.now();
+    if (!force && contestMetadataFetchedAt && now - contestMetadataFetchedAt < 5 * 60 * 1000) {
+      return { skipped: true, reason: "recent" };
+    }
+    if (contestMetadataRefreshPromise) {
+      return contestMetadataRefreshPromise;
+    }
+    const hasLocalContests = Boolean(
+      (state.openContestWorkspaces || []).length
+      || (state.workspaceIndex && state.workspaceIndex.entries
+        && Object.keys(state.workspaceIndex.entries).length)
+    );
+    if (!hasLocalContests && !force) {
+      return { skipped: true, reason: "empty" };
+    }
+
+    let succeeded = false;
+    contestMetadataRefreshPromise = (async () => {
+      const contests = await fetchAllContests();
+      const fetched = dataMigration.buildContestMetadataMap(contests);
+      if (!Object.keys(fetched).length) {
+        return { updated: 0, reclassified: 0, total: 0 };
+      }
+
+      const entries = state.openContestWorkspaces || [];
+      const previousMetadata = state.contestMetadata || {};
+      const before = new Map();
+      const rememberBefore = (contest) => {
+        if (!contest || contest.id === undefined || contest.id === null) {
+          return;
+        }
+        const key = String(contest.id);
+        if (!before.has(key)) {
+          before.set(key, isQuestionBankContest(contest));
+        }
+      };
+      entries.forEach((entry) => entry && entry.contest && rememberBefore(entry.contest));
+      // 扫盘得到的实验只有磁盘上的 contestTitle，也要算进“重新归类”统计。
+      if (state.workspaceIndex && state.workspaceIndex.entries) {
+        for (const group of store.groupIndexEntriesByContest(state.workspaceIndex)) {
+          if (!group.contestId) {
+            continue;
+          }
+          rememberBefore(dataMigration.mergeContestMetadata(
+            { id: group.contestId, title: group.contestTitle || "" },
+            dataMigration.metadataForContest(previousMetadata, group.contestId)
+          ));
+        }
+      }
+      const merged = dataMigration.mergeLoadedContestMetadata(entries, fetched, { override: true });
+      const updated = merged.reduce(
+        (count, entry, index) => count + (entry !== entries[index] ? 1 : 0),
+        0
+      );
+      state.openContestWorkspaces = merged;
+      state.contestMetadata = Object.assign({}, state.contestMetadata, fetched);
+
+      if (state.contestWorkspace && state.contestWorkspace.contest) {
+        const metadata = dataMigration.metadataForContest(fetched, state.contestWorkspace.contest.id);
+        if (metadata) {
+          state.contestWorkspace = Object.assign({}, state.contestWorkspace, {
+            contest: dataMigration.mergeContestMetadata(
+              state.contestWorkspace.contest,
+              metadata,
+              { override: true }
+            )
+          });
+        }
+      }
+      if (state.activeContest) {
+        const metadata = dataMigration.metadataForContest(fetched, state.activeContest.id);
+        if (metadata) {
+          state.activeContest = dataMigration.mergeContestMetadata(
+            state.activeContest,
+            metadata,
+            { override: true }
+          );
+        }
+      }
+
+      if (updated) {
+        state.persistOpenContests();
+      }
+      state.persistContestMetadata();
+
+      const after = new Map();
+      const rememberAfter = (contest) => {
+        if (!contest || contest.id === undefined || contest.id === null) {
+          return;
+        }
+        const key = String(contest.id);
+        if (!after.has(key)) {
+          after.set(key, isQuestionBankContest(contest));
+        }
+      };
+      state.openContestWorkspaces.forEach((entry) => entry && entry.contest && rememberAfter(entry.contest));
+      if (state.workspaceIndex && state.workspaceIndex.entries) {
+        for (const group of store.groupIndexEntriesByContest(state.workspaceIndex)) {
+          if (!group.contestId) {
+            continue;
+          }
+          rememberAfter(dataMigration.mergeContestMetadata(
+            { id: group.contestId, title: group.contestTitle || "" },
+            dataMigration.metadataForContest(state.contestMetadata, group.contestId)
+          ));
+        }
+      }
+      let reclassified = 0;
+      for (const [key, wasBank] of before.entries()) {
+        if (after.has(key) && after.get(key) !== wasBank) {
+          reclassified += 1;
+        }
+      }
+      treeProvider.refresh();
+      outputChannel.appendLine(
+        `已同步 ${Object.keys(fetched).length} 个实验/题库的服务端标记` +
+        `${reclassified ? `，其中 ${reclassified} 个重新归类` : ""}。`
+      );
+      if (options.notify) {
+        vscode.window.showInformationMessage(
+          reclassified
+            ? `题库分类已更新：${reclassified} 个实验移动到「我的题库」。`
+            : "题库分类已是最新。"
+        );
+      }
+      succeeded = true;
+      return { updated, reclassified, total: Object.keys(fetched).length };
+    })()
+      .catch((error) => {
+        outputChannel.appendLine(`同步实验/题库标记失败（不影响使用）：${error.message}`);
+        return { error };
+      })
+      .finally(() => {
+        if (succeeded) {
+          contestMetadataFetchedAt = Date.now();
+        }
+        contestMetadataRefreshPromise = null;
+      });
+    return contestMetadataRefreshPromise;
+  }
 
   // Bootstrap：启动时确认登录态。关键原则——
   // 1) 网络类失败绝不清除本地凭证（否则断网/抖动会把用户“登出”）；
@@ -4776,6 +5426,8 @@ function activate(context) {
       codeLensProvider.setUser(state.user);
       updateStatusBars(state, userStatusBar, contestStatusBar, client);
       treeProvider.refresh();
+      // 公开接口即可取到题库标记；登录成功后再强制刷新一次，确保最新。
+      refreshContestMetadata({ force: isRetry }).catch(() => null);
       if (!isRetry) {
         refreshProblemPanel(state, client).catch(() => null);
         restoreWorkbenchLayout(context, client, state).then(() => treeProvider.refresh()).catch(() => null);
@@ -4810,14 +5462,18 @@ function activate(context) {
     }
   }
   syncBootstrap().catch(() => null);
-  runWorkspaceScanAndMigration(context, state, client, outputChannel, treeProvider).catch(() => null);
+  runStartupDataMigration(context, state, client, outputChannel, treeProvider, timeCapsuleStore)
+    .then(() => refreshContestMetadata())
+    .catch(() => null);
 
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.quickStart", async () => {
     try {
       // 1) 确保本地工作区目录已配置（未配置才弹目录选择）
       const rootPath = await chooseWorkspaceRoot();
       if (rootPath) {
-        runWorkspaceScanAndMigration(context, state, client, outputChannel, treeProvider).catch(() => null);
+        runWorkspaceScanAndMigration(context, state, client, outputChannel, treeProvider)
+          .then(() => refreshContestMetadata())
+          .catch(() => null);
       }
       // 2) 等待 bootstrap（最多 5 秒），避免竞态把已登录用户当成未登录
       if (!state.bootstrapReady) {
@@ -5011,6 +5667,50 @@ function activate(context) {
       const count = Object.keys(result.index.entries || {}).length;
       vscode.window.showInformationMessage(`本地题目索引已重建，共 ${count} 道题。`);
       treeProvider.refresh();
+    } catch (error) {
+      await handleXmuojError(error, state, client, treeProvider, { offerLogin: false });
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.migrateLocalData", async () => {
+    const root = store.normalizeWorkspaceRootPath(vscode.workspace.getConfiguration("xmuoj").get("localWorkspaceRoot", "") || "");
+    try {
+      const summary = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "正在整理 XMUOJ 本地数据",
+          cancellable: false
+        },
+        async (progress) => {
+          progress.report({ message: "整理时间胶囊索引…" });
+          const repaired = await timeCapsuleStore.repairIndex();
+          let problemCount = null;
+          if (root) {
+            progress.report({ message: "重建题目索引…" });
+            const result = await store.ensureWorkspaceIndex(root, { baseUrl: client.baseUrl, force: true });
+            state.workspaceIndex = result.index;
+            problemCount = Object.keys(result.index.entries || {}).length;
+          }
+          progress.report({ message: "同步实验/题库标记…" });
+          const sync = await refreshContestMetadata({ force: true });
+          await context.globalState.update(
+            dataMigration.DATA_MIGRATION_KEY,
+            dataMigration.DATA_MIGRATION_VERSION
+          );
+          refreshCapsuleBadges(state).catch(() => null);
+          treeProvider.refresh();
+          return { repaired, problemCount, sync };
+        }
+      );
+      const problemText = summary.problemCount === null
+        ? "未配置本地工作区"
+        : `题目 ${summary.problemCount} 道`;
+      const syncText = summary.sync && !summary.sync.error
+        ? `题库标记 ${summary.sync.total || 0} 个${summary.sync.reclassified ? `（重新归类 ${summary.sync.reclassified} 个）` : ""}`
+        : "题库标记暂时无法同步";
+      vscode.window.showInformationMessage(
+        `本地数据整理完成：时间胶囊 ${summary.repaired.entries.length} 条，${problemText}，${syncText}。`
+      );
     } catch (error) {
       await handleXmuojError(error, state, client, treeProvider, { offerLogin: false });
     }
@@ -5229,6 +5929,7 @@ function activate(context) {
       { label: "$(sync) 迁移旧题目目录到 problems/", value: "migrate" },
       { label: "$(history) 回滚上一次目录迁移", value: "rollback" },
       { label: "$(refresh) 重建题目索引", value: "rebuild" },
+      { label: "$(sync) 整理本地数据（题库/时间胶囊）", value: "migrateData" },
       { label: "$(tools) 修复题目目录名（! / $ 等字符）", value: "fixNames" },
       { label: "$(cloud-download) 检查扩展更新", value: "update" },
       { label: "$(clear-all) 清除最近搜索", value: "clearSearch" }
@@ -5254,6 +5955,8 @@ function activate(context) {
         await vscode.commands.executeCommand("xmuoj.rollbackWorkspaceMigration");
       } else if (picked.value === "rebuild") {
         await vscode.commands.executeCommand("xmuoj.rebuildWorkspaceIndex");
+      } else if (picked.value === "migrateData") {
+        await vscode.commands.executeCommand("xmuoj.migrateLocalData");
       } else if (picked.value === "fixNames") {
         await vscode.commands.executeCommand("xmuoj.fixProblemDirectoryNames");
       } else if (picked.value === "update") {
@@ -5303,8 +6006,12 @@ function activate(context) {
       codeLensProvider.setUser(state.user);
       updateStatusBars(state, userStatusBar, contestStatusBar, client);
       treeProvider.refresh();
+      refreshContestMetadata({ force: true }).catch(() => null);
       await preloadContestPasswords(context, state).catch(() => null);
       await refreshProblemPanel(state, client);
+      if (problemsetWorkbench) {
+        problemsetWorkbench.refreshIdentity().catch(() => null);
+      }
       vscode.window.showInformationMessage(`已登录：${result.user.username}`);
     };
     try {
@@ -5396,6 +6103,9 @@ function activate(context) {
     updateStatusBars(state, userStatusBar, contestStatusBar, client);
     treeProvider.refresh();
     await refreshProblemPanel(state, client);
+    if (problemsetWorkbench) {
+      problemsetWorkbench.refreshIdentity().catch(() => null);
+    }
     vscode.window.showInformationMessage("已清除 XMUOJ 登录令牌");
   }));
 
@@ -5467,9 +6177,22 @@ function activate(context) {
             });
           }
         }
-        if (online.contests.length) {
+        const banks = online.contests.filter(isQuestionBankContest);
+        const experiments = online.contests.filter((contest) => !isQuestionBankContest(contest));
+        if (banks.length) {
+          items.push({ label: "题库", kind: vscode.QuickPickItemKind.Separator });
+          for (const contest of banks) {
+            items.push({
+              label: contest.title || `题库 ${contest.id}`,
+              description: `可竞速 · ${getContestStatusLabel(contest)}`,
+              detail: contest.require_password ? `#${contest.id} · 需要密码` : `#${contest.id}`,
+              payload: { type: "contest", contest }
+            });
+          }
+        }
+        if (experiments.length) {
           items.push({ label: "实验", kind: vscode.QuickPickItemKind.Separator });
-          for (const contest of online.contests) {
+          for (const contest of experiments) {
             items.push({
               label: contest.title || `实验 ${contest.id}`,
               description: getContestStatusLabel(contest),
@@ -5484,8 +6207,7 @@ function activate(context) {
             description: "可继续使用本地结果",
             payload: null
           });
-        } else if (!online.problems.length && !online.contests.length) {
-          items.push({
+        } else if (!online.problems.length && !online.contests.length) {          items.push({
             label: "在线没有匹配结果",
             description: "换个关键词，或使用本地工作区结果",
             payload: null
@@ -5667,23 +6389,24 @@ function activate(context) {
 
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.browseContests", async () => {
     const keyword = await vscode.window.showInputBox({
-      prompt: "按比赛标题搜索，留空则显示最新比赛",
+      prompt: "按实验标题搜索，留空则显示最新实验（题库请用「搜索题库」）",
       ignoreFocusOut: true
     });
     try {
       const contestData = await client.getContests({ keyword: keyword || undefined });
-      if (!contestData.results.length) {
-        vscode.window.showInformationMessage("没有找到符合条件的比赛");
+      const experiments = contestData.results.filter((contest) => !isQuestionBankContest(contest));
+      if (!experiments.length) {
+        vscode.window.showInformationMessage("没有找到符合条件的实验；题库请使用「搜索题库」");
         return;
       }
       const pick = await vscode.window.showQuickPick(
-        contestData.results.map(contest => ({
+        experiments.map(contest => ({
           label: contest.title,
           description: `${contest.rule_type} · ${getContestStatusLabel(contest)}`,
           detail: contest.require_password ? `#${contest.id} · 需要密码` : `#${contest.id}`,
           contest
         })),
-        { title: "选择要加载的比赛", ignoreFocusOut: true }
+        { title: "选择要加载的实验", ignoreFocusOut: true }
       );
       if (!pick) {
         return;
@@ -5695,7 +6418,79 @@ function activate(context) {
       const workspace = await loadContestWorkspace(context, client, state, treeProvider, pick.contest.id, contestPassword || "");
       updateStatusBars(state, userStatusBar, contestStatusBar, client);
       await focusExplorerView();
-      vscode.window.showInformationMessage(`已加载比赛：${workspace.contest.title}`);
+      vscode.window.showInformationMessage(`已加载实验：${workspace.contest.title}`);
+    } catch (error) {
+      await handleXmuojError(error, state, client, treeProvider);
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.browseQuestionBanks", async () => {
+    const keyword = await vscode.window.showInputBox({
+      prompt: "按题库标题搜索，留空则显示最新题库（教材配套题库才提供竞速）",
+      ignoreFocusOut: true
+    });
+    try {
+      const contestData = await client.getContests({ keyword: keyword || undefined });
+      const banks = contestData.results.filter(isQuestionBankContest);
+      if (!banks.length) {
+        vscode.window.showInformationMessage("没有找到符合条件的题库");
+        return;
+      }
+      const pick = await vscode.window.showQuickPick(
+        banks.map(contest => ({
+          label: contest.title,
+          description: `题库 · ${getContestStatusLabel(contest)} · 可竞速`,
+          detail: contest.require_password ? `#${contest.id} · 需要密码` : `#${contest.id}`,
+          contest
+        })),
+        { title: "选择要加载的题库", ignoreFocusOut: true }
+      );
+      if (!pick) {
+        return;
+      }
+      const rememberedPassword = resolveContestPassword(state, pick.contest.id);
+      const contestPassword = pick.contest.require_password && !rememberedPassword
+        ? await vscode.window.showInputBox({ prompt: "请输入题库密码", password: true, ignoreFocusOut: true })
+        : rememberedPassword;
+      const workspace = await loadContestWorkspace(context, client, state, treeProvider, pick.contest.id, contestPassword || "");
+      updateStatusBars(state, userStatusBar, contestStatusBar, client);
+      await focusExplorerView();
+      vscode.window.showInformationMessage(`已加载题库：${workspace.contest.title}`);
+    } catch (error) {
+      await handleXmuojError(error, state, client, treeProvider);
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand("xmuoj.openContestRace", async (target) => {
+    let entry = target && target.entry ? target.entry : target;
+    if (!entry || !entry.contest) {
+      const candidates = (treeProvider.getContestEntries ? treeProvider.getContestEntries() : [])
+        .filter((item) => item && item.contest && isQuestionBankContest(item.contest));
+      if (!candidates.length) {
+        vscode.window.showInformationMessage("还没有加载题库。请先执行「搜索题库」加载一个教材题库。");
+        return;
+      }
+      const pick = await vscode.window.showQuickPick(
+        candidates.map((item) => ({
+          label: item.contest.title || `题库 ${item.contest.id}`,
+          description: `${(item.problems || []).length} 题 · 可竞速`,
+          detail: item.scanned ? "来自本地目录扫描" : `#${item.contest.id}`,
+          entry: item
+        })),
+        { title: "选择要竞速的题库", ignoreFocusOut: true }
+      );
+      if (!pick) {
+        return;
+      }
+      entry = pick.entry;
+    }
+    if (!isQuestionBankContest(entry.contest)) {
+      vscode.window.showWarningMessage("只有题库提供竞速；实验和考试不提供。");
+      return;
+    }
+    try {
+      const workbench = getContestRaceWorkbench(context, client, state, treeProvider);
+      await workbench.open(entry);
     } catch (error) {
       await handleXmuojError(error, state, client, treeProvider);
     }
@@ -5874,6 +6669,7 @@ function activate(context) {
       }
       clearProblemsetSelections(state);
       await persistProblemsetSelections(context, state);
+      notifyProblemsetQueueChanged();
     } else {
       const confirmed = await vscode.window.showWarningMessage(`确定要删除题目“${picked.value.display_id} ${picked.value.title}”吗？`, { modal: true }, "删除题目");
       if (confirmed !== "删除题目") {
@@ -5881,6 +6677,7 @@ function activate(context) {
       }
       state.problemsetSelections = current.filter((item) => !(String(item.id) === String(picked.value.id) && normalizeBaseUrlForKey(item.baseUrl) === normalizeBaseUrlForKey(picked.value.baseUrl)));
       await persistProblemsetSelections(context, state);
+      notifyProblemsetQueueChanged();
     }
     treeProvider.refresh();
   }));
@@ -5895,6 +6692,7 @@ function activate(context) {
     }
     removeProblemsetSelection(state, item);
     await persistProblemsetSelections(context, state);
+    notifyProblemsetQueueChanged();
     treeProvider.refresh();
   }));
 
@@ -5935,14 +6733,20 @@ function activate(context) {
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand("xmuoj.manageContestWorkspaceSelections", async () => {
-    const current = state.openContestWorkspaces || [];
+    // 列表里既有手动加载的实验，也有扫盘恢复的实验；管理时两者都要能移除。
+    const current = treeProvider.getContestEntries ? treeProvider.getContestEntries() : (state.openContestWorkspaces || []);
     if (!current.length) {
       vscode.window.showInformationMessage("比赛列表里还没有已打开比赛");
       return;
     }
     const picked = await vscode.window.showQuickPick([
       { label: "清空全部", value: "clear" },
-      ...current.map((item) => ({ label: item.contest.title, description: `#${item.contest.id}`, value: item }))
+      ...current.map((item) => ({
+        label: item.contest.title,
+        description: `#${item.contest.id}`,
+        detail: item.scanned ? "来自本地目录扫描" : undefined,
+        value: item
+      }))
     ], {
       title: "管理比赛列表",
       placeHolder: "选择要移除的一场比赛，或清空全部"
@@ -5959,7 +6763,15 @@ function activate(context) {
       if (confirmClear !== "删除全部") {
         return;
       }
+      const activeId = state.contestWorkspace && state.contestWorkspace.contest
+        ? String(state.contestWorkspace.contest.id)
+        : null;
+      const removedActive = activeId && current.some((item) => String(item.contest.id) === activeId);
+      current.forEach((item) => hideContestWorkspaceEntry(state, item));
       state.openContestWorkspaces = [];
+      if (removedActive) {
+        clearContestContext(state);
+      }
     } else {
       const confirmRemove = await vscode.window.showWarningMessage(
         `确定要删除比赛“${picked.value.contest.title}”吗？`,
@@ -5969,11 +6781,12 @@ function activate(context) {
       if (confirmRemove !== "删除比赛") {
         return;
       }
-      state.openContestWorkspaces = current.filter((item) => item.key !== picked.value.key);
+      removeContestWorkspaceSelection(state, picked.value);
     }
     if (typeof state.persistOpenContests === "function") {
       state.persistOpenContests();
     }
+    updateStatusBars(state, userStatusBar, contestStatusBar, client);
     treeProvider.refresh();
   }));
 
@@ -6192,6 +7005,7 @@ function activate(context) {
         vscode.window.showWarningMessage("未找到本地测试数据，请先下载测试数据或使用在线提交");
         return;
       }
+      timeCapsuleMark("run", "本地测试", { caseDir, language });
       const summary = await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Window, title: "XMUOJ 本地测试" },
         () => runLocalCases({
@@ -6201,6 +7015,11 @@ function activate(context) {
           outputChannel
         })
       );
+      timeCapsuleMark("run-result", "本地测试结束", {
+        passed: summary.passed,
+        failed: summary.failed,
+        total: summary.total
+      });
       const report = Object.assign({}, summary, {
         displayId: metadataContext.metadata.displayId,
         title: metadataContext.metadata.title,
@@ -6344,6 +7163,10 @@ function activate(context) {
         if (contestId && contestPassword) {
           cacheContestPassword(state, contestId, contestPassword);
         }
+        timeCapsuleMark("submit", "提交评测", {
+          language,
+          submissionId: submission.submission_id
+        });
         if (!usedActiveEditor) {
           outputChannel.appendLine(`提交时自动使用当前题目工作区源码：${sourcePath}`);
         }
@@ -6401,6 +7224,21 @@ function activate(context) {
         updateRecentProblemResult(state, problemId, submissionResult.baseUrl, {
           lastResultLabel: result.result_label,
           accepted: isAcceptedSubmissionResult(result)
+        });
+        notifyProblemsetSubmission({
+          problemId,
+          displayId: submissionResult.displayId || result.display_id || "",
+          title: submissionResult.title,
+          resultLabel: result.result_label,
+          resultCode: result.result,
+          accepted: isAcceptedSubmissionResult(result),
+          submissionId: result.id,
+          contestId: submissionResult.contestId,
+          createdAt: result.create_time || undefined
+        });
+        timeCapsuleMark("result", result.result_label, {
+          accepted: isAcceptedSubmissionResult(result),
+          submissionId: result.id
         });
         await showSubmissionResultPanel(context, state, client, submissionResult);
         treeProvider.refresh();
@@ -6727,7 +7565,39 @@ function activate(context) {
   );
 }
 
-function deactivate() {}
+function deactivate() {
+  if (problemsetWorkbench) {
+    problemsetWorkbench.dispose();
+    problemsetWorkbench = null;
+  }
+  if (contestRaceWorkbench) {
+    contestRaceWorkbench.dispose();
+    contestRaceWorkbench = null;
+  }
+  if (timeCapsuleRecorder) {
+    // 正在录制时保留临时文件，下次启动可恢复。
+    timeCapsuleRecorder.dispose();
+    timeCapsuleRecorder = null;
+  }
+  if (timeCapsuleStatusBar) {
+    timeCapsuleStatusBar.dispose();
+    timeCapsuleStatusBar = null;
+  }
+  if (timeCapsulePauseBar) {
+    timeCapsulePauseBar.dispose();
+    timeCapsulePauseBar = null;
+  }
+  if (timeCapsuleStopBar) {
+    timeCapsuleStopBar.dispose();
+    timeCapsuleStopBar = null;
+  }
+  timeCapsuleCodeLensProvider = null;
+  if (timeCapsulePanel) {
+    timeCapsulePanel.dispose();
+    timeCapsulePanel = null;
+  }
+  timeCapsuleStoreRef = null;
+}
 
 module.exports = {
   activate,

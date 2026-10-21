@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src https: http: data:; style-src {{cspSource}} 'unsafe-inline'; script-src 'nonce-{{nonce}}'; font-src {{cspSource}};"
+    />
+    <link rel="stylesheet" href="{{styleUri}}" />
+    <title>XMUOJ 刷题台</title>
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="identity" id="identity">
+        <div class="identity-main">
+          <div class="avatar" id="identity-avatar" aria-hidden="true">X</div>
+          <div class="identity-text">
+            <div class="identity-name-row">
+              <strong id="identity-name">未登录</strong>
+              <span class="badge rank-badge" id="identity-rank" hidden></span>
+            </div>
+            <div class="identity-meta" id="identity-meta">正在连接 XMUOJ…</div>
+          </div>
+        </div>
+        <div class="identity-actions">
+          <button type="button" class="btn ghost" id="btn-login" hidden>登录</button>
+          <button type="button" class="btn ghost" id="btn-refresh" title="刷新全部数据">刷新</button>
+        </div>
+      </header>
+
+      <nav class="tabs" id="tabs" role="tablist" aria-label="刷题台分区">
+        <button type="button" class="tab" role="tab" data-tab="overview">概览</button>
+        <button type="button" class="tab" role="tab" data-tab="problems">题库</button>
+        <button type="button" class="tab" role="tab" data-tab="ranking">排行</button>
+        <button type="button" class="tab" role="tab" data-tab="following">关注</button>
+      </nav>
+
+      <main class="content">
+        <section class="pane" id="pane-overview" role="tabpanel" aria-labelledby="tab-overview"></section>
+        <section class="pane" id="pane-problems" role="tabpanel" aria-labelledby="tab-problems"></section>
+        <section class="pane" id="pane-ranking" role="tabpanel" aria-labelledby="tab-ranking"></section>
+        <section class="pane" id="pane-following" role="tabpanel" aria-labelledby="tab-following"></section>
+      </main>
+    </div>
+
+    <aside class="drawer" id="drawer" hidden aria-label="用户资料">
+      <div class="drawer-head">
+        <strong id="drawer-title">用户资料</strong>
+        <button type="button" class="btn ghost small" id="drawer-close" aria-label="关闭">关闭</button>
+      </div>
+      <div class="drawer-body" id="drawer-body"></div>
+    </aside>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+
+    <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+  </body>
+</html>

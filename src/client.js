@@ -248,6 +248,16 @@ class XmuojClient {
     return null;
   }
 
+  /**
+   * 站点在 HTTP 200 的 JSON 里用这些文案表示未登录。
+   * 只匹配明确的登录语义，避免把“实验密码错误”误判成登录失效。
+   */
+  isLoginRequiredMessage(message) {
+    return /please login|login first|login required|not logged in|unauthorized|authentication (failed|required)|请先登录|尚未登录|未登录/i.test(
+      String(message || "")
+    );
+  }
+
   buildHttpErrorMessage(response, payload, fallbackText) {
     if (payload && payload.data) {
       return payload.data;
@@ -331,7 +341,12 @@ class XmuojClient {
       );
     }
     if (data.error) {
-      throw this.makeTaggedError(data.data || data.error, "server");
+      const message = data.data || data.error;
+      const kind =
+        this.isLoginRequiredMessage(message) || this.isLoginRequiredMessage(data.error)
+          ? "auth"
+          : "server";
+      throw this.makeTaggedError(message, kind);
     }
     return data.data;
   }
@@ -381,7 +396,12 @@ class XmuojClient {
         /* ignore parse failure */
       }
       if (payload && payload.error) {
-        throw this.makeTaggedError(payload.data || payload.error, "server");
+        const message = payload.data || payload.error;
+        const kind =
+          this.isLoginRequiredMessage(message) || this.isLoginRequiredMessage(payload.error)
+            ? "auth"
+            : "server";
+        throw this.makeTaggedError(message, kind);
       }
       throw this.makeTaggedError("服务器返回了 JSON 而非二进制数据，请确认题目支持下载测试数据。", "server");
     }
@@ -467,6 +487,80 @@ class XmuojClient {
       }
     });
     return this.request(`/api/plugin/problemset?${query.toString()}`);
+  }
+
+  // --- 站点网页使用的 Django API（插件额外能力，全部为 GET） ---
+
+  getProfile(username) {
+    const query = new URLSearchParams();
+    if (username) {
+      query.set("username", String(username));
+    }
+    return this.request(`/api/profile${query.toString() ? `?${query.toString()}` : ""}`);
+  }
+
+  getSiteProblems(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(Object.assign({ limit: 200, offset: 0 }, params)).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") {
+        query.set(key, String(value));
+      }
+    });
+    return this.request(`/api/problem?${query.toString()}`);
+  }
+
+  getSiteSubmissions(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(Object.assign({ limit: 50, offset: 0 }, params)).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") {
+        query.set(key, String(value));
+      }
+    });
+    return this.request(`/api/submissions?${query.toString()}`);
+  }
+
+  /** 实验/题库内提交；公开的 /api/submissions 不含实验提交。 */
+  getSiteContestSubmissions(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(Object.assign({ limit: 50, offset: 0 }, params)).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") {
+        query.set(key, String(value));
+      }
+    });
+    return this.request(`/api/contest_submissions?${query.toString()}`);
+  }
+
+  getUserRank(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(Object.assign({ limit: 2000, offset: 0, rule: "acm" }, params)).forEach(
+      ([key, value]) => {
+        if (value !== undefined && value !== null && value !== "") {
+          query.set(key, String(value));
+        }
+      }
+    );
+    return this.request(`/api/user_rank?${query.toString()}`);
+  }
+
+  getProfileContests(username, params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(Object.assign({ limit: 20, offset: 0 }, params)).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") {
+        query.set(key, String(value));
+      }
+    });
+    if (username) {
+      query.set("username", String(username));
+    }
+    return this.request(`/api/profile/contests?${query.toString()}`);
+  }
+
+  getProfileContestDetail(contestId, username) {
+    const query = new URLSearchParams({ contest_id: String(contestId) });
+    if (username) {
+      query.set("username", String(username));
+    }
+    return this.request(`/api/profile/contest_detail?${query.toString()}`);
   }
 
   getContestWorkspace(contestId, contestPassword) {

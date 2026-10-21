@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src https: http: data:; style-src {{cspSource}} 'unsafe-inline'; script-src 'nonce-{{nonce}}'; font-src {{cspSource}};"
+    />
+    <link rel="stylesheet" href="{{styleUri}}" />
+    <title>XMUOJ 时间胶囊回放</title>
+  </head>
+  <body>
+    <div class="capsule-app" id="app">
+      <header class="capsule-header">
+        <div class="capsule-heading">
+          <div class="capsule-title-row">
+            <strong id="capsule-problem">时间胶囊</strong>
+            <span class="capsule-badge" id="capsule-result" hidden></span>
+          </div>
+          <div class="capsule-meta" id="capsule-meta">正在读取胶囊…</div>
+        </div>
+        <div class="capsule-actions">
+          <button type="button" class="btn ghost" id="btn-record">录制新一次</button>
+          <button type="button" class="btn ghost" id="btn-compare" hidden>对比上一次</button>
+          <button type="button" class="btn ghost" id="btn-summary" aria-controls="recording-summary">录制摘要</button>
+          <button type="button" class="btn ghost" id="btn-open-final">打开最终代码</button>
+          <button type="button" class="btn ghost" id="btn-save-code">另存代码</button>
+          <button type="button" class="btn ghost" id="btn-export">导出胶囊</button>
+          <button type="button" class="btn ghost" id="btn-video">导出视频</button>
+          <button type="button" class="btn danger" id="btn-delete">删除本次</button>
+        </div>
+      </header>
+
+      <section class="capsule-summary" id="recording-summary" hidden aria-label="本次录制结果">
+        <div class="summary-copy">
+          <div class="summary-title-row">
+            <strong id="summary-title">本次录制已保存</strong>
+            <span class="capsule-badge" id="summary-result" hidden></span>
+          </div>
+          <div class="summary-meta" id="summary-meta"></div>
+          <div class="summary-stats" id="summary-stats"></div>
+        </div>
+        <div class="summary-actions">
+          <button type="button" class="btn primary" id="summary-play">播放全过程</button>
+          <button type="button" class="btn ghost" id="summary-compare" hidden>对比上一次</button>
+          <button type="button" class="btn ghost" id="summary-video">导出视频</button>
+          <button type="button" class="btn ghost" id="summary-export">导出胶囊</button>
+          <button type="button" class="btn danger" id="summary-delete">删除本次</button>
+          <button type="button" class="btn ghost" id="summary-dismiss">关闭摘要</button>
+        </div>
+      </section>
+
+      <section class="capsule-attempts" id="attempts" aria-label="本题的历史尝试"></section>
+
+      <section class="capsule-code" id="code-view" aria-label="代码回放" aria-live="off">
+        <div class="capsule-empty" id="code-empty">正在加载事件…</div>
+      </section>
+
+      <footer class="capsule-footer">
+        <div class="capsule-mark" id="current-mark" aria-live="polite"></div>
+        <div class="capsule-timeline" id="timeline">
+          <div class="timeline-density" id="density" aria-hidden="true"></div>
+          <div class="timeline-markers" id="markers" aria-label="运行与提交标记"></div>
+          <input
+            type="range"
+            id="seek"
+            min="0"
+            max="1"
+            step="1"
+            value="0"
+            aria-label="回放进度"
+          />
+        </div>
+        <div class="capsule-controls">
+          <button type="button" class="btn primary" id="btn-play" aria-label="播放">播放</button>
+          <button type="button" class="btn ghost" id="btn-prev-edit" title="上一处编辑">上一编辑</button>
+          <button type="button" class="btn ghost" id="btn-next-edit" title="下一处编辑">下一编辑</button>
+          <button type="button" class="btn ghost" id="btn-prev-mark" title="上一个标记">上一标记</button>
+          <button type="button" class="btn ghost" id="btn-next-mark" title="下一个标记">下一标记</button>
+          <label class="capsule-field">
+            倍速
+            <select id="speed" aria-label="播放倍速">
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+              <option value="2">2×</option>
+              <option value="4">4×</option>
+              <option value="8">8×</option>
+              <option value="16">16×</option>
+            </select>
+          </label>
+          <label class="capsule-field checkbox">
+            <input type="checkbox" id="skip-idle" checked />
+            跳过停顿
+          </label>
+          <span class="capsule-time" id="time-label">00:00 / 00:00</span>
+          <span class="capsule-position" id="position-label"></span>
+        </div>
+      </footer>
+
+      <div class="capsule-error" id="error-banner" hidden></div>
+
+      <div class="capsule-overlay" id="video-overlay" hidden>
+        <div class="video-dialog" role="dialog" aria-modal="true" aria-labelledby="video-title">
+          <h3 id="video-title">导出 WebM 视频</h3>
+          <p class="muted" id="video-hint">
+            使用画布逐帧重放，不依赖 ffmpeg。视频按所选速度录制，速度越高导出越短。
+          </p>
+          <label class="capsule-field">
+            导出速度
+            <select id="video-speed">
+              <option value="1">1×（与录制时长相同）</option>
+              <option value="2" selected>2×</option>
+              <option value="4">4×</option>
+            </select>
+          </label>
+          <div class="video-progress"><div class="video-bar" id="video-bar"></div></div>
+          <p class="video-status" id="video-status">准备导出…</p>
+          <div class="video-actions">
+            <button type="button" class="btn primary" id="video-start">开始导出</button>
+            <button type="button" class="btn ghost" id="video-cancel">取消</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script nonce="{{nonce}}" src="{{sharedUri}}"></script>
+    <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+  </body>
+</html>
