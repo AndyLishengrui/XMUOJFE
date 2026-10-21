@@ -88,11 +88,13 @@
 
   // 比赛类型 → 标题前的图标。三个都是 iView 自带 ionicons 字形，单色、颜色走 CSS
   // currentColor ⇒ 天然跟随三套主题（配色见下方 .contest-type-icon）。
-  // 🔑 旧版卡片列表每个条目前面有张奖杯图，改成 iView Table 后丢了；这里按类型补回来：
-  //    考试=奖杯、题库=书、实验=</>（打代码）。
+  // 🔑 旧版卡片列表每个条目前面有张奖杯图，改成 iView Table 后丢了；这里按类型补回来。
+  // 🔑 2026-10-21 老师两次要求后定稿：**三种类型统一用金色奖杯**（题库原来是书、
+  //    实验原来是 </>），尺寸也统一放大到 22px。类名仍保留 exp/qb/exam，
+  //    但既然都是奖杯金，就不必再按类型分色。
   // ⚠️ 判定优先级 题库 > 考试 > 实验：个别比赛 is_exam 与 is_question_bank 同时为真
   //    （例：474 新书配套题库），按「题库」处理。
-  const TYPE_ICON = {exam: 'trophy', qb: 'ios-book-outline', exp: 'code'}
+  const TYPE_ICON = {exam: 'trophy', qb: 'trophy', exp: 'trophy'}
 
   function contestType (c) {
     if (c.is_question_bank) return 'qb'
@@ -444,13 +446,13 @@
         //    靠源码顺序覆盖掉 .ivu-icon 的 margin-left，把间距放到右侧（图标在标题左边）。
         .contest-type-icon {
           margin-left: 0;
-          margin-right: 8px;
-          font-size: 18px;
+          margin-right: 10px;
+          // 2026-10-21 老师要求「大一点、更好看」：18px → 22px（行高 56px，仍居中）
+          font-size: 22px;
           vertical-align: middle;
-          // 暖色系：考试/题库=金、实验=橙（都是各主题自带的 token，三套主题下自动跟着变）
-          &.exam { color: var(--c-gold); }    // 考试：奖杯，金
-          &.qb { color: var(--c-gold); }      // 题库：书，金
-          &.exp { color: var(--c-warning); }  // 实验：</>，橙
+          // 三种类型统一金色奖杯（原先考试/题库=金、实验=橙）。
+          // 用主题自带的 --c-gold，三套主题下自动跟着变。
+          color: var(--c-gold);
         }
       }
     }

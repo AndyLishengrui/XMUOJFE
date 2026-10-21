@@ -393,10 +393,10 @@ function checkContestTypeIcons () {
   const col = vm.columns.filter(c => c.key === 'title')[0]
   const h = vm.$createElement
   const spec = [
-    [{is_exam: false, is_question_bank: false}, 'code', 'exp'],
-    [{is_exam: false, is_question_bank: true}, 'ios-book-outline', 'qb'],
+    [{is_exam: false, is_question_bank: false}, 'trophy', 'exp'],
+    [{is_exam: false, is_question_bank: true}, 'trophy', 'qb'],
     [{is_exam: true, is_question_bank: false}, 'trophy', 'exam'],
-    [{is_exam: true, is_question_bank: true}, 'ios-book-outline', 'qb']   // 同时为真 → 按「题库」
+    [{is_exam: true, is_question_bank: true}, 'trophy', 'qb']   // 同时为真 → 按「题库」
   ]
   const got = spec.map(([flags, wantType, wantCls]) => {
     const row = Object.assign({id: 1, title: 'T', contest_type: 1}, flags)
