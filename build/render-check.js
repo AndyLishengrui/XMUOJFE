@@ -695,11 +695,212 @@ function checkUnreadPollInterval () {
   }
 }
 
+/**
+ * 2026-10-16：比赛列表的「任课老师」由**自由文本框**改成**下拉菜单**。
+ *
+ * 老师原话：「虽然已经可以支持按任课老师搜索，但是很不好用……可否改为列表框，这样我点击
+ * 鼠标就可以选择，不用打任课老师的名字，太慢了。」后端 owner 过滤早就有（2026-09-22），
+ * 这次只是把 UI 换成点选。
+ *
+ * 断言（真编译 ContestList.vue + 真跑 vue-router）：
+ *   ① 候选项来自 /api/contest_teachers，渲染出「全部」+ 全部老师
+ *   ② 点某位老师 → 路由变成 ?owner=<username> 且 page 回到 1
+ *   ③ 触发器显示中文名；`?owner=中文名`（老分享链接的形态）也照样显示中文名、不回落到「任课老师」
+ *   ④ 题库页上这个筛选**依然不显示**
+ *
+ * ⚠️ iView 的 Dropdown 在 jsdom 里跑不起来（`require('iview')` 直接挂死），所以这里用
+ *    **忠实照抄 iView 契约**的替身：见 node_modules/iview/src/components/dropdown/dropdown-item.vue
+ *    —— 点击 item → 向上找 name==='Dropdown' 的祖先 → `$emit('on-click', this.name)`，
+ *    Dropdown 再接住往上抛。也就是说本用例验的是**模板接线**（v-for / :name / @on-click），
+ *    不是 iView 自己的渲染。该契约另有旁证：同一栏的「实验」「状态」两个筛选线上就是这么用的。
+ */
+function checkTeacherFilterDropdown () {
+  const VueRouter = require('vue-router')
+  if (!checkTeacherFilterDropdown._installed) {
+    Vue.use(VueRouter)
+    checkTeacherFilterDropdown._installed = true
+  }
+  const prevLoading = Vue.prototype.$Loading
+  Vue.prototype.$Loading = {start () {}, finish () {}, error () {}}
+
+  // 线上真实的 8 位任课老师（/api/contest_teachers?category=experiment 的原样返回）
+  const TEACHERS = [
+    {username: 'andy', real_name: '李胜睿', count: 15},
+    {username: 'DongLin', real_name: '曹冬林', count: 4},
+    {username: 'hlzeng', real_name: '曾华琳', count: 4},
+    {username: 'ZengMing', real_name: '曾鸣', count: 4},
+    {username: 'HJWang', real_name: '王鸿吉', count: 4},
+    {username: 'HRChen', real_name: '陈胤燃', count: 4},
+    {username: 'QYSong', real_name: '宋庆禹', count: 3},
+    {username: 'lkhqz', real_name: '刘昆宏', count: 1}
+  ]
+
+  const findDropdownUpward = vm => {
+    let p = vm.$parent
+    while (p) {
+      if (p.$options.name === 'Dropdown') return p
+      p = p.$parent
+    }
+    return null
+  }
+  const DropdownStub = {
+    name: 'Dropdown',
+    render (h) {
+      return h('div', {staticClass: 'ivu-dropdown'}, [
+        h('div', {staticClass: 'ivu-dropdown-rel'}, this.$slots.default),
+        h('ul', {staticClass: 'ivu-dropdown-menu'}, this.$slots.list)
+      ])
+    },
+    mounted () { this.$on('on-click', key => this.$emit('on-click', key)) }
+  }
+  const DropdownItemStub = {
+    name: 'DropdownItem',
+    props: {name: [String, Number]},
+    render (h) {
+      return h('li', {staticClass: 'ivu-dropdown-item', on: {click: this.handleClick}}, this.$slots.default)
+    },
+    methods: {
+      handleClick () {
+        const p = findDropdownUpward(this)
+        if (p) p.$emit('on-click', this.name)
+      }
+    }
+  }
+  // 真实 Panel 用了具名 slot（title/extra），render-check 里的全局 Panel 桩只渲染 default，
+  // 会把整条筛选栏丢掉 → 这里用局部注册的 Panel 把三个 slot 都渲染出来。
+  const PanelStub = {render (h) { return h('div', [this.$slots.title, this.$slots.extra, this.$slots.default]) }}
+
+  // 仿后端的 category 语义：实验页 8 位老师，题库页只有 1 位（真实数据就是这样）。
+  // 这个差异正是 2026-10-16 那个 bug 的来源 —— 见下面第 ⑤ 条断言。
+  const api = {
+    getContestList: () => Promise.resolve({data: {data: {results: [], total: 0}}}),
+    getContestTeachers: (params) => Promise.resolve({
+      data: {data: (params || {}).category === 'question_bank' ? [TEACHERS[0]] : TEACHERS}
+    })
+  }
+  const vuex = {mapGetters: names => {const o = {}; (names || []).forEach(n => {o[n] = () => undefined}); return o}}
+  const Noop = {render (h) { return h('div') }}
+  const ContestList = buildSFC('src/pages/oj/views/contest/ContestList.vue',
+    {api, Pagination: Noop, vuex, Noop, utils: {filterEmptyValue: o => o}, time: {utcToLocal: () => ''}})
+  ContestList.components = Object.assign({}, ContestList.components, {
+    Panel: PanelStub,
+    Dropdown: DropdownStub,
+    'Dropdown-menu': {render (h) { return h('ul', {staticClass: 'ivu-dropdown-menu'}, this.$slots.default) }},
+    DropdownMenu: {render (h) { return h('ul', {staticClass: 'ivu-dropdown-menu'}, this.$slots.default) }},
+    'Dropdown-item': DropdownItemStub,
+    DropdownItem: DropdownItemStub
+  })
+
+  const Dummy = {render (h) { return h('div', 'dummy') }}
+  const router = new VueRouter({
+    mode: 'abstract',
+    routes: [
+      {name: 'problem-list', path: '/problem', component: Dummy},
+      {name: 'contest-list', path: '/contest', component: ContestList, meta: {category: 'experiment'}},
+      {name: 'question-bank-list', path: '/question-bank', component: ContestList, meta: {category: 'question_bank'}}
+    ]
+  })
+  const vm = new Vue({router, render: h => h('router-view')})
+  vm.$mount()
+  // ⚠️ `.$mount()` 不带 el 时组件挂在**游离**节点上，document.querySelectorAll 一个都找不到
+  //    （踩过：菜单项恒为空数组）。必须真的挂进 body。
+  document.body.appendChild(vm.$el)
+
+  const push = to => new Promise(resolve => {
+    const timer = setTimeout(() => resolve('TIMEOUT'), 600)
+    router.push(to, () => { clearTimeout(timer); resolve('OK') }, () => { clearTimeout(timer); resolve('ERR') })
+  })
+  const settle = () => new Promise(resolve => setTimeout(resolve, 30))
+
+  // 老师那个下拉的菜单：按「含某位老师中文名」认出来（同栏另外两个 Dropdown 也产出同样的 li）
+  const teacherMenu = () => [...document.querySelectorAll('ul.ivu-dropdown-menu')]
+    .filter(ul => ul.textContent.indexOf('李胜睿') !== -1)[0] || null
+  const menuTexts = () => {
+    const ul = teacherMenu()
+    return ul ? [...ul.querySelectorAll('li.ivu-dropdown-item')].map(li => li.textContent.trim()) : []
+  }
+  const contestListVm = () => {
+    let found = null
+    const walk = c => c.forEach(x => { if (x.$options.name === 'contest-list') found = x; else walk(x.$children) })
+    walk(vm.$children)
+    return found
+  }
+
+  const cleanup = () => { vm.$destroy(); Vue.prototype.$Loading = prevLoading }
+
+  return (async () => {
+    const bad = []
+    try {
+      // 🔥 起点刻意放在**题库页**（复刻老师的真实路径：他先停在题库，再切到实验页）。
+      //    这一点是能否抓到那个 bug 的关键 —— 若从实验页起步，第一次 mounted 拉到的
+      //    就已经是实验页那份名单，后面再怎么切都看不出来（我第一版就是这么写的，
+      //    结果拿**有 bug 的代码**跑也全绿）。
+      await push('/question-bank')
+      await settle()
+      if (teacherMenu()) bad.push('题库页上「任课老师」下拉仍然显示')     // ④
+      await push('/contest')
+      await settle()
+      const inst = contestListVm()
+      if (!inst) { cleanup(); return {name: '比赛列表：任课老师下拉菜单', ok: false, detail: '❌ 挂载不出 contest-list 实例'} }
+
+      // ① 候选项：**题库→实验切回来**之后必须仍是实验页那份 8 位
+      //    （两条路由共用同一个组件实例、mounted 不重跑，若名单只在 mounted 取一次，
+      //     这里拿到的就是题库那份——只有 1 位老师——老师说的"只剩下李胜睿"。）
+      const want = ['m.All'].concat(TEACHERS.map(t => t.real_name))
+      const got = menuTexts()
+      if (JSON.stringify(got) !== JSON.stringify(want)) {
+        bad.push(`菜单项 ${JSON.stringify(got)} ≠ 期望 ${JSON.stringify(want)}`)
+      }
+
+      // ② 点「曾鸣」→ 路由 owner=ZengMing、page 回到 1
+      if (inst.page === 1) inst.page = 3        // 先制造一个非 1 的页码，验「改筛选会回第一页」
+      const ul = teacherMenu()
+      const li = ul && [...ul.querySelectorAll('li.ivu-dropdown-item')].filter(x => x.textContent.trim() === '曾鸣')[0]
+      if (!li) bad.push('菜单里找不到「曾鸣」这一项')
+      else li.click()
+      await settle()
+      const q = vm.$route.query
+      if (q.owner !== 'ZengMing') bad.push(`点「曾鸣」后 owner=${JSON.stringify(q.owner)}，应 'ZengMing'`)
+      if (q.page !== 1) bad.push(`改筛选后 page=${JSON.stringify(q.page)}，应 1`)
+      if (inst.currentTeacherName !== '曾鸣') bad.push(`选中后触发器显示 ${JSON.stringify(inst.currentTeacherName)}，应 '曾鸣'`)
+
+      // ③ 老链接 ?owner=中文名（不是 username）也要显示中文名
+      inst.query.owner = '曹冬林'
+      if (inst.currentTeacherName !== '曹冬林') {
+        bad.push(`?owner=中文名 时触发器显示 ${JSON.stringify(inst.currentTeacherName)}，应原样显示 '曹冬林'（不能回落成 m.Teacher）`)
+      }
+      inst.query.owner = ''
+
+      // ④ 再来一遍完整的 题库→实验 往返，确认不是"第一次侥幸"：翻页也不该把名单弄丢
+      await push('/question-bank')
+      await settle()
+      await push('/contest')
+      await settle()
+      const back = menuTexts()
+      if (back.length !== want.length) {
+        bad.push(`题库→实验切回来后菜单只有 ${back.length} 项（应 ${want.length}）：${JSON.stringify(back)}`)
+      }
+
+      cleanup()
+      return {
+        name: '比赛列表：任课老师从文本框改成可点选下拉菜单',
+        ok: bad.length === 0,
+        detail: bad.length ? '❌ ' + bad.join('；')
+          : `菜单 ${got.length} 项（全部+${TEACHERS.length} 位老师）✅ / 点「曾鸣」→ owner=ZengMing、page=1 ✅` +
+            ` / ?owner=中文名 不回落到占位符 ✅ / 题库页不显示 ✅ / 题库→实验切回来名单不缩水 ✅`
+      }
+    } catch (e) {
+      cleanup()
+      return {name: '比赛列表：任课老师从文本框改成可点选下拉菜单', ok: false, detail: '用例本身异常：' + e.message}
+    }
+  })()
+}
+
 // ── 跑 ───────────────────────────────────────────────────────────
 const cases = [checkAnnouncements, checkPaletteSwitch, checkRankFrozenColumns, checkNavIconGlyphs,
                checkContestListNav, checkContestListNavBehavior, checkContestTypeIcons,
                checkThemeSwitch, checkDraftGuard, checkThemeSafeSwap, checkMonacoLazy,
-               checkUnreadPollInterval]
+               checkUnreadPollInterval, checkTeacherFilterDropdown]
 
 ;(async () => {
   const results = []

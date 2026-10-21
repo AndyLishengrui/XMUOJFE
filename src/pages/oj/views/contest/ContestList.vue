@@ -30,10 +30,20 @@
               </Dropdown-menu>
             </Dropdown>
           </li>
-          <!-- 作者（任课老师）筛选：题库页不显示 —— 17 个题库全是同一位老师建的，筛了没意义 -->
+          <!-- 作者（任课老师）筛选：题库页不显示 —— 17 个题库全是同一位老师建的，筛了没意义。
+               2026-10-16 由**自由文本框**改成**下拉菜单**：老师反映每次都要手打名字太慢，
+               改成点鼠标选。控件形态照抄上面「实验」「状态」两个 Dropdown，保持整栏一致。
+               候选项来自 /api/contest_teachers（只列有可见比赛的老师 ⇒ 不会出现选了却筛不出的死选项）。 -->
           <li v-if="!isQuestionBank">
-            <Input id="author" @on-enter="onFilterChange" @on-click="onFilterChange" v-model="query.owner"
-                   icon="ios-search-strong" :placeholder="$t('m.Teacher')" />
+            <Dropdown @on-click="onTeacherChange">
+              <span>{{ currentTeacherName }}
+                <Icon type="arrow-down-b"></Icon>
+              </span>
+              <Dropdown-menu slot="list">
+                <Dropdown-item name="">{{$t('m.All')}}</Dropdown-item>
+                <Dropdown-item v-for="t in teachers" :key="t.username" :name="t.username">{{t.real_name}}</Dropdown-item>
+              </Dropdown-menu>
+            </Dropdown>
           </li>
           <li>
             <Input id="keyword" @on-enter="onFilterChange" @on-click="onFilterChange" v-model="query.keyword"
@@ -114,6 +124,11 @@
         total: 0,
         rows: '',
         contests: [],
+        // 「任课老师」下拉的候选项：[{username, real_name, count}]，来自 /api/contest_teachers
+        teachers: [],
+        // 上面这份名单是**按哪个分类**拉的（experiment / question_bank）。
+        // 见 getTeachers() 的注释：/contest 与 /question-bank 共用实例，必须按分类重拉。
+        teachersCategory: null,
         CONTEST_STATUS_REVERSE: CONTEST_STATUS_REVERSE,
 //      for password modal use
         cur_contest_id: ''
@@ -163,6 +178,9 @@
       init (route) {
         this.syncQuery(route)
         this.getContestList(this.page)
+        // 放在 syncQuery **之后**：getTeachers 读的是 this.query.category。
+        // 分类没变时它内部会直接 return，不会白发请求。
+        this.getTeachers()
       },
       getContestList (page = 1) {
         this.$Loading.start()
@@ -194,6 +212,32 @@
       // 改筛选条件时必须回到第 1 页：否则在第 2 页输入关键字/作者会停在空的第 2 页。
       // 分页器自己调 changeRoute，不能在这里统一重置 page。
       onFilterChange () {
+        this.page = 1
+        this.changeRoute()
+      },
+      // 「任课老师」下拉取候选项。由 init() 调用（= 挂载时 + 每次路由变化时），
+      // 但**只在分类真的变了才发请求** —— 翻页 / 改筛选 / 改排序都是 no-op。
+      //
+      // ⚠️ 2026-10-16 修的一个真 bug：原来只在 mounted 里取一次，而 `/contest` 与
+      //    `/question-bank` 是**两条路由记录共用同一个组件实例**（见上面 watch 的注释），
+      //    互切时 mounted **不会重跑** ⇒ 从题库切回实验页后，下拉用的还是**题库那份名单**
+      //    （题库只有 1 位老师）⇒ 老师实测「只剩下李胜睿老师了」，整页刷新才恢复。
+      //    所以必须跟着分类走：按 category 记一份"已拉过哪个分类"，变了才重拉。
+      getTeachers () {
+        let category = this.query.category
+        if (category === this.teachersCategory) return
+        this.teachersCategory = category
+        api.getContestTeachers({category}).then((res) => {
+          this.teachers = res.data.data || []
+        }, () => {
+          // 取不到就只是个空下拉，不影响列表本身 —— 不弹错、不阻塞页面。
+          // ⚠️ 失败时要把 marks 清掉，否则会把"空名单"当成"这个分类已拉过"，永不重试。
+          this.teachers = []
+          this.teachersCategory = null
+        })
+      },
+      onTeacherChange (username) {
+        this.query.owner = username
         this.page = 1
         this.changeRoute()
       },
@@ -237,6 +281,17 @@
 
       isQuestionBank () {
         return this.query.category === 'question_bank'
+      },
+
+      // 下拉触发器上显示的当前老师名。
+      // ⚠️ 匹配不上时**原样显示 query.owner**，不要回落到「任课老师」：
+      //    老链接可能是 `?owner=曾鸣`（中文名，2026-09-22 那版就是这么分享的），
+      //    中文名不是候选项的 value（value 是 username），但它**确实在生效**
+      //    （后端 ContestListAPI 的 owner 对 username/real_name 都做 icontains）。
+      //    若这里显示成空的「任课老师」，老师会以为筛选没生效。
+      currentTeacherName () {
+        let t = this.teachers.find(item => item.username === this.query.owner)
+        return (t && t.real_name) || this.query.owner || this.$i18n.t('m.Teacher')
       },
 
       columns () {
@@ -348,10 +403,10 @@
 </script>
 <style lang="less" scoped>
   #contest-card {
-    #author {
-      width: 60%;
-      margin-right: 30px;
-    }
+    // 注：原来这里有一条 `#author { width: 60%; margin-right: 30px; }` —— 那是给
+    // 自由文本框用的。2026-10-16 换成 Dropdown 后它已无用（Dropdown 的排版与
+    // 上面「实验」「状态」两个筛选完全一致，由共享的 components/Panel.vue 的
+    // `ul.filter > li { display:inline-block; padding:0 10px }` 提供）。
     #keyword {
       width: 80%;
       margin-right: 30px;

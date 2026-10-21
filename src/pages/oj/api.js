@@ -181,6 +181,12 @@ export default {
       params
     })
   },
+  // 比赛列表页「任课老师」下拉的候选项（只含至少有一场可见比赛的老师）
+  getContestTeachers (params) {
+    return ajax('contest_teachers', 'get', {
+      params
+    })
+  },
   getContest (id) {
     return ajax('contest', 'get', {
       params: {
