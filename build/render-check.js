@@ -68,6 +68,8 @@ Vue.component('ECharts', {render (h) { return h('div') }})
 // 真实组件里 import 的这些，编译时换成桩
 const STUB_IMPORTS = [
   [/import\s+api\s+from\s+'@oj\/api'/, 'const api = __stub.api'],
+  // 后台页面（admin/views/contest/ContestList.vue）走的是 admin 自己的 api.js
+  [/import\s+api\s+from\s+'\.\.\/\.\.\/api\.js'/, 'const api = __stub.api'],
   [/import\s+(\w+)\s+from\s+'[^']*Pagination'/, 'const $1 = __stub.Pagination'],
   [/import\s+\{([^}]*)\}\s+from\s+'vuex'/, (m, names) => `const {${names}} = __stub.vuex`],
   [/import\s+ScreenFull\s+from\s+'[^']*'/, 'const ScreenFull = __stub.Noop'],
@@ -896,11 +898,191 @@ function checkTeacherFilterDropdown () {
   })()
 }
 
+// 2026-10-22：后台 /admin/contest 列表改造（紧凑布局 + 服务端排序 + owner/status 过滤）。
+// jsdom 不做排版 ⇒ 这里只验**行为**：URL 解析、请求参数、排序/清排序、删最后一页退页。
+// Element UI 真实组件在 jsdom 里跑不起来，所以 el-table 用一个记录 sort()/clearSort() 的桩。
+function checkAdminContestList () {
+  const VueRouter = require('vue-router')
+  if (!checkAdminContestList._installed) {
+    Vue.use(VueRouter)
+    checkAdminContestList._installed = true
+  }
+  const calls = []
+  const deleteCalls = []
+  const api = {
+    getContestList: (offset, limit, filters) => {
+      calls.push({offset, limit, filters: Object.assign({}, filters)})
+      return Promise.resolve({data: {data: {
+        total: 42,
+        results: [{
+          id: 1, title: 'T', created_by: {username: 'andy', real_name: '李胜睿'},
+          start_time: '2026-01-01T00:00:00Z', end_time: '2026-01-02T00:00:00Z',
+          create_time: '2026-01-01T00:00:00Z', status: '0',
+          contest_type: 'Public', rule_type: 'OI', visible: true
+        }]
+      }}})
+    },
+    getContestTeachers: () => Promise.resolve({data: {data: [
+      {username: 'andy', real_name: '李胜睿', count: 10},
+      {username: 'hlzeng', real_name: '曾华琳', count: 3}
+    ]}}),
+    deleteContest: (id, hard) => {
+      deleteCalls.push([id, hard])
+      return Promise.resolve({data: {}})
+    },
+    editContest: () => Promise.resolve({data: {}})
+  }
+  const tableStub = {
+    name: 'ElTable',
+    data () { return {sortCalls: [], clearSortCount: 0} },
+    methods: {
+      sort (prop, order) { this.sortCalls.push([prop, order]) },
+      clearSort () { this.clearSortCount++ }
+    },
+    render (h) { return h('div', this.$slots.default) }
+  }
+  Vue.component('ElTable', tableStub)
+  Vue.directive('loading', {})
+  const prevConfirm = Vue.prototype.$confirm
+  const prevSuccess = Vue.prototype.$success
+  const prevError = Vue.prototype.$error
+  Vue.prototype.$confirm = () => Promise.resolve()
+  Vue.prototype.$success = () => {}
+  Vue.prototype.$error = () => {}
+  const ContestList = buildSFC('src/pages/admin/views/contest/ContestList.vue',
+    {api, utils: {downloadFile: () => {}}, time: {utcToLocal: v => v}})
+  const router = new VueRouter({
+    mode: 'abstract',
+    routes: [{path: '/admin/contest', name: 'admin-contest', component: ContestList}]
+  })
+  const root = new Vue({router, render: h => h('router-view')})
+  const push = path => new Promise(resolve => {
+    const timer = setTimeout(() => resolve('TIMEOUT'), 600)
+    router.push(path, () => { clearTimeout(timer); resolve('OK') }, () => { clearTimeout(timer); resolve('ERR') })
+  })
+  const settle = () => new Promise(resolve => setTimeout(resolve, 40))
+  const findInst = () => {
+    let found = null
+    const walk = list => list.forEach(c => {
+      if (c.$options.name === 'ContestList') found = c
+      else walk(c.$children)
+    })
+    walk(root.$children)
+    return found
+  }
+  const cleanup = () => {
+    if (root.$el && root.$el.parentNode) root.$el.parentNode.removeChild(root.$el)
+    root.$destroy()
+    Vue.prototype.$confirm = prevConfirm
+    Vue.prototype.$success = prevSuccess
+    Vue.prototype.$error = prevError
+  }
+
+  return (async () => {
+    const bad = []
+    try {
+      // ① 从 URL 恢复全部筛选 + 翻页 + 排序，并原样透传给接口
+      await push('/admin/contest?keyword=graph&owner=andy&status=-1&rule_type=ACM' +
+                 '&ordering=-start_time&page=3&page_size=30')
+      root.$mount()
+      document.body.appendChild(root.$el)
+      await settle()
+      const inst = findInst()
+      if (!inst) { cleanup(); return {name: '后台比赛列表：布局 + 排序/过滤', ok: false, detail: '❌ 挂载不出 ContestList'} }
+
+      const first = calls[0] || {}
+      const f = first.filters || {}
+      if (first.offset !== 60 || first.limit !== 30) bad.push(`首请求 offset/limit=${first.offset}/${first.limit}，应 60/30`)
+      if (f.keyword !== 'graph' || f.owner !== 'andy' || f.status !== '-1' ||
+          f.rule_type !== 'ACM' || f.ordering !== '-start_time') {
+        bad.push(`首请求筛选参数不对：${JSON.stringify(f)}`)
+      }
+      if (inst.currentPage !== 3 || inst.pageSize !== 30) bad.push(`URL 分页没恢复：page=${inst.currentPage} size=${inst.pageSize}`)
+      if (!inst.ownerOptions.some(o => o.username === 'andy')) bad.push('老师下拉没有 andy')
+
+      // ② 表头排序 → ordering=title、回第 1 页，并真的按新参数重取
+      inst.handleSortChange({prop: 'title', order: 'ascending'})
+      await settle()
+      const q2 = router.currentRoute.query
+      if (inst.query.ordering !== 'title' || q2.ordering !== 'title') bad.push(`点 Title 排序后 ordering=${JSON.stringify(q2.ordering)}`)
+      if (q2.page !== undefined || inst.currentPage !== 1) bad.push('改排序后没有回到第 1 页')
+      if (!calls.length || calls[calls.length - 1].filters.ordering !== 'title') bad.push('排序变化没有重新取数')
+
+      // ③ 再点一次取消排序
+      inst.handleSortChange({prop: 'title', order: null})
+      await settle()
+      if (inst.query.ordering || router.currentRoute.query.ordering) bad.push('取消排序后 ordering 没清掉')
+
+      // ④ Time 表头下拉：排序 + 清掉原生箭头
+      const clearBefore = inst.$refs.table.clearSortCount
+      inst.handleTimeSort('-end_time')
+      await settle()
+      if (inst.query.ordering !== '-end_time' || router.currentRoute.query.ordering !== '-end_time') {
+        bad.push(`时间排序后 ordering=${JSON.stringify(router.currentRoute.query.ordering)}`)
+      }
+      if (inst.$refs.table.clearSortCount <= clearBefore) bad.push('时间排序没有清掉原生排序箭头')
+
+      // ⑤ 链里出现不在候选里的 owner（老链接中文名）也要保留，不能显示成空
+      inst.query.owner = '曾鸣'
+      await inst.$nextTick()
+      if (!inst.ownerOptions[0] || inst.ownerOptions[0].username !== '曾鸣') bad.push('未知 owner 没有兜底选项')
+      inst.query.owner = ''
+
+      // ⑥ 从 URL 恢复原生排序箭头（table.sort 会再发 sort-change，必须被守卫挡住）
+      await push('/admin/contest?ordering=-title')
+      await settle()
+      if (!inst.$refs.table.sortCalls.some(x => x[0] === 'title' && x[1] === 'descending')) {
+        bad.push('URL 的 -title 没有恢复成表头降序箭头')
+      }
+      if (inst.restoringSort) bad.push('restoringSort 没有复位（可能死循环）')
+
+      // ⑦ 删掉某页最后一行 → 退一页
+      await push('/admin/contest?page=2')
+      await settle()
+      inst.contestList = [{id: 99}]
+      inst.currentPage = 2
+      inst.deleteContest({id: 99})
+      await settle()
+      if (deleteCalls.length !== 1 || deleteCalls[0][0] !== 99 || deleteCalls[0][1] !== true) {
+        bad.push(`删除调用不对：${JSON.stringify(deleteCalls)}`)
+      }
+      if (inst.currentPage !== 1 || router.currentRoute.query.page !== undefined) bad.push('删最后一页没有退页')
+
+      // ⑧ Reset 清空筛选、排序、页码
+      inst.query.keyword = 'abc'
+      inst.query.status = '0'
+      inst.query.ordering = '-end_time'
+      inst.currentPage = 2
+      const clearBeforeReset = inst.$refs.table.clearSortCount
+      inst.resetFilters()
+      await settle()
+      if (inst.query.keyword || inst.query.owner || inst.query.status ||
+          inst.query.rule_type || inst.query.ordering) {
+        bad.push(`Reset 后还有筛选：${JSON.stringify(inst.query)}`)
+      }
+      if (Object.keys(router.currentRoute.query).length !== 0) bad.push('Reset 后 URL 还有参数')
+      if (inst.$refs.table.clearSortCount <= clearBeforeReset) bad.push('Reset 没有清排序箭头')
+
+      cleanup()
+      return {
+        name: '后台比赛列表：紧凑布局 + 服务端排序/过滤',
+        ok: bad.length === 0,
+        detail: bad.length ? '❌ ' + bad.join('；')
+          : `URL 恢复全部筛选 ✅ / Title 排序并回第 1 页 ✅ / 取消排序 ✅ / Time 下拉排序 ✅` +
+            ` / 未知 owner 兜底 ✅ / 排序箭头恢复 ✅ / 删末行退页 ✅ / Reset ✅`
+      }
+    } catch (e) {
+      cleanup()
+      return {name: '后台比赛列表：紧凑布局 + 服务端排序/过滤', ok: false, detail: '用例本身异常：' + e.message}
+    }
+  })()
+}
+
 // ── 跑 ───────────────────────────────────────────────────────────
 const cases = [checkAnnouncements, checkPaletteSwitch, checkRankFrozenColumns, checkNavIconGlyphs,
                checkContestListNav, checkContestListNavBehavior, checkContestTypeIcons,
                checkThemeSwitch, checkDraftGuard, checkThemeSafeSwap, checkMonacoLazy,
-               checkUnreadPollInterval, checkTeacherFilterDropdown]
+               checkUnreadPollInterval, checkTeacherFilterDropdown, checkAdminContestList]
 
 ;(async () => {
   const results = []

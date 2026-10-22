@@ -188,17 +188,21 @@ export default {
       }
     })
   },
-  getContestList (offset, limit, keyword, owner) {
+  // 后台比赛列表。filters: {keyword, owner, status, rule_type, ordering}
+  getContestList (offset, limit, filters = {}) {
     let params = {paging: true, offset, limit}
-    if (keyword) {
-      params.keyword = keyword
-    }
-    if (owner) {
-      params.owner = owner
-    }
+    ;['keyword', 'owner', 'status', 'rule_type', 'ordering'].forEach(key => {
+      if (filters[key]) {
+        params[key] = filters[key]
+      }
+    })
     return ajax('admin/contest', 'get', {
       params: params
     })
+  },
+  // 后台比赛列表「任课老师」下拉的候选项（含不可见比赛；scope 与列表一致）
+  getContestTeachers () {
+    return ajax('admin/contest_teachers', 'get')
   },
   getContestAnnouncementList (contestID) {
     return ajax('admin/contest/announcement', 'get', {
