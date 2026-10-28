@@ -3,7 +3,7 @@
   "displayName": "XMUOJ",
   "description": "在VSCode/Trae中提供XMUOJ的沉浸式刷题体验。",
   "icon": "media/icon.png",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "xmuoj",
   "scripts": {
     "package": "vsce package --allow-missing-repository --skip-license",

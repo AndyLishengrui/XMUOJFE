@@ -232,7 +232,7 @@ using namespace std;
 ## 安装
 
 ```bash
-code --install-extension xmuoj-vscode-0.1.5.vsix
+code --install-extension xmuoj-vscode-0.1.6.vsix
 ```
 
 ## 补充说明

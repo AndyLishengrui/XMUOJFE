@@ -1119,6 +1119,28 @@ function renderProblemHtml(problem, baseUrl, workspaceState = {}, _user = null) 
         .prose hr { margin: 12px 0; border: 0; border-top: 1px solid var(--x-border); }
         .prose .katex-display, .prose mjx-container[display="true"] { margin: 6px 0 !important; }
 
+        /* 服务端题面常嵌入固定的黑色 color/background 内联样式。
+           在深色主题中，这些样式会让正文、输入/输出描述与背景混为一谈；
+           强制正文跟随 VS Code 主题变量，同时保留链接、代码块等语义色。 */
+        .prose {
+          color: var(--vscode-editor-foreground, var(--vscode-foreground, #cccccc)) !important;
+          color-scheme: light dark;
+        }
+        .prose :where(p, div, span, font, li, td, th, blockquote) {
+          color: inherit !important;
+          background-color: transparent !important;
+        }
+        .prose h1, .prose h2, .prose h3, .prose h4, .prose h5 {
+          color: var(--vscode-editor-foreground, var(--vscode-foreground, #cccccc)) !important;
+        }
+        .prose a { color: var(--x-accent) !important; }
+        .prose code, .prose pre {
+          color: var(--vscode-editor-foreground, var(--vscode-foreground, #cccccc)) !important;
+        }
+        .prose code { background-color: var(--x-code-bg) !important; }
+        .prose pre { background-color: var(--x-code-bg) !important; }
+        .prose pre code { background-color: transparent !important; }
+
         .section {
           margin-top: 12px;
           padding-top: 10px;
