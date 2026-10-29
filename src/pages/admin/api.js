@@ -322,6 +322,20 @@ export default {
       data
     })
   },
+  // 公共题库展示顺序（仅 superadmin）
+  getPublicProblemOrder () {
+    return ajax('admin/problem/order', 'get')
+  },
+  savePublicProblemOrder (order) {
+    return ajax('admin/problem/order', 'post', {
+      data: {
+        order
+      }
+    })
+  },
+  resetPublicProblemOrder () {
+    return ajax('admin/problem/order', 'delete')
+  },
   getContestProblemList (params) {
     params = utils.filterEmptyValue(params)
     return ajax('admin/contest/problem', 'get', {

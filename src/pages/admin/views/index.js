@@ -6,6 +6,7 @@ import JudgeServer from './general/JudgeServer.vue'
 import PruneTestCase from './general/PruneTestCase.vue'
 import Problem from './problem/Problem.vue'
 import ProblemList from './problem/ProblemList.vue'
+import ProblemOrder from './problem/ProblemOrder.vue'
 import ContestList from './contest/ContestList.vue'
 import Contest from './contest/Contest.vue'
 import Login from './general/Login.vue'
@@ -17,7 +18,7 @@ import CourseChapters from './course/CourseChapters.vue'
 import NotificationAdmin from './general/NotificationAdmin.vue'
 
 export {
-  Announcement, User, Conf, JudgeServer, Problem, ProblemList, Contest,
+  Announcement, User, Conf, JudgeServer, Problem, ProblemList, ProblemOrder, Contest,
   ContestList, Login, Home, PruneTestCase, Dashboard, ProblemImportOrExport, ProblemTagGovernance,
   CourseList, CourseChapters,
   NotificationAdmin
