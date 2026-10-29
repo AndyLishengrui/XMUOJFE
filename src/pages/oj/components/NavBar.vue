@@ -40,6 +40,9 @@
           <Icon type="information-circled"></Icon>
           {{$t('m.About')}}
         </template>
+        <Menu-item name="/vscode">
+          下载 VS Code 插件
+        </Menu-item>
         <Menu-item name="/about">
           {{$t('m.Judger')}}
         </Menu-item>

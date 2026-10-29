@@ -17,7 +17,8 @@ import {
   UserHome,
   CourseList,
   CourseDetail,
-  NotificationList
+  NotificationList,
+  VSCodeExtension
 } from '../views'
 
 import * as Contest from '@oj/views/contest'
@@ -71,6 +72,12 @@ export default [
     path: '/course/:courseId',
     meta: {title: 'Course_Detail'},
     component: CourseDetail
+  },
+  {
+    name: 'vscode-extension',
+    path: '/vscode',
+    meta: {title: 'VS Code 插件'},
+    component: VSCodeExtension
   },
   {
     name: 'submission-list',
