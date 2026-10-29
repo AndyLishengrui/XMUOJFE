@@ -424,6 +424,87 @@ function checkContestTypeIcons () {
   })
 }
 
+// 2026-10-29：比赛列表新增「剩余时间」列（老师要求：剩余 >1 天显示天、<1 天显示小时、
+// <1 小时显示分钟），并要求「让系统不卡」。
+//   ✅ 三档阈值/颜色分级是纯计算，这里用固定 nowMs 真跑一遍 render 逐档断言；
+//   ✅ 性能口径钉成静态断言：**不允许出现 setInterval**（每行一个定时器 = 卡），
+//      必须是共享的 setTimeout + visibilitychange（后台停表）。
+function checkContestCountdown () {
+  if (!Vue.options.components.Icon) {
+    Vue.component('Icon', {props: ['type'], render (h) { return h('i', {class: 'ivu-icon ivu-icon-' + this.type}) }})
+  }
+  const api = {
+    getContestList: () => Promise.resolve({data: {data: {results: [], total: 0}}}),
+    getContestTeachers: () => Promise.resolve({data: {data: []}})
+  }
+  const vuex = {mapGetters: names => {const o = {}; (names || []).forEach(n => {o[n] = () => undefined}); return o}}
+  const Noop = {render (h) { return h('div') }}
+  const prevLoading = Vue.prototype.$Loading
+  Vue.prototype.$Loading = {start () {}, finish () {}, error () {}}
+  const ContestList = buildSFC('src/pages/oj/views/contest/ContestList.vue',
+    {api, Pagination: Noop, vuex, Noop, utils: {filterEmptyValue: o => o}, time: {utcToLocal: () => ''}})
+  const vm = new Vue(ContestList).$mount()
+
+  const now = Date.parse('2026-10-29T12:00:00Z')
+  vm.nowMs = now
+  const col = (vm.columns || []).filter(c => c.key === 'remaining')[0]
+  const h = vm.$createElement
+  const vnodeText = v => {
+    if (!v) return ''
+    if (typeof v.text === 'string') return v.text
+    return (v.children || []).map(vnodeText).join('')
+  }
+  // [说明, start, end, 期望颜色类, 期望文案 key]
+  const spec = [
+    ['剩余 12 天', '2026-10-29T10:00:00Z', '2026-11-10T12:00:00Z', 'is-safe', 'm.Remaining_Day'],
+    ['剩余 23 小时', '2026-10-29T10:00:00Z', '2026-10-30T11:00:00Z', 'is-warning', 'm.Remaining_Hour'],
+    ['剩余 30 分钟', '2026-10-29T10:00:00Z', '2026-10-29T12:30:00Z', 'is-danger', 'm.Remaining_Minute'],
+    ['不足 1 分钟', '2026-10-29T10:00:00Z', '2026-10-29T12:00:30Z', 'is-danger', 'm.Remaining_Soon'],
+    ['未开始（距开始）', '2026-11-01T12:00:00Z', '2026-11-10T12:00:00Z', 'is-upcoming', 'm.Starts_In_Day'],
+    ['已结束', '2026-10-29T10:00:00Z', '2026-10-29T11:00:00Z', 'is-ended', 'm.Ended']
+  ]
+  const bad = []
+  const got = spec.map(([label, s, e, wantCls, wantText]) => {
+    const row = {startMs: Date.parse(s), endMs: Date.parse(e)}
+    const v = col ? col.render(h, {row}) : null
+    const cls = v && v.data && v.data.class ? v.data.class.join(' ') : ''
+    const text = vnodeText(v)
+    const status = vm.statusOf(row)
+    if (cls.indexOf(wantCls) === -1) bad.push(`${label} 颜色=${cls || '?'}（应含 ${wantCls}）`)
+    if (text.indexOf(wantText) === -1) bad.push(`${label} 文案=${text || '?'}（应 ${wantText}）`)
+    return {label, cls, text, status}
+  })
+  // 状态徽章也用本地时间现算：未开始=1 / 进行中=0 / 已结束=-1
+  const wantStatus = ['0', '0', '0', '0', '1', '-1']
+  got.forEach((g, i) => { if (g.status !== wantStatus[i]) bad.push(`${g.label} 状态=${g.status}（应 ${wantStatus[i]}）`) })
+
+  // 性能口径：整张表只许有一个共享定时器，绝不许 setInterval
+  // ⚠️ 必须先剥掉注释再查 —— 注释里解释"为什么不用 setInterval"本来就该提到这个词。
+  const src = fs.readFileSync(path.join(ROOT, 'src/pages/oj/views/contest/ContestList.vue'), 'utf8')
+  const codeOnly = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+  const noInterval = codeOnly.indexOf('setInterval(') === -1
+  const hasSharedTicker = codeOnly.indexOf('refreshCountdown') !== -1 && codeOnly.indexOf('visibilitychange') !== -1
+  if (!noInterval) bad.push('出现了 setInterval（会变成每行一个定时器）')
+  if (!hasSharedTicker) bad.push('共享定时器/visibilitychange（后台停表）不见了')
+
+  // 列宽回归：2026-10-29 把「状态」列压到 110 时，老师看到「进行中」被截成「进行」、
+  // 「已结束」截成「已结」（iView 单元格 overflow: hidden）。状态是三个汉字 + 圆点，
+  // 130 是实测的安全下限，**不许再压回去**。
+  const statusCol = (vm.columns || []).filter(c => c.key === 'status')[0]
+  const statusW = statusCol ? statusCol.width : 0
+  if (!(statusW >= 130)) bad.push(`状态列宽=${statusW}（<130 会把「进行中」截成「进行」）`)
+
+  vm.$destroy()
+  Vue.prototype.$Loading = prevLoading
+  return Promise.resolve({
+    name: '实验/题库列表：剩余时间倒计时（天/小时/分钟三档）+ 全表共用一个定时器',
+    ok: bad.length === 0,
+    detail: bad.length ? '❌ ' + bad.join('；')
+      : got.map(g => `${g.label}→${g.text}`).join(' / ') +
+        ` / setInterval=0 ✅ / 后台停表 ✅`
+  })
+}
+
 /**
  * 换配色必须是「不刷新页面」的换 <link>（2026-10-11 学生事故的回归自检）。
  *
@@ -1081,6 +1162,7 @@ function checkAdminContestList () {
 // ── 跑 ───────────────────────────────────────────────────────────
 const cases = [checkAnnouncements, checkPaletteSwitch, checkRankFrozenColumns, checkNavIconGlyphs,
                checkContestListNav, checkContestListNavBehavior, checkContestTypeIcons,
+               checkContestCountdown,
                checkThemeSwitch, checkDraftGuard, checkThemeSafeSwap, checkMonacoLazy,
                checkUnreadPollInterval, checkTeacherFilterDropdown, checkAdminContestList]
 

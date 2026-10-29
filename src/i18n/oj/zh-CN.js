@@ -165,6 +165,17 @@ export const m = {
   Title: '标题',
   Start_Time: '开始时间',
   End_Time: '截止时间',
+  // 比赛列表「剩余时间」列（2026-10-29）：按剩余量分三档显示。
+  // ⚠️ 文案里**不带「剩余」二字** —— 表头已经写了「剩余时间」，格子里再重复一遍是废话（老师要求）。
+  Time_Remaining: '剩余时间',
+  Remaining_Day: '{n} 天',
+  Remaining_Hour: '{n} 小时',
+  Remaining_Minute: '{n} 分钟',
+  Remaining_Soon: '不足 1 分钟',
+  Starts_In_Day: '{n} 天后开始',
+  Starts_In_Hour: '{n} 小时后开始',
+  Starts_In_Minute: '{n} 分钟后开始',
+  Starts_Soon: '即将开始',
   Teacher: '任课老师',
   NavCourses: '课程',
   Course_List: '课程列表',

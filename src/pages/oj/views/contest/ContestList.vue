@@ -77,9 +77,35 @@
   //    **row[key] 的值**，不是整行对象（见 iview/src/components/table/table.vue:657）。
   //    所以列写成 key='author' 时，行里必须真的有 author 字段，否则 a 是 undefined、
   //    sortMethod 抛 TypeError、点表头看起来「没反应」。这里把创建者姓名摊平进去。
-  function withAuthor (c) {
+  //
+  // 🔑 2026-10-29：**在取数时一次性算好**展示用的字符串与时间戳，render 里不再调 moment。
+  //    倒计时每分钟要重渲染整张表，render 里若还去 moment(...) 建对象，30 行 × 3 个时间 = 90 个
+  //    对象/次，纯属浪费；摊平后 render 只做字符串拼接。
+  function decorateContest (c) {
     let cb = c.created_by || {}
-    return Object.assign({}, c, {author: cb.real_name || cb.username || ''})
+    return Object.assign({}, c, {
+      author: cb.real_name || cb.username || '',
+      startText: time.utcToLocal(c.start_time, 'YYYY-M-D HH:mm'),
+      endText: time.utcToLocal(c.end_time, 'YYYY-M-D HH:mm'),
+      // Date.parse 只认 ISO 8601（后端返回的正是 '2026-11-10T15:59:59Z'），
+      // 比每次渲染都进 moment 便宜得多。
+      startMs: Date.parse(c.start_time),
+      endMs: Date.parse(c.end_time)
+    })
+  }
+
+  // ── 倒计时 ─────────────────────────────────────────────────────────
+  // 粒度按老师的要求：>1 天显示天；1 天之内、>1 小时显示小时；进入 1 小时显示分钟。
+  // 全部用 **向下取整** —— 显示的是"至少还剩这么多"，不会出现"剩余 0 天"这种吓人的中间态。
+  const MINUTE_MS = 60 * 1000
+  const HOUR_MS = 60 * MINUTE_MS
+  const DAY_MS = 24 * HOUR_MS
+
+  function splitRemaining (ms) {
+    if (ms < MINUTE_MS) return {unit: 'Soon', n: 0}
+    if (ms < HOUR_MS) return {unit: 'Minute', n: Math.floor(ms / MINUTE_MS)}
+    if (ms < DAY_MS) return {unit: 'Hour', n: Math.floor(ms / HOUR_MS)}
+    return {unit: 'Day', n: Math.floor(ms / DAY_MS)}
   }
 
   // 走**服务端**排序的列（= 后端 CONTEST_ORDERING_FIELDS 的键）。
@@ -126,6 +152,9 @@
         total: 0,
         rows: '',
         contests: [],
+        // 倒计时用的"现在"。整张表**共用这一个**、每分钟走一次（见 scheduleTick）。
+        nowMs: Date.now(),
+        tickTimer: null,
         // 「任课老师」下拉的候选项：[{username, real_name, count}]，来自 /api/contest_teachers
         teachers: [],
         // 上面这份名单是**按哪个分类**拉的（experiment / question_bank）。
@@ -144,6 +173,11 @@
       //      referer 还是**上一个页面**的地址，正好证明点击那一刻地址栏都还没变。）
       //    改成 mounted 取数 + $Loading：点击立刻跳转，表格随后填上。
       this.init()
+      // 倒计时：整个列表**只用一个**定时器（不是每行一个），详见 scheduleTick。
+      this.startTicker()
+    },
+    beforeDestroy () {
+      this.stopTicker()
     },
     watch: {
       // 复用同一个实例时的刷新（/contest ↔ /question-bank 互切、翻页、筛选、排序）。
@@ -190,13 +224,105 @@
         api.getContestList(offset, this.limit, this.query).then((res) => {
           // 「实验 / 题库」的区分由后端 category 参数完成（见 ContestListAPI）。
           // 原来这里按标题前缀 filter('[教材]') 是死代码：全库 0 个标题带该前缀。
-          this.contests = res.data.data.results.map(withAuthor)
+          // 取数回来时顺手对一次表：倒计时最多只差"取数这一刻"的几十毫秒，
+          // 而不是等下一次整分钟 tick 才第一次显示（否则新页面可能一上来就少一分钟）。
+          this.nowMs = Date.now()
+          this.contests = res.data.data.results.map(decorateContest)
           this.total = res.data.data.total
           this.$Loading.finish()
         }, () => {
           // 失败也要收掉进度条，否则页面永远停在"加载中"
           this.$Loading.error()
         })
+      },
+      // ── 倒计时刷新 ────────────────────────────────────────────────
+      // 🔑 性能要点（老师要求「让系统不卡」）：
+      //   1. **一个列表只有一个定时器**。绝不给每一行挂 setInterval —— 30 行就是 30 个
+      //      定时器 + 30 次独立渲染，翻页/销毁时还容易漏清理。
+      //   2. 定时器**对齐到下一个整分钟**，而不是 setInterval(…, 60000)。
+      //      setInterval 会和"整分钟"越走越偏：比如 12:00:30 启动，之后每小时都在 :30 跳，
+      //      "剩余 60 分钟" 会在还剩 59:30 时就变成 59 分钟。对齐后跳变点与真实剩余量一致。
+      //   3. 标签页在后台时**直接停表**（visibilitychange 回来后补一次），
+      //      后台标签页本来就不会被看到，没必要耗电/占主线程。
+      //   4. 刷新时只把 data 数组换一个引用（iView Table 靠它触发重渲染），
+      //      不重新取数、不重新算 moment —— 30 行的重渲染是毫秒级。
+      startTicker () {
+        this.stopTicker()
+        document.addEventListener('visibilitychange', this.handleVisibilityChange)
+        this.scheduleTick()
+      },
+      stopTicker () {
+        if (this.tickTimer) {
+          clearTimeout(this.tickTimer)
+          this.tickTimer = null
+        }
+        document.removeEventListener('visibilitychange', this.handleVisibilityChange)
+      },
+      handleVisibilityChange () {
+        if (document.hidden) {
+          // 后台：停表。回来时由下面的 else 分支重新对表 + 立即刷新一次。
+          if (this.tickTimer) {
+            clearTimeout(this.tickTimer)
+            this.tickTimer = null
+          }
+        } else {
+          this.refreshCountdown()
+          this.scheduleTick()
+        }
+      },
+      scheduleTick () {
+        if (this.tickTimer) clearTimeout(this.tickTimer)
+        // +100ms 缓冲：定时器可能早触发几百微秒，卡在 59:59.999 会少算一分钟
+        const delay = MINUTE_MS - (Date.now() % MINUTE_MS) + 100
+        this.tickTimer = setTimeout(() => {
+          this.tickTimer = null
+          if (document.hidden) return // 后台的这拍丢掉，回来时 visibilitychange 会补
+          this.refreshCountdown()
+          this.scheduleTick()
+        }, delay)
+      },
+      refreshCountdown () {
+        this.nowMs = Date.now()
+        // ⚠️ iView Table 监听的是 data 的**引用**；原地改 nowMs 不会让格子重渲染。
+        //    slice() 换引用即可，行对象本身复用（不丢任何状态，也不重新建 moment）。
+        if (this.contests.length) this.contests = this.contests.slice()
+      },
+      // 某一场比赛的倒计时。三态分别取自 startMs / endMs：
+      //   未开始 → 距开始；进行中 → 距截止；已结束 → 「已结束」。
+      countdownOf (row) {
+        const now = this.nowMs
+        if (now < row.startMs) {
+          const r = splitRemaining(row.startMs - now)
+          return {
+            text: r.unit === 'Soon'
+              ? this.$t('m.Starts_Soon')
+              : this.$t('m.Starts_In_' + r.unit, {n: r.n}),
+            level: 'is-upcoming',
+            icon: 'ios-time-outline'
+          }
+        }
+        if (now >= row.endMs) {
+          return {text: this.$t('m.Ended'), level: 'is-ended', icon: ''}
+        }
+        const r = splitRemaining(row.endMs - now)
+        // 颜色分级：>1 天（灰）→ ≤1 天（橙）→ ≤1 小时（红）→ 不足 1 分钟（红）。
+        const level = r.unit === 'Day' ? 'is-safe'
+          : (r.unit === 'Hour' ? 'is-warning' : 'is-danger')
+        return {
+          text: r.unit === 'Soon'
+            ? this.$t('m.Remaining_Soon')
+            : this.$t('m.Remaining_' + r.unit, {n: r.n}),
+          level,
+          icon: r.unit === 'Day' ? 'ios-time-outline' : 'ios-alarm-outline'
+        }
+      },
+      // 状态也用本地时间现算，而不是沿用取数那一刻的 row.status：
+      // 页面开着不动、比赛到点结束后，状态徽章和倒计时会一起变，不会出现
+      // 「倒计时已结束、状态还是进行中」这种自相矛盾的画面。
+      statusOf (row) {
+        if (this.nowMs < row.startMs) return '1'
+        if (this.nowMs >= row.endMs) return '-1'
+        return '0'
       },
       changeRoute () {
         let query = Object.assign({}, this.query)
@@ -338,7 +464,7 @@
           cols.push({
             title: self.$i18n.t('m.Teacher'),
             key: 'author',
-            width: 150,
+            width: 130,
             // ⚠️ 这一列**故意**保持前端排序（只作用于当前页）——和上面三列不一样。
             //    原因：`localeCompare(..., 'zh-Hans-CN')` 按**拼音**排，而数据库
             //    ORDER BY 是按 Unicode 码位排（曾 U+66FE < 李 U+674E，但拼音是 李 < 曾），
@@ -357,25 +483,41 @@
           {
             title: self.$i18n.t('m.Start_Time'),
             key: 'start_time',
-            width: 170,
+            width: 160,
             sortable: 'custom',
+            // 展示字符串在 decorateContest 里算好，render 里不再进 moment（见文件上方注释）。
             render (h, params) {
-              return h('span', time.utcToLocal(params.row.start_time, 'YYYY-M-D HH:mm'))
+              return h('span', params.row.startText)
             }
           },
           {
             title: self.$i18n.t('m.End_Time'),
             key: 'end_time',
-            width: 170,
+            width: 160,
             sortable: 'custom',
             render (h, params) {
-              return h('span', time.utcToLocal(params.row.end_time, 'YYYY-M-D HH:mm'))
+              return h('span', params.row.endText)
+            }
+          },
+          {
+            // 2026-10-29 老师要求：一眼看出还剩多少时间。
+            // 显示粒度 = 天 / 小时 / 分钟三档（见 splitRemaining），最后 1 小时标红。
+            title: self.$i18n.t('m.Time_Remaining'),
+            key: 'remaining',
+            width: 150,
+            align: 'center',
+            render (h, params) {
+              let c = self.countdownOf(params.row)
+              let children = []
+              if (c.icon) children.push(h('Icon', {props: {type: c.icon}}))
+              children.push(h('span', {class: 'countdown-text'}, c.text))
+              return h('span', {class: ['countdown', c.level]}, children)
             }
           },
           {
             title: self.$i18n.t('m.Rule'),
             key: 'rule_type',
-            width: 110,
+            width: 100,
             align: 'center',
             render (h, params) {
               return h('Button', {
@@ -389,10 +531,14 @@
           {
             title: self.$i18n.t('m.Status'),
             key: 'status',
-            width: 120,
+            // ⚠️ 别低于 130：2026-10-29 压到 110 时，老师的页面上「进行中」被截成「进行」、
+            //    「已结束」截成「已结」（iView 单元格 overflow: hidden）。状态是三个汉字 + 圆点，
+            //    留 130 才有余量。
+            width: 130,
             align: 'center',
             render (h, params) {
-              let s = CONTEST_STATUS_REVERSE[params.row.status]
+              // 用本地现算的状态（statusOf），比赛到点结束后不用刷新页面也会变「已结束」
+              let s = CONTEST_STATUS_REVERSE[self.statusOf(params.row)]
               return h('Tag', {props: {type: 'dot', color: s.color}},
                 self.$i18n.t('m.' + s.name.replace(/ /g, '_')))
             }
@@ -427,6 +573,52 @@
       /deep/ .ivu-table-header .ivu-table-cell {
         font-size: 14px;
         font-weight: 600;
+      }
+      // ── 「剩余时间」列 ──────────────────────────────────────────────
+      // 胶囊底色提醒紧迫度：灰 = 还早（>1 天）、橙 = 1 天内、红 = 1 小时内。
+      // 颜色全部走主题 token，暗色主题下自动跟着变（别写死 #fff/#f00）。
+      /deep/ .countdown {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 10px;
+        border-radius: 11px;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 20px;
+        white-space: nowrap;
+        .ivu-icon {
+          font-size: 14px;
+        }
+      }
+      /deep/ .countdown.is-safe {
+        color: var(--c-text-2);
+        background: var(--c-bg-soft);
+      }
+      // 时钟图标单独上色（2026-10-29 老师：「图标都是灰的，不显眼」）。
+      // 文字保持原语义色不变，**只让图标跟紧迫度走**：
+      //   宽裕(>1 天)=绿 / 未开始=蓝 / 临期(≤1 天)=橙 / 紧急(≤1 小时)=红。
+      // 「还早」这档文字是灰的，图标若也跟着灰，整列就没重点 ⇒ 给它绿色。
+      /deep/ .countdown.is-safe .ivu-icon {
+        color: var(--c-success);
+      }
+      /deep/ .countdown.is-upcoming {
+        color: var(--c-brand);
+        background: var(--c-brand-tint);
+      }
+      /deep/ .countdown.is-warning {
+        color: var(--c-warning);
+        background: var(--c-warning-tint);
+      }
+      /deep/ .countdown.is-danger {
+        color: var(--c-error);
+        background: var(--c-error-tint);
+      }
+      /deep/ .countdown.is-ended {
+        padding: 0;
+        color: var(--c-text-3);
+        background: transparent;
+        font-weight: 400;
       }
       /deep/ .contest-title {
         .entry {
