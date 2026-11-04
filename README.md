@@ -243,3 +243,4 @@ code --install-extension xmuoj-vscode-0.1.6.vsix
 - 断网启动时不会清除登录凭证，状态栏显示离线并可重试
 - 时间胶囊只录当前题目文件，纯本地保存、不上传；删除前需确认
 - 如果题目绑定失效，提交前会提示重新绑定
+- 本地测试调用系统的 Python 解释器，依次尝试 `python3`、`python`、`py -3`（只接受 Python 3）；提示「未找到可用的 Python3 解释器」时，先安装 Python 3，装好后重启 VS Code（已打开的窗口不会重新读取 PATH）
