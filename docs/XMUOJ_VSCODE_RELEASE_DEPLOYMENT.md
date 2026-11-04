@@ -9,7 +9,27 @@
 - 页面内“下载 VSIX”按钮下载：`https://xmuoj.com/downloads/xmuoj-vscode-0.1.6.vsix`
 - 主导航不再单独增加“VS Code 插件”入口
 
-当前线上仍是旧版前端；本地页面和 VSIX 均尚未上传到服务器。
+首次上线（2026-10-29）已完成：线上 `/vscode` 页面与 VSIX 下载均可用。以下为当时的交接内容，保留备查。
+
+## VSIX 更新（2026-11-04）：0.1.6 重新构建
+
+`downloads/xmuoj-vscode-0.1.6.vsix` 已替换为带本地测试修复的构建：
+
+- 修复：Python3 本地测试只探测一次解释器（`python3`→`python`→`py -3`），探测失败在跑测试点之前报错中止；进程无法启动时立即停止；相同 stderr 只打印一次
+- 大小：296610 字节（原 294813）
+- SHA256：`8da2d5a1179da32f8a23e0e3cedeef98864ba9951b70327bf0b96e7b0c72e453`（原 `ff2b25a6…`）
+- 插件源码：`AndyLishengrui/XMUOJFE` `main` 提交 `338bfb3`
+- GitHub Release：`AndyLishengrui/xmuoj` `v0.1.6` 附件同名同哈希
+
+**部署方式与之前相同：只替换这一个文件，前端 `dist` 无需重新构建**（页面代码、路由、chunk 都没变，版本号仍是 0.1.6）。
+
+```bash
+# 服务器 cd <前端发布根目录>
+cp xmuoj-vscode-0.1.6.vsix downloads/xmuoj-vscode-0.1.6.vsix
+shasum -a 256 downloads/xmuoj-vscode-0.1.6.vsix # 应为 8da2d5a1…
+```
+
+浏览器/CDN 可能缓存了旧 VSIX，替换后建议对 `/downloads/xmuoj-vscode-0.1.6.vsix` 做一次缓存刷新。
 
 ## 本次交付物
 
@@ -27,8 +47,8 @@
 本机文件：
 
 - `/Users/andyshengruilee/Downloads/OpenJudgeFE/xmuoj-vscode/xmuoj-vscode-0.1.6.vsix`
-- 大小：约 288 KB
-- SHA256：`ff2b25a675e56dfbac5c3715bd538f38512be63d622fd87fe53b7c0c6c7b92d5`
+- 大小：约 290 KB
+- SHA256：`8da2d5a1179da32f8a23e0e3cedeef98864ba9951b70327bf0b96e7b0c72e453`
 
 ### 前端构建产物
 
@@ -132,7 +152,7 @@ curl -I https://xmuoj.com/downloads/xmuoj-vscode-0.1.6.vsix
 
 - `/vscode` 返回 `200`，由 SPA 正常渲染介绍页
 - VSIX 返回 `200`，`Content-Type` 为 `application/octet-stream`（或附件类型），不能是 `text/html`
-- VSIX 的 `Content-Length` 与本地文件一致（294813 字节）
+- VSIX 的 `Content-Length` 与本地文件一致（296610 字节）
 
 ```bash
 curl -L -o /tmp/xmuoj-vscode-0.1.6.vsix \
@@ -143,7 +163,7 @@ shasum -a 256 /tmp/xmuoj-vscode-0.1.6.vsix
 线上 SHA256 应为：
 
 ```text
-ff2b25a675e56dfbac5c3715bd538f38512be63d622fd87fe53b7c0c6c7b92d5
+8da2d5a1179da32f8a23e0e3cedeef98864ba9951b70327bf0b96e7b0c72e453
 ```
 
 ### 浏览器验证
